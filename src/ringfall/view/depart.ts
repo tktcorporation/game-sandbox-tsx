@@ -5,7 +5,7 @@ import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
 import { PHRASE } from "./copy";
 import { neighbourFrontPick } from "../meta/neighbour-front";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
-import { depotIcon, entryIcon, lockIcon, startIcon } from "./icons";
+import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
 import { IslandMap, islandScene } from "./map";
 
 /*
@@ -187,7 +187,7 @@ export class DepartPicker {
       // While a shut start is shown, it is ringed and the chosen one stands unlit.
       const shown = peek?.kind === q.kind && peek.id === q.id;
       const cls = ["pick", q.kind, q.on && !peek ? "on" : "", q.open ? "" : "shut", shown ? "peek" : "", q.over ? "over" : ""].filter(Boolean).join(" ");
-      const icon = q.kind === "depot" ? depotIcon() : entryIcon(q.open);
+      const icon = q.kind === "depot" ? depotIcon() : q.kind === "assault" ? flagIcon(SIDE.rival) : entryIcon(q.open);
       const lock = q.kind === "depot" && !q.open ? `<span class="pick-lock">${lockIcon()}</span>` : "";
       const pin = q.on && !peek ? `<span class="pin">${startIcon()}</span>` : "";
       return `<button type="button" class="${cls}" data-kind="${q.kind}" data-id="${q.id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="${esc(q.name)}">${icon}${lock}${pin}${q.kind === "depot" && q.open ? this.mini(q) : ""}</button>`;

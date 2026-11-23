@@ -49,9 +49,15 @@ check(fullRival, "full plan still mirrors all owner nodes");
   const now = 1_700_000_000_000;
   const { list, created } = scheduleAssault([], { code: a.code, node: target, units: 2, id: 1, now });
   check(!!created, "schedule: not created");
+  check(created?.x2 === true, "schedule: not marked x2");
   check(assaultOf(list, a.code)?.state === "coming", "schedule: not coming");
   check(!assaultReady(created!, true, now + 1000), "notice: ready too early");
   check(assaultReady(created!, true, now + assaultNoticeSec(true) * 1000), "notice: not ready after window");
+  // Own X2 notice must not close the target (Codex P1 busy).
+  const withNotice = aiView(a, salt, day, list, "", now + assaultNoticeSec(true) * 1000, []);
+  const slot = withNotice.nodes.find((n) => n.id === target);
+  check(!!slot?.open, "notice: target busy from own x2");
+  check(!!planShortRaid(withNotice, target, { ai: true }), "notice: plan blocked by own x2");
 }
 
 // Gate path: settle without incursion must not invent X2 fields.
