@@ -1,9 +1,10 @@
-import { pouchKeep, type Settlement } from "../meta/profile";
+import { canBuild, canBuildFactory, factoryNeeded, nextFactory, pouchKeep, stashUsed, wanted, type Profile, type Settlement } from "../meta/profile";
+import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNow } from "../island-net";
-import type { ModKind } from "../sim/config";
+import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { contractMarks, itemColor, itemName, rewardList } from "./hub";
-import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
+import { contractMarks, itemColor, itemName, namedAid, nextHandFor, rewardList } from "./hub";
+import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
@@ -30,7 +31,7 @@ import { eventRow, raidEventLine } from "./events";
 import { CREW, FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
-import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flagIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
+import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon, nightIcon } from "./icons";
 import { capturable, momentum, siegeWaves } from "../sim/front";
 import { terrainHeight } from "../sim/terrain";
 
@@ -215,6 +216,16 @@ export class Hud {
     this.scout = null;
   }
 
+  /** Lead-incursion objective: take this node by its 核 · 制圧 (raid-loot stage 6). */
+  setCaptureTask(node: number) {
+    this.contract = null;
+    this.record = null;
+    this.task = { t: "capture", node };
+    this.lastStep = "";
+    this.map.contract = null;
+    this.scout = null;
+  }
+
   /** Settled raids before this one: the secondary story line stays quiet on the first raid. */
   private raidsDone = 0;
   setRaidsDone(n: number) {
@@ -393,8 +404,13 @@ export class Hud {
         this.toast(`${keyIcon()}${POIS[e.poi].name}<span class="toast-sub">${keyIcon()}▸${esc(keySource(e.poi))}の補給箱</span>`, 0, 3600);
         break;
       case "pickup":
-        // What enters the bag (and keys and mod parts) gets a card of its own (view/bag.ts).
-        if (e.kind !== "shard" && !["valuable", "tool", "record", "key", "mod"].includes(e.kind)) this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
+        // Bag card (view/bag.ts) carries the detail; a short toast confirms the grab (Round 4 juice).
+        if (e.kind === "shard") break;
+        if (["valuable", "tool", "record", "key", "mod"].includes(e.kind)) {
+          this.toast(esc(e.label), e.rarity ?? 0, 1600);
+          break;
+        }
+        this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
         break;
       case "poiStart":
         {
@@ -466,16 +482,26 @@ export class Hud {
           this.toast(`${entryIcon(false)}${entryOf(e.id).name}<span class="toast-sub">${entryIcon(false)}▸${entryIcon(true)}生還で出撃地点に</span>`, 1, 6500);
         break;
       case "depotOn":
-        this.toast(`${depotIcon()}${POIS[poiIndex(e.poi)].name}`, 1);
+        this.toast(`${depotIcon()}中継ボックス · 起動した<span class="toast-sub">${esc(POIS[poiIndex(e.poi)].name)}</span>`, 1);
         break;
-      case "deposit":
-        this.toast(`${depotIcon()}${upIcon()}${e.n} 点・${e.value}`, 3);
+      case "deposit": {
+        // Same use as 倉庫へ送る: island defence stock is automatic — show the result on the line.
+        const i = depotInReach(s);
+        const place = i >= 0 ? POIS[poiIndex(DEPOTS[i].poi)].name : "";
+        this.toast(
+          `${depotIcon()}中継ボックス · 倉庫へ送る ${e.n}点・${e.value}${place ? `<span class="toast-sub">${esc(place)}の島の守りに回る</span>` : ""}`,
+          3,
+        );
+        break;
+      }
+      case "leaveStart":
+        this.toast(`${depotIcon()}中継ボックス · 生還中`, 1, 2500);
         break;
       case "leaveCancel":
-        this.toast(`${depotIcon()}${crossIcon()}`, 0);
+        this.toast(`${depotIcon()}中継ボックス${crossIcon()}`, 0);
         break;
       case "coreStart":
-        this.toast(`${coreIcon(foeSide(s.nodes[e.node]))}${NODES[e.node].name}`, 0, 3000);
+        this.toast(`${coreIcon(foeSide(s.nodes[e.node]))}核 · 制圧 ${esc(NODES[e.node].name)}`, 0, 3000);
         break;
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
@@ -487,12 +513,26 @@ export class Hud {
         // The raid's momentum rose: that many marks, and what the next node pays.
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
         break;
-      case "fortified":
-        this.toast(`${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
+      case "fortified": {
+        // Night targets vs 来る遠征: same fortify verb, different why (existing words only).
+        const vsIncoming = !(s.battle?.targets.includes(e.node) ?? false);
+        this.toast(
+          `${coreIcon(SIDE.own)}固めた · ${esc(NODES[e.node].name)}<span class="toast-sub">${vsIncoming ? "来る遠征をはねる" : "夜の襲撃をはねる"}</span>`,
+          1,
+          4000,
+        );
         break;
-      case "coreTaken":
-        this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
+      }
+      case "coreTaken": {
+        // e.node is a NODES index; s.hold is per POI. Rival at raid start → loot in 倉庫へ届いた.
+        const holdAt = s.hold ? rivalOf(s.hold[poiIndex(NODES[e.node].id)] ?? "held") !== null : false;
+        this.toast(
+          `${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}${holdAt ? `<span class="toast-sub">倉庫へ届く</span>` : ""}`,
+          1,
+          5000,
+        );
         break;
+      }
       case "counter":
         // The enemy sets off to take back a node: its landing's mark and the node's blue core.
         this.toast(`${reinforceIcon()}${coreIcon(SIDE.own)}${NODES[e.node].name}`, 0, 4000);
@@ -1269,16 +1309,16 @@ export class Hud {
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
       if (s.nodes[t.node] === "freed") {
         if (s.fortify?.node === t.node) {
-          return tip(`${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
+          return tip(`${coreIcon(SIDE.own)}核 · 固める ${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
         }
         // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
         const sent = !s.battle?.targets.includes(t.node);
-        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${esc(n.name)}`);
+        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}核 · 固める ${esc(n.name)}`);
       }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return tip(`${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`);
-      if (s.capture?.node === t.node) return tip(`${coreIcon(c)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
-      return tip(`${key("E")}${coreIcon(c)}${esc(n.name)} ${noiseIcon()}`);
+      if (s.capture?.node === t.node) return tip(`${coreIcon(c)}核 · 制圧 ${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
+      return tip(`${key("E")}${coreIcon(c)}核 · 制圧を始める ${esc(n.name)} ${noiseIcon()}`);
     }
     if (t.kind === "zip") {
       // The way the rider would go: the end the player faces, and how far along the cable it is.
@@ -1448,7 +1488,11 @@ export class Hud {
     if (el) el.innerHTML = newsBlock(news);
   }
 
-  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = []) {
+  /**
+   * Results after a raid. `before` is the profile just before settle — used only to show how the
+   * haul fed the base (wanted / buildable). `next` is the one-line hand into the next sortie.
+   */
+  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "", expNews: readonly string[] = []) {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     $("day-result").innerHTML = this.dayResult(s, settled);
     this.drawDay(settled);
@@ -1521,25 +1565,106 @@ export class Hud {
       );
     const events = ev || outcome.length ? `<h3>島の出来事</h3><p>${ev ? eventRow(ev) : ""}${outcome.join("")}</p>` : "";
     const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット</b></span></p>` : "";
+    const growth = settled && before ? this.baseGrowth(before, settled) : "";
+    const defence = this.defenceLines(s, settled);
+    const tip = next || (settled ? nextHandFor(settled.profile) : "");
+    const nextEl = $("next-hand");
+    if (nextEl) {
+      nextEl.hidden = !tip;
+      nextEl.textContent = tip;
+    }
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
       island +
+      growth +
+      defence +
+      (expNews.length ? `<h3>遠征の知らせ</h3><p>${expNews.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "") +
       `<div id="island-news">${newsBlock(news)}</div>` +
       events +
       contract +
       story +
       (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}<b>${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}</b></span>`).join("")}</p>` : "") +
       (settled
-        ? (sent.length ? `<h3 class="mark">${depotIcon()}</h3><p>${count(sent)}</p>` : "") +
+        ? (sent.length ? `<h3 class="mark">${depotIcon()}中継ボックス</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.
-          (lost || !home.length ? "" : `<h3 class="mark">${bagIcon()}</h3><p>${count(home)}</p>`) +
+          (lost || !home.length ? "" : `<h3 class="mark">${bagIcon()}持ち帰った</h3><p>${count(home)}</p>`) +
           // Ways in: learned ones as the map's ring, ones found on a raid that did not come home struck through.
           (settled.learned.length || (lost && forgot.length)
             ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span class="learned"><span class="turn">${entryIcon(false)}${entryIcon()}</span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`
             : "") +
           (settled.opened.length ? `<h3>開いた道</h3><p>${settled.opened.map((id) => `<span>${routeIcon(true)}${routeOf(id).name}</span>`).join("")}</p>` : "") +
-          (settled.sold.length ? `<h3>売却</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span></p>` : "")
+          (settled.sold.length
+            ? `<h3>倉庫に入らなかった</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`
+            : "")
         : "") +
       this.analysis(s, settled, known, analysed);
+  }
+
+  /**
+   * Multiplayer motivation on the return screen: what this raid put into 島の守り at a 中継ボックス,
+   * and who else's delivery still sits there. Existing place names only.
+   */
+  private defenceLines(s: State, settled?: Settlement): string {
+    const left = s.leftParcels ?? [];
+    const mine = left
+      .map((q) => `<span>${depotIcon()}${esc(POIS[poiIndex(q.poi)].name)}の島の守りに回った</span>`)
+      .join("");
+    const help = namedAid(settled?.profile ?? { parcels: [] })
+      .slice(0, 3)
+      .map((q) => `<span><b>${esc(q.from.name)}</b>が${esc(POIS[poiIndex(q.poi)].name)}の中継ボックスへ届けた</span>`)
+      .join("");
+    if (!mine && !help) return "";
+    return `<h3>島の守り</h3><p>${mine}${help}</p>`;
+  }
+
+  /**
+   * How the haul fed the base: valuables that still matter for 工房／工場, and anything newly buildable.
+   * Names the player already sees in camp — no new nouns.
+   */
+  private baseGrowth(before: Profile, settled: Settlement): string {
+    const after = settled.profile;
+    const wantB = wanted(before);
+    const bits: string[] = [];
+    // Only what actually entered the stash (Codex P2): stash after − before, not Settlement.home (which still lists sold overflow).
+    const countVal = (p: Profile) => {
+      const m = new Map<ValuableKind, number>();
+      for (const i of p.stash) if (i.t === "valuable") m.set(i.kind, (m.get(i.kind) ?? 0) + 1);
+      return m;
+    };
+    const beforeN = countVal(before);
+    const afterN = countVal(after);
+    const kinds = new Map<ValuableKind, number>();
+    for (const [k, n] of afterN) {
+      const d = n - (beforeN.get(k) ?? 0);
+      if (d > 0) kinds.set(k, d);
+    }
+    for (const [k, kept] of kinds) {
+      if (wantB[k] <= 0) continue;
+      const uses: string[] = [];
+      for (const m of MODULES) {
+        const need = nextLevel(before.hideout, m)?.items.find(([x]) => x === k)?.[1] ?? 0;
+        if (need > 0) uses.push(`${hideoutIcon()}${esc(HIDEOUT[m].name)}<b>${need}</b>`);
+      }
+      if (!uses.length && stillNeeded(before.hideout)[k] > 0) uses.push(`${hideoutIcon()}<b>${stillNeeded(before.hideout)[k]}</b>`);
+      const fac = nextFactory(before)?.items.find(([x]) => x === k)?.[1] ?? 0;
+      if (fac) uses.push(`${factoryIcon()}工場 Lv${before.factory + 1}<b>${fac}</b>`);
+      else if (factoryNeeded(before)[k] > 0) uses.push(`${factoryIcon()}工場<b>${factoryNeeded(before)[k]}</b>`);
+      if (!uses.length) continue;
+      const done = wanted(after)[k] <= 0;
+      bits.push(`<span class="growth-item${done ? " done" : ""}"><span class="chip" style="--c:${itemColor({ t: "valuable", kind: k })}">${esc(VALUABLES[k].label)}${kept > 1 ? `<b>${kept}</b>` : ""}</span>${uses.join("")}${done ? checkIcon() : ""}</span>`);
+    }
+    const ready: string[] = [];
+    if (canBuildFactory(after) && !canBuildFactory(before)) ready.push(`${factoryIcon()}工場 · 次の段を上げられる`);
+    for (const m of MODULES) {
+      if (canBuild(after, m) && !canBuild(before, m)) ready.push(`${hideoutIcon()}${esc(HIDEOUT[m].name)} · 次の段を上げられる`);
+    }
+    const seized = (settled.seized ?? [])
+      .map((q) => `<span class="growth-ready">${coreIcon(SIDE.own)}制圧した · ${esc(POIS[poiIndex(q.poi)].name)}から${q.kinds.map((k) => esc(VALUABLES[k].label)).join("・")}</span>`)
+      .join("");
+    if (!bits.length && !ready.length && !seized && !kinds.size) return "";
+    const stash = `<span>${stashIcon()}倉庫 ${stashUsed(after)} / ${stashCap(after.hideout)}</span>`;
+    return (
+      `<h3>倉庫へ届いた</h3><p class="growth">${bits.join("") || (seized || kinds.size ? "" : "<span>拠点の材料ではない</span>")}${seized}${stash}${ready.map((r) => `<span class="growth-ready">${r}</span>`).join("")}</p>`
+    );
   }
 }

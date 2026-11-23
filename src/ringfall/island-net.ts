@@ -192,7 +192,8 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
   const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
   if (ai) {
     const p = aiSource!();
-    return { ok: true, body: aiView(ai, aiSalt(), p.day, p.expeditions, loadIdentity().code ?? "", Date.now()) };
+    const seized = (p.incursionTaken ?? []).filter((e) => e.code === code).flatMap((e) => e.ids);
+    return { ok: true, body: aiView(ai, aiSalt(), p.day, p.expeditions, loadIdentity().code ?? "", Date.now(), seized) };
   }
   const r = await call(`/api/islands/${encodeURIComponent(code)}`, {}, timeout);
   if (!r.ok) return r;

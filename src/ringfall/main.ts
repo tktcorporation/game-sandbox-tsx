@@ -4,13 +4,13 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
+import { analyse, raidThreat, settle, takenStory, type Profile, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
@@ -273,6 +273,7 @@ function onEvent(e: GameEvent, s: State) {
     const fresh = refreshAi(hub.profile);
     if (fresh !== hub.profile) hub.update(fresh);
     const before = hub.profile;
+    profileBefore = before;
     settlement = settle(before, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
@@ -544,6 +545,8 @@ function lock() {
 let kit: Kit = starterKit();
 let region: RegionId = HOME_REGION.id;
 let settlement: Settlement | null = null;
+/** Profile snapshot just before settle — results show how the haul fed the base. */
+let profileBefore: Profile | null = null;
 /** The mod kinds known when the raid ended, and the one analysed on its results (one at most). */
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
@@ -552,6 +555,18 @@ const loaded = loadProfile();
 const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => lock());
 // The game's own islands answer from the profile the page plays (island-net.ts, AI の島).
 useAi(() => hub.profile);
+// Signal-station 出撃 into another island's copy (raid-loot stage 6).
+hub.setIncursionStart((go) => {
+  if (fading) return;
+  fading = true;
+  sfx.deploy();
+  fade(true);
+  setTimeout(() => {
+    fading = false;
+    start(go);
+    requestAnimationFrame(() => fade(false));
+  }, 480);
+});
 const campView = new CampView();
 const picker = new DepartPicker(hub, () => answerDepart(true));
 // The title's one line on the goal: the island's six nodes, filled blue as far as this save has taken them.
@@ -749,7 +764,8 @@ function campTick() {
 function campFrame() {
   const near = campFrozen() ? null : campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
   const p = hub.profile;
-  const tip = incomingFor(p).length ? "来る遠征 · 地図で固める" : p.raids === 0 ? "車両か門から出撃" : "";
+  // One next hand on the line (design-direction): grow the base if ready, else sortie.
+  const tip = p.raids === 0 ? "車両か門から出撃" : hub.nextHand().replace(/^次：/, "");
   campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
 }
 
@@ -777,6 +793,7 @@ function start(go: Launch, from?: State) {
   kit = go.kit;
   region = go.region;
   settlement = null;
+  profileBefore = null;
   unlock();
   if (touchMode) {
     // Full screen and landscape where the browser allows it; the game runs either way.
@@ -807,20 +824,35 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
+  const inc = go.incursion;
   state = newRun(go.seed, kit, region, {
     depots: hub.profile.depots,
     seen: hub.profile.seen,
     from: go.from,
     entry: go.entry,
     routes: hub.profile.routes,
-    island: holds(hub.profile),
-    record,
-    fetch,
-    event: hub.profile.events[0],
-    threat: raidThreat(hub.profile),
+    // Lead-incursion plays on the other island's copy; home holds stay put until settle strips captures.
+    island: inc ? inc.island : holds(hub.profile),
+    record: inc ? undefined : record,
+    fetch: inc ? undefined : fetch,
+    event: inc ? null : hub.profile.events[0],
+    threat: inc ? 0 : raidThreat(hub.profile),
     known: hub.profile.known,
-    battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
-    finale: finaleOpen(hub.profile),
+    // No home battle on a copy raid — only 核 · 制圧 of the target feeds loot.
+    battle: inc
+      ? undefined
+      : { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
+    finale: inc ? false : finaleOpen(hub.profile),
+    ...(inc
+      ? {
+          incursion: {
+            code: inc.code,
+            owner: inc.owner,
+            target: inc.target,
+            parcels: inc.parcels.map((q) => ({ id: q.id, poi: q.poi, kind: q.kind, from: { ...q.from } })),
+          },
+        }
+      : {}),
   });
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
@@ -830,7 +862,8 @@ function start(go: Launch, from?: State) {
       leaseReq.raid = state;
     }
   }
-  hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
+  if (inc) hud.setCaptureTask(nodeIndex(inc.target));
+  else hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   hud.setRaidsDone(hub.profile.raids);
   // Passive traces only: rivals / incoming, no legend or new noun (ux-design M5).
   const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
@@ -864,8 +897,11 @@ function finish() {
   fire = ads = adsLatch = false;
   $("banner").className = "";
   hud.show(false);
-  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews);
+  const next = settlement ? hub.nextHand() : "";
+  // 遠征の知らせ closes on the return screen (my help mattered) — same heading as the signal station.
+  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, hub.expeditionNews());
   if (state.outcome === "extracted") {
+    // One SE for 生還: finish owns it (soundscape skips victory on `done` to avoid a double).
     sfx.extracted();
     music?.music.phrase("home");
   }
@@ -885,7 +921,7 @@ $("home").addEventListener("click", (e) => {
   hub.reload(next);
   saveProfile(hub.profile);
   sfx.click();
-  hud.results(state, settlement, knownBefore, analysed, islandNews);
+  hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand(), hub.expeditionNews());
 });
 
 function setPaused(on: boolean) {

@@ -2800,8 +2800,9 @@ body.touch .map-buttons button {
     "day home"
     "haul home"
     "stats home"
+    "next home"
     "button home";
-  grid-template-rows: auto auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto auto 1fr;
   align-items: start;
   column-gap: 48px;
   row-gap: 10px;
@@ -2821,9 +2822,39 @@ body.touch .map-buttons button {
 #results #stats-box {
   grid-area: stats;
 }
+#results #next-hand {
+  grid-area: next;
+}
 #results #restart {
   grid-area: button;
   justify-self: start;
+}
+/* One next hand into the camp / next sortie (design-direction). */
+#results .next-hand {
+  margin: 0;
+  font-size: 16px;
+  color: var(--own);
+  letter-spacing: 0.02em;
+}
+#results .next-hand[hidden] {
+  display: none;
+}
+#home .growth {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+#home .growth-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+#home .growth-item.done {
+  color: var(--own);
+}
+#home .growth-ready {
+  color: var(--own);
+  font-weight: 600;
 }
 #results #home {
   grid-area: home;
@@ -5183,6 +5214,13 @@ button.factory-signal b {
   display: inline-flex;
   margin-left: 8px;
   vertical-align: -2px;
+}
+/* Lead-incursion 出撃 beside 送る (raid-loot stage 6). */
+#hub .exp-go.exp-raid {
+  margin-left: 8px;
+}
+.exp-target .exp-go {
+  margin-top: 8px;
 }
 .exp-note {
   margin: 4px 0 0;

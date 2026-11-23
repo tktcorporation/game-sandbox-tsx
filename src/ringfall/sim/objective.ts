@@ -1,7 +1,7 @@
 import { CONQUEST, FRONT, VALUABLES, type ValuableKind } from "./config";
 import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, poiIndex, recordSpot, regionHere, type PoiId, type RecordId, type RegionId } from "./map";
+import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, recordSpot, regionHere, type PoiId, type RecordId, type RegionId } from "./map";
 import { frontNodes } from "./front";
 import { haulOrigins } from "./world";
 import { squadKey, type State } from "./state";
@@ -93,7 +93,7 @@ function captureSteps(s: State, i: number, title: string): Objective {
   const freed = s.nodes[i] === "freed";
   const under = s.capture?.node === i;
   const c = under ? s.capture : null;
-  const front = frontNodes(s.nodes)[i];
+  const front = frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
   return settle(title, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: freed || under || dist2d(s.player.pos, core) < ARRIVE },
     { kind: "start", label: "核を起動する", until: front || freed ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: freed || under, near: "核に触れて制圧を始める" },
@@ -190,7 +190,7 @@ function taskSteps(s: State, task: Task): Objective {
       const bin = bins.sort((a, b) => dist2d(a, p) - dist2d(b, p))[0];
       return settle(`${VALUABLES[task.kind].label}の回収`, [
         { kind: "go", label: `${poi.name}へ向かう`, until: `${poi.name}に入る`, at: ground(poi.x, poi.z), done: got > 0 || dist2d(p, poi) < poi.trigger },
-        { kind: "act", label: `${poi.name}の補給箱を開ける`, until: `${VALUABLES[task.kind].label}を ${task.n} 個見つける`, progress: `${Math.min(got, task.n)}/${task.n}`, at: bin ? ground(bin.x, bin.z, bin.y) : null, done: got >= task.n, near: "補給箱を調べる" },
+        { kind: "act", label: `${poi.name}の補給箱を開ける`, until: `${VALUABLES[task.kind].label}を ${task.n} 個見つける`, progress: `${Math.min(got, task.n)}/${task.n}`, at: bin ? ground(bin.x, bin.z, bin.y) : null, done: got >= task.n, near: "補給箱を使う" },
         extractStep(s),
       ]);
     }
@@ -212,7 +212,7 @@ function taskSteps(s: State, task: Task): Objective {
       const at = ground(r.x, r.z, r.y);
       return settle(`記録：${r.name}`, [
         { kind: "go", label: `${r.place}へ向かう`, until: `${ARRIVE} m 以内に着く`, at, done: held || dist2d(p, at) < ARRIVE },
-        { kind: "act", label: `${r.name}を拾う`, until: "記録に重なって拾う（バッグ 1 枠）", at, done: held, near: `${r.name}を拾う` },
+        { kind: "act", label: `${r.name}を使う`, until: "記録を使う（バッグ 1 枠）", at, done: held, near: `${r.name}を使う` },
         extractStep(s),
       ]);
     }

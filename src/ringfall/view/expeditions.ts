@@ -10,9 +10,11 @@ import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readVie
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { islandProtected, planIncursion, type IncursionPlan } from "../meta/incursion";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
+import { AI } from "../meta/ai-islands";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, robotIcon, SIDE } from "./icons";
 
@@ -58,6 +60,8 @@ export class ExpeditionPanel {
     private get: () => Profile,
     private put: (p: Profile) => void,
     private news: (entries: IslandLogEntry[]) => void,
+    /** Starts a lead-incursion raid on the plan (AI islands for now; same 核 · 制圧). */
+    private lead: (plan: IncursionPlan) => void = () => undefined,
   ) {
     const hub = document.getElementById("hub")!;
     hub.addEventListener("input", (e) => {
@@ -168,7 +172,42 @@ export class ExpeditionPanel {
       this.pick = this.pick === arg ? null : arg;
       this.paint();
     } else if (act === "exp-send") void this.send();
+    else if (act === "exp-raid") void this.raid();
     else if (act === "exp-recall") void this.recall(arg);
+  }
+
+  /**
+   * Lead-incursion (raid-loot stage 6): the player 出撃s into the picked node's island copy.
+   * AI islands only for now — same 核 · 制圧 → 倉庫へ届いた vocabulary, no new key.
+   */
+  private async raid() {
+    const t = this.target;
+    const node = this.pick;
+    if (!t || !node || this.busy) return;
+    if (islandProtected(t)) {
+      this.note = { text: "この島は保護中", good: false };
+      return this.paint();
+    }
+    if (!isAi(t.code)) {
+      // Human islands still use 送る (async expedition) until a server lead-raid lands.
+      this.note = { text: "AIの島へ出撃できる", good: false };
+      return this.paint();
+    }
+    const p = this.get();
+    if (p.day < AI.start) {
+      this.note = { text: `${AI.start}日目から出撃できる`, good: false };
+      return this.paint();
+    }
+    const plan = planIncursion(t, node, { ai: true, known: p.entries });
+    if (!plan) {
+      this.note = { text: "遠征を受ける拠点なし", good: false };
+      return this.paint();
+    }
+    this.busy = true;
+    this.note = null;
+    this.paint();
+    this.lead(plan);
+    this.busy = false;
   }
 
   private async copy() {
@@ -368,12 +407,18 @@ export class ExpeditionPanel {
         ? `<div class="exp-nodes">${open.map((n) => `<button type="button" class="${this.pick === n.id ? "on" : ""}" data-act="exp-node" data-arg="${esc(n.id)}">${coreIcon(n.hold === "freed" ? SIDE.rival : SIDE.enemy)}${esc(nodeName(n.id))}</button>`).join("")}</div>`
         : `<p class="lock-note">${lockIcon()}遠征を受ける拠点なし</p>`;
       const room = canSend(p);
+      const ai = isAi(t.code);
+      const protectedIsle = islandProtected(t);
+      const raidOk = ai && !!this.pick && !this.busy && !protectedIsle && p.day >= AI.start;
+      // 【元】（なし）／【案】出撃／【理由】raid-loot 段階6。既存の出撃語。AI島の写しへ。部隊の有無に依らない。
+      const raidBtn = ai ? `<button type="button" class="exp-go exp-raid" data-act="exp-raid"${raidOk ? "" : " disabled"}>出撃</button>` : "";
+      const sendBtn = room
+        ? `<button type="button" class="exp-go" data-act="exp-send"${this.pick && !this.busy ? "" : " disabled"}>送る<span class="bots">${sendKinds(this.serverFactory() ?? p.factory)
+            .map(() => robotIcon(SIDE.own))
+            .join("")}</span></button>` + (factoryAhead(p, this.serverFactory() ?? p.factory) ? `<p class="exp-wait">工場の段は次のレイドの後に島へ届く</p>` : "")
+        : `<p class="lock-note">${lockIcon()}部隊が出払っている</p>`;
       const go = open.length
-        ? room
-          ? `<button type="button" class="exp-go" data-act="exp-send"${this.pick && !this.busy ? "" : " disabled"}>送る<span class="bots">${sendKinds(this.serverFactory() ?? p.factory)
-              .map(() => robotIcon(SIDE.own))
-              .join("")}</span></button>` + (factoryAhead(p, this.serverFactory() ?? p.factory) ? `<p class="exp-wait">工場の段は次のレイドの後に島へ届く</p>` : "")
-          : `<p class="lock-note">${lockIcon()}部隊が出払っている</p>`
+        ? sendBtn + raidBtn + (protectedIsle ? `<p class="lock-note">${lockIcon()}この島は保護中</p>` : "")
         : "";
       pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}${go}</div>`;
     }

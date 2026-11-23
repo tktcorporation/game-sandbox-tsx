@@ -16,6 +16,7 @@ import { aiOwner, isAiOwner, rivalOf, type PoiHold } from "../sim/holds";
 import { FRONT_LINKS, NODES, TIER, nodeIndex, type NodeId } from "../sim/map";
 import { CODE_ALPHABET, CODE_LENGTH } from "./island-code";
 import { lentRivals, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Outgoing } from "./expeditions";
+import { aiDefenceParcels } from "./incursion";
 import type { RivalExpedition } from "../sim/battle";
 import { NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
 import type { Island } from "./island";
@@ -154,7 +155,16 @@ export function aiChanges(a: AiIsland, salt: number, day: number): { took: NodeI
  * take an expedition (its own, and the enemy's next to them), with the player's expeditions on it
  * as they stand at `now` (by `mine`, the player's code or empty).
  */
-export function aiView(a: AiIsland, salt: number, day: number, sent: readonly Outgoing[], mine: string, now: number): IslandView {
+export function aiView(
+  a: AiIsland,
+  salt: number,
+  day: number,
+  sent: readonly Outgoing[],
+  mine: string,
+  now: number,
+  /** Parcel ids already seized from this island in lead-incursions (partial defence loss). */
+  seized: readonly number[] = [],
+): IslandView {
   const own = new Set<string>(aiNodes(a, salt, day));
   // A node one of the player's expeditions is on or holds takes no other (`node-busy` on the server).
   const busy = new Set<string>(sent.filter((o) => o.code === a.code && aiBusy(a, salt, o, now)).map((o) => o.node));
@@ -166,7 +176,9 @@ export function aiView(a: AiIsland, salt: number, day: number, sent: readonly Ou
       const state = aiOutcome(a, salt, o, now);
       return state === "gone" || state === "sending" || state === "recalling" ? [] : [{ id: o.id, by: { code: mine, name: "" }, target: o.node as string, units: o.units, state: state as "coming" | "attacking" | "holding", arriveAt: o.sentAt + AI.coming * 60_000 }];
     });
-  return { code: a.code, owner: a.name, day, factory: aiFactory(day), protectedUntil: 0, nodes, expeditions, pings: [], parcels: [] };
+  const held = aiNodes(a, salt, day);
+  const parcels = aiDefenceParcels(a, salt, day, held, seized);
+  return { code: a.code, owner: a.name, day, factory: aiFactory(day), protectedUntil: 0, nodes, expeditions, pings: [], parcels };
 }
 
 /**

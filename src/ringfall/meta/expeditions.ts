@@ -306,11 +306,12 @@ export function logLine(e: IslandLogEntry): string {
     case "landed":
       return `${who}の遠征隊が${at}に来た`;
     case "taken":
-      return `${who}に${at}を取られた`;
+      // CoC defence result: losing the node also costs that 中継ボックス's 島の守り.
+      return `${who}に${at}を取られた · 島の守りが削られた`;
     case "wiped":
       return `${at}で${who}の遠征隊を全滅させた`;
     case "retaken":
-      return `${at}を取り返した`;
+      return `${at}を取り返した · 倉庫へ届く`;
     case "released":
       return `${who}が${at}を手放し、敵の拠点に戻った`;
     case "recalled":

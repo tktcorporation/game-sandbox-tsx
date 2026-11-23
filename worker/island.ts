@@ -577,6 +577,9 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
       s.holds[i] = told;
       e.holding = true;
       note(s, now, "taken", i, e.by);
+      // CoC-style: the fallen node's 中継ボックス stock is lost (partial defence was already spent in startFight).
+      const poi = NODE_IDS[i];
+      if (s.parcels?.length) s.parcels = s.parcels.filter((p) => p.poi !== poi);
     }
   }
   s.lease = null;

@@ -746,6 +746,11 @@ export interface State {
   leftParcels: { poi: PoiId; kind: ValuableKind }[];
   /** Parcel ids taken this raid (cleared from the island on report). */
   takenParcels: number[];
+  /**
+   * Lead-incursion onto another island's copy (raid-loot stage 6). Null on a home raid and on
+   * every sim-gate run — captures do not rewrite the home `poiState`.
+   */
+  incursion: { code: string; owner: string; target: PoiId; parcels: { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] } | null;
   /** Leaving at a depot: which one, and the seconds still to stand there. */
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
@@ -961,6 +966,11 @@ export interface Start {
    * and campaigns omit them, so their hashes stay put.
    */
   parcels?: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[];
+  /**
+   * Lead-incursion onto another island's copy (raid-loot stage 6). Left out, a normal home raid —
+   * the sim gate never sets this, so its hash stays put.
+   */
+  incursion?: { code: string; owner: string; target: PoiId; parcels: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] };
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1138,6 +1148,14 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     parcels: [],
     leftParcels: [],
     takenParcels: [],
+    incursion: start.incursion
+      ? {
+          code: start.incursion.code,
+          owner: start.incursion.owner,
+          target: start.incursion.target,
+          parcels: start.incursion.parcels.map((q) => ({ id: q.id, poi: q.poi, kind: q.kind, from: { ...q.from } })),
+        }
+      : null,
     leaving: null,
     leftAt: null,
     away: 0,
