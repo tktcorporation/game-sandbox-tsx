@@ -50,7 +50,7 @@ assert.ok(supply && quarry);
 }
 
 assert.equal(tipIsDefence("地図の机 · 来る遠征を固める"), true);
-assert.equal(tipIsDefence("車両から出撃 · 補給所を取り返す"), true);
+assert.equal(tipIsDefence("車両から出撃 · 補給所を攻める"), true);
 assert.equal(tipIsDefence("車両から出撃 · 前線：採石場"), false);
 
 console.log("defence return ok");

@@ -68,7 +68,7 @@ export async function expeditionShots({ browser, port, out, errors }) {
   if (!/となり.*中継塔.*6h/.test(news)) errors.push(`expeditions: the map table's warning reads "${news}"`);
   await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
   await close();
-  // The island's news as marks: someone's attack offers 遠征に出す, which opens the signal station on their island.
+  // The island's news as marks (E4: no 遠征に出す answer button).
   await pg.evaluate(() =>
     window.ringfallNews([
       { seq: 2, at: 0, t: "taken", node: "yard", by: { code: "Z3P9TR", name: "となり" } },
@@ -87,8 +87,8 @@ export async function expeditionShots({ browser, port, out, errors }) {
   await pg.evaluate(() => window.advanceTime(300));
   await pg.screenshot({ path: `${out}/156-camp-signal.png` });
   await open("signal");
-  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news.signal-news li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
-  if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the signal station's news shows ${answer.items} items and ${answer.buttons} 遠征に出す, not 2 and 1`);
+  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news.signal-news li").length, buttons: document.querySelectorAll(".island-news .revenge, #hub-exped .exp-go").length }));
+  if (answer.items !== 2 || answer.buttons !== 0) errors.push(`expeditions: the signal station's news shows ${answer.items} items and ${answer.buttons} send/revenge buttons (E4 expects 2 and 0)`);
   // News that comes while the station is open shows at once.
   await pg.evaluate(() => window.ringfallNews([{ seq: 3, at: 0, t: "landed", node: "relay", by: { code: "H4N8WD", name: "砂丘の人" } }]));
   const more = await pg.evaluate(() => document.querySelectorAll(".island-news.signal-news li").length);
@@ -99,10 +99,6 @@ export async function expeditionShots({ browser, port, out, errors }) {
   const ai = await pg.evaluate(() => document.querySelectorAll("#hub-exped .exp-near .ai-tag").length);
   if (near.length !== 4 || ai !== 1 || !/となり.*7\/21.*3h.*\+2/.test(near[0] ?? "")) errors.push(`expeditions: the signal station's neighbours read ${JSON.stringify(near)}, ${ai} marked AI`);
   await pg.screenshot({ path: `${out}/150-expeditions-news.png` });
-  await pg.click(".island-news .revenge");
-  await pg.evaluate(() => window.advanceTime(200));
-  const panel = await pg.evaluate(() => JSON.parse(window.render_game_to_text()).camp?.panel ?? null);
-  if (panel !== "signal") errors.push(`expeditions: 遠征に出す opened ${panel}, not the signal station`);
   await close();
   // The factory's panel is the factory's alone (Option A: no expedition line).
   await open("factory");
@@ -128,26 +124,15 @@ export async function expeditionShots({ browser, port, out, errors }) {
   const away = await pg.evaluate(() => document.querySelector("#hub-exped .mod-head b")?.textContent ?? "");
   if (!/引き上げ中/.test(after[0]?.text ?? "") || after[0].recall || !/遠征 1 \//.test(away.trim())) errors.push(`expeditions: after a recall the factory lists ${JSON.stringify(after)} with ${away} away`);
   await pg.screenshot({ path: `${out}/152-expeditions-recalled.png` });
-  // The game's own island facing the waterworks answers with no server: its nodes open, and one sent goes on its way.
+  // E4: looking up an AI neighbour shows open nodes read-only, with no send button.
   await pg.click("#hub-exped .exp-near button:has(.ai-tag)");
   await pg.waitForTimeout(200);
-  const nodes = await pg.evaluate(() => document.querySelectorAll("#hub-exped .exp-target .exp-nodes button").length);
-  if (!nodes) errors.push("expeditions: the game's own island shows no node to send to");
-  else {
-    await pg.click("#hub-exped .exp-target .exp-nodes button");
-    await pg.click("#hub-exped .exp-go");
-    await pg.waitForTimeout(300);
-    const sent = await list();
-    if (sent.length !== 3 || !/向かっている/.test(sent[2]?.text ?? "")) errors.push(`expeditions: after sending to the game's own island the factory lists ${JSON.stringify(sent)}`);
-  }
+  const look = await pg.evaluate(() => ({
+    nodes: document.querySelectorAll("#hub-exped .exp-target .exp-nodes .exp-node").length,
+    send: !!document.querySelector("#hub-exped .exp-go"),
+  }));
+  if (!look.nodes || look.send) errors.push(`expeditions: AI neighbour look reads ${JSON.stringify(look)} (expect nodes > 0, no send)`);
   await pg.screenshot({ path: `${out}/154-expeditions-ai.png` });
-  // Two hours on, the expedition on the game's own island has taken its node or been lost: the signal station tells of it.
-  await pg.evaluate(() => window.ringfallAge(2 * 3_600_000));
-  await pg.waitForTimeout(100);
-  const told = await pg.evaluate(() => [...document.querySelectorAll(".exp-news li")].map((li) => li.textContent));
-  if (told.length !== 1 || !/保持|全滅/.test(told[0])) errors.push(`expeditions: what became of the expedition reads ${JSON.stringify(told)}`);
-  await pg.evaluate(() => document.querySelector("#hub-signal-news")?.scrollIntoView({ block: "start" }));
-  await pg.screenshot({ path: `${out}/157-expeditions-told.png` });
   await close();
   // The departure's map carries the arrow.
   await pg.evaluate(() => window.ringfallCamp.toGate());

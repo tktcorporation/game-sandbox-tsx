@@ -40,7 +40,7 @@ export type TermId =
   | "cutAndExtract"
   | "returningAlive"
   | "arrivedAtWarehouse"
-  | "takeBack"
+  | "attack"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -89,11 +89,15 @@ export const TERM = {
   cutAndExtract: "切り上げて生還",
   returningAlive: "生還中",
   arrivedAtWarehouse: "倉庫へ届いた",
-  takeBack: "取り返す",
   /**
-   * Signal-station verb (also answers an attack — was 仕返し / 送る).
-   * 【元】送る 【案】遠征に出す — docs/ringfall/glossary.md (adopted).
-   * 倉庫へ送る is TERM.sendToWarehouse (中継ボックス); BANNED 「送る」 is exact-match only.
+   * Map attack on a rival hold / neighbour front (E4). Was 取り返す.
+   * 【元】取り返す 【案】攻める — docs/ringfall/glossary.md (adopted).
+   */
+  attack: "攻める",
+  /**
+   * Legacy expedition verb (signal-station button removed under E4).
+   * 【元】送る 【案】遠征に出す — adopted, then button abolished.
+   * 倉庫へ送る is TERM.sendToWarehouse; BANNED 「送る」 is exact-match only.
    */
   sendExpedition: "遠征に出す",
   backToCamp: "野営地に戻る",
@@ -140,8 +144,9 @@ export function nextFrontCapture(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name} · ${TERM.captureCore}`;
 }
 
-export function nextTakeBack(name: string): string {
-  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.takeBack}`;
+/** Next-hand line for a rival hold on the front (E4: 攻める). */
+export function nextAttack(name: string): string {
+  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.attack}`;
 }
 
 export function moduleRaiseReady(moduleName: string): string {
@@ -167,11 +172,12 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
-  { bad: "仕返し", keep: "sendExpedition", note: "遠征に出す／取り返すに揃える" },
+  { bad: "仕返し", keep: "attack", note: "地図で攻める（E4）。信号所ボタンは置かない" },
+  { bad: "取り返す", keep: "attack", note: "攻めるに統合（E4）" },
   /**
    * Exact match only in lint (送る ⊂ 倉庫へ送る). 中継ボックスの「倉庫へ送る」は別 TERM.
    */
-  { bad: "送る", keep: "sendExpedition", note: "遠征に出す（来る遠征と対）。倉庫へ送るは別語" },
+  { bad: "送る", keep: "sendExpedition", note: "旧・遠征に出す。倉庫へ送るは別語。ボタンは廃止" },
 ];
 
 /**

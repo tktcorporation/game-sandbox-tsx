@@ -16,12 +16,12 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
-import { answerable, incomingLine, LOG_WORD, logLine, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
+import { incomingLine, LOG_WORD, logLine, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { UI, rarityText } from "./palette";
-import { PHRASE, TERM, nextFront, nextFrontCapture, nextTakeBack, relayOf } from "./copy";
+import { PHRASE, TERM, nextAttack, nextFront, nextFrontCapture, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -55,12 +55,12 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
 /**
  * The one next action after a raid or while idle in camp: grow the base if something can be
  * built or delivered, else go out again. Player-facing station names only. Incoming expeditions
- * and rival holds sit on the same line (defend / take back) — no separate multiplayer mode.
+ * and rival holds sit on the same line (defend / attack) — no separate multiplayer mode.
  */
 export function nextHandFor(p: Profile): string {
   if (incomingFor(p).length) return PHRASE.nextMapFortifyIncoming;
   const rival = rivalFrontPick(p);
-  if (rival) return nextTakeBack(rival.name);
+  if (rival) return nextAttack(rival.name);
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
   if (introFrontOpen(p.quests)) {
     const pick = frontPickFor(p);
@@ -100,8 +100,8 @@ export function overnightDefence(s: { battle: OvernightBattle }, settled?: Pick<
   return lines;
 }
 
-/** Whether the camp tip is a defend / take-back hand (one beat of juice, no new key). */
-export const tipIsDefence = (tip: string) => /来る遠征|取り返す/.test(tip);
+/** Whether the camp tip is a defend / attack hand (one beat of juice, no new key). */
+export const tipIsDefence = (tip: string) => tip.includes(TERM.incomingExpedition) || tip.includes(TERM.attack);
 
 export function itemName(i: Item | RewardItem): string {
   switch (i.t) {
@@ -489,15 +489,14 @@ export class Hub {
   }
 
   /**
-   * A log entry as marks: whose, what happened in a word, where; someone's attack also offers to
-   * answer it with 遠征に出す (opens the signal station on their island).
+   * A log entry as marks: whose, what happened in a word, where.
+   * E4: no 遠征に出す answer button — attack is on the map.
    */
   private newsMarks(n: IslandLogEntry): string {
     const who = n.by.name || n.by.code;
     const node = NODES[nodeIndex(n.node)]?.name ?? n.node;
     const mine = n.t === "wiped" || n.t === "retaken";
-    const back = answerable(n) ? `<button type="button" class="revenge" data-act="exp-revenge" data-arg="${esc(n.by.code)}">${flagIcon()}${TERM.sendExpedition}</button>` : "";
-    return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}${back}</li>`;
+    return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}</li>`;
   }
 
   /** Takes the island's news from the server (its log's new entries): the map table lists them and its mark tells of them until it is opened. */
@@ -606,11 +605,6 @@ export class Hub {
   private act(act: string, arg: string) {
     if (act === "open-signal") {
       sfx.click();
-      return this.open("signal");
-    }
-    if (act === "exp-revenge") {
-      // Answering an attack: the signal station opens on the island it came from.
-      this.exped.revenge(arg);
       return this.open("signal");
     }
     if (act.startsWith("exp-")) {
@@ -980,7 +974,7 @@ export class Hub {
   }
 
   /**
-   * The signal station's panel (信号所): 遠征に出す and 島の知らせの控え.
+   * The signal station's panel (信号所): お隣・島の知らせの控え（遠征ボタンなし・E4）.
    * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
    */
   private signalPanel(): string {
@@ -1385,7 +1379,7 @@ export class Hub {
         : [
             "攻める拠点",
             rival
-              ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を取り返す`
+              ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を${TERM.attack}`
               : pick
                 ? frontQ
                   ? `${esc(pick.name)} · ${TERM.captureCore}`
