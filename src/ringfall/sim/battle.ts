@@ -127,6 +127,11 @@ export interface BattleStart {
   rivals?: readonly RivalExpedition[];
   /** The player's nodes still shut to expeditions as the raid starts (fortified in an earlier raid, docs/ringfall/multiplayer.md); left out, none. */
   shut?: readonly NodeId[];
+  /**
+   * Nodes announced for 固める without lending robot squads (X2 short-raid notices on the lease,
+   * and `Profile.incoming`). Merged into `Battle.noticed`.
+   */
+  noticed?: readonly NodeId[];
   /** The factory's squads out on expeditions (meta/expeditions.ts `squadsAway()`); left out, none. */
   away?: number;
 }
@@ -349,6 +354,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
     for (let k = 0; k < FACTORY.levels[factory].turrets + heldUnlocks(s.nodes, "turret").reduce((n, id) => n + (UNLOCKS[id].turret ?? 0), 0); k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
   addRivals(s, b, start.rivals ?? [], start.shut ?? []);
+  addNoticed(b, start.noticed ?? []);
   return b;
 }
 
@@ -376,15 +382,24 @@ function addRivals(s: Pick<State, "nodes">, b: Battle, rivals: readonly RivalExp
   }
 }
 
+/** Announce nodes for 固める without lending robot squads (X2 notices). */
+function addNoticed(b: Battle, nodes: readonly NodeId[]) {
+  for (const id of nodes) {
+    const i = nodeIndex(id);
+    if (i >= 0 && !b.noticed.includes(i)) b.noticed.push(i);
+  }
+}
+
 /**
  * The raid under way takes in other players' expeditions its start did not have (the island's
  * server answered after the raid began): as `BattleStart.rivals` and `shut` would have brought
  * them. False for a raid with no battle, or one whose battle is over.
  */
-export function takeRivals(s: State, rivals: readonly RivalExpedition[], shut: readonly NodeId[] = []): boolean {
+export function takeRivals(s: State, rivals: readonly RivalExpedition[], shut: readonly NodeId[] = [], noticed: readonly NodeId[] = []): boolean {
   const b = s.battle;
   if (!b || b.done) return false;
   addRivals(s, b, rivals, shut);
+  addNoticed(b, noticed);
   return true;
 }
 

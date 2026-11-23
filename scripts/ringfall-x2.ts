@@ -4,7 +4,8 @@
  *
  * Run: `npx tsx scripts/ringfall-x2.ts`; ends with "x2 ok".
  */
-import { assaultNoticeSec, assaultOf, assaultReady, scheduleAssault } from "../src/ringfall/meta/assault";
+import { assaultAcked, assaultNoticeSec, assaultOf, assaultReady, assaultWinRejected, assaultWon, scheduleAssault } from "../src/ringfall/meta/assault";
+import { fortifiable } from "../src/ringfall/sim/front";
 import { assaultTarget, planIncursion, planShortRaid, SHORT_RAID_EXTRA, stageNodes } from "../src/ringfall/meta/incursion";
 import { aiIsland, aiNodes, aiView, aiNextId } from "../src/ringfall/meta/ai-islands";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
@@ -185,6 +186,28 @@ check(fullRival, "full plan still mirrors all owner nodes");
   check((settled.trophies?.after ?? 0) > beforeTrop, "settle: trophies did not rise");
   check(settled.profile.poiState[target]?.state === homeBefore[target]?.state, "settle: home poiState rewritten");
   check(settled.profile.expeditions.some((e) => e.code === a.code && e.state === "holding"), "settle: assault not holding");
+  check(settled.profile.expeditions.some((e) => e.code === a.code && e.x2Pending), "settle: x2 win not pending confirm");
+}
+
+// Defender battle: X2 noticed enables 固める without lending robots (Codex #199 P1).
+{
+  const home = newRun(31, starterKit(), "reservoir", {
+    island: { [target]: "freed" },
+    battle: { factory: 0, noticed: [target] },
+  });
+  check(!!home.battle?.noticed.includes(nodeIndex(target)), "noticed: battle missing X2 target");
+  check(fortifiable(home, nodeIndex(target)), "noticed: fortifiable false for X2 target");
+  check(!home.battle?.rivals.length, "noticed: X2 spawned rival robots");
+}
+
+// Pending win rejection rolls back trophies (Codex #199 P2).
+{
+  const list = assaultWon([{ code: "BBBBBB", node: target, sentAt: 0, id: 3, units: 1, state: "coming", x2: true }], "BBBBBB", 30);
+  check(list[0]?.x2Pending && list[0]?.tropGain === 30, "pending: win not marked");
+  const { list: rolled, tropGain } = assaultWinRejected(list, "BBBBBB");
+  check(tropGain === 30 && !rolled.some((e) => e.code === "BBBBBB"), "pending: reject did not clear");
+  const acked = assaultAcked(list, "BBBBBB");
+  check(acked.some((e) => e.code === "BBBBBB" && e.state === "holding" && !e.x2Pending), "pending: ack left pending");
 }
 
 // Smoke steps on a short-raid run.

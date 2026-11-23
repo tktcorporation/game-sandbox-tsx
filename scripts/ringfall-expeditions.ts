@@ -602,8 +602,9 @@ const T2 = T1 + 400_000;
   check(x2TooSoon.status === 409 && (x2TooSoon.body as { error?: string }).error === "assault-not-ready", "x2: assault before notice");
   run(x2Isle, T1 + NOTICE + 5000);
   check(x2Isle.expeditions[0]?.arrived && x2Isle.expeditions[0]?.x2 && !x2Isle.expeditions[0]?.holding && x2Isle.holds[quarry] === "freed", "x2: numeric fight took the node");
-  const x2Lease = op(x2Isle, { t: "lease", player: A.id }, T1 + NOTICE + 6000).body as { expeditions: unknown[] };
+  const x2Lease = op(x2Isle, { t: "lease", player: A.id }, T1 + NOTICE + 6000).body as { expeditions: unknown[]; noticed?: string[] };
   check(x2Lease.expeditions.length === 0, "x2: lease lent the short-raid notice as robots");
+  check(Array.isArray(x2Lease.noticed) && x2Lease.noticed.includes("quarry"), "x2: lease omitted noticed for 固める");
   op(x2Isle, { t: "unlease", player: A.id }, T1 + NOTICE + 7000);
   // Fortify during notice, then assault refused.
   const x2Fort = island({ quarry: "freed", supply: "freed" }, 0);

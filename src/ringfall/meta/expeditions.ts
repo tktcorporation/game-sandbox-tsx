@@ -38,6 +38,10 @@ export interface Outgoing {
    * target node or auto-resolve via `aiOutcome` (the player raids the subset themselves).
    */
   x2?: true;
+  /** X2 result awaiting `reportAssault` confirmation on the defender's island. */
+  x2Pending?: true;
+  /** Trophy gain from a pending X2 win — rolled back if the server rejects the report. */
+  tropGain?: number;
 }
 
 /** An island as anyone sees it (`GET /api/islands/:code`, `publicView()` in worker/island.ts). */
@@ -252,7 +256,7 @@ export interface LentIn {
 }
 
 /** A lease as the server answered it: until when the island leaves the expeditions alone, those at nodes and of kinds the game knows, and the nodes still shut to them (fortified in an earlier raid); null when unreadable. */
-export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]; shut: NodeId[] } | null {
+export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]; shut: NodeId[]; noticed: NodeId[] } | null {
   if (!isObj(raw) || typeof raw.until !== "number" || !Array.isArray(raw.expeditions)) return null;
   const expeditions = raw.expeditions.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;
@@ -261,7 +265,9 @@ export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]
     return [{ id: e.id, by, target: e.target as NodeId, kinds: e.kinds as EnemyKind[], state: e.state as LentIn["state"] }];
   });
   const shut = Array.isArray(raw.shut) ? NODES.filter((n) => (raw.shut as unknown[]).includes(n.id)).map((n) => n.id) : [];
-  return { until: raw.until, expeditions, shut };
+  // X2 short-raid targets for 固める (no robot squads lent).
+  const noticed = Array.isArray(raw.noticed) ? NODES.filter((n) => (raw.noticed as unknown[]).includes(n.id)).map((n) => n.id) : [];
+  return { until: raw.until, expeditions, shut, noticed };
 }
 
 /** Seconds into a raid's battle up to which a lease answered late is still taken in (`takeRivals()` in sim/battle.ts): well before the first expedition sets off (`LANDING.first`). */
@@ -446,10 +452,13 @@ export function parseOutgoing(raw: unknown): Outgoing[] {
         units: o.units as number,
         state: o.state as ExpeditionState,
         ...(o.x2 === true ? { x2: true as const } : {}),
+        ...(o.x2Pending === true ? { x2Pending: true as const } : {}),
+        ...(typeof o.tropGain === "number" && Number.isFinite(o.tropGain) && o.tropGain > 0 ? { tropGain: Math.round(o.tropGain) } : {}),
       }),
     );
   let over = all.length - KEPT;
-  const kept = over > 0 ? all.filter((o) => !(o.state === "gone" && over-- > 0)) : all;
+  // Keep pending X2 results until the server confirms — do not trim them as ordinary gone.
+  const kept = over > 0 ? all.filter((o) => !((o.state === "gone" && !o.x2Pending) && over-- > 0)) : all;
   return kept.slice(-KEPT);
 }
 

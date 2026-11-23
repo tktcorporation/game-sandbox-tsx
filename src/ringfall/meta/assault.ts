@@ -55,11 +55,46 @@ export function scheduleAssault(
 }
 
 /** Mark the assault holding after a successful X2 制圧 (defender lost the node on their copy). */
-export function assaultWon(list: readonly Outgoing[], code: string): Outgoing[] {
-  return list.map((o) => (o.code === code && o.state !== "gone" && o.state !== "recalling" ? { ...o, state: "holding" as const } : o));
+export function assaultWon(list: readonly Outgoing[], code: string, tropGain = 0): Outgoing[] {
+  return list.map((o) =>
+    o.code === code && o.state !== "gone" && o.state !== "recalling"
+      ? {
+          ...o,
+          state: "holding" as const,
+          ...(o.x2 && o.id > 0 ? { x2Pending: true as const, ...(tropGain > 0 ? { tropGain } : {}) } : {}),
+        }
+      : o,
+  );
 }
 
 /** Drop / mark gone when the short raid failed to take the target. */
 export function assaultLost(list: readonly Outgoing[], code: string): Outgoing[] {
-  return list.map((o) => (o.code === code && (o.state === "coming" || o.state === "attacking" || o.state === "waiting") ? { ...o, state: "gone" as const } : o));
+  return list.map((o) =>
+    o.code === code && (o.state === "coming" || o.state === "attacking" || o.state === "waiting")
+      ? { ...o, state: "gone" as const, ...(o.x2 && o.id > 0 ? { x2Pending: true as const } : {}), tropGain: undefined }
+      : o,
+  );
+}
+
+/** Clear the pending flag after the defender's island accepted the assault report. */
+export function assaultAcked(list: readonly Outgoing[], code: string): Outgoing[] {
+  return list
+    .map((o) => (o.code === code && o.x2Pending ? { ...o, x2Pending: undefined, tropGain: undefined } : o))
+    .filter((o) => o.state !== "gone" || o.x2Pending);
+}
+
+/**
+ * Server rejected a pending win (day-limit / fortified / node gone): drop the holding mark and
+ * return the trophy gain to reverse locally.
+ */
+export function assaultWinRejected(list: readonly Outgoing[], code: string): { list: Outgoing[]; tropGain: number } {
+  let tropGain = 0;
+  const next = list
+    .map((o) => {
+      if (o.code !== code || !o.x2Pending) return o;
+      tropGain += o.tropGain ?? 0;
+      return { ...o, state: "gone" as const, x2Pending: undefined, tropGain: undefined };
+    })
+    .filter((o) => o.state !== "gone" || o.x2Pending);
+  return { list: next, tropGain };
 }

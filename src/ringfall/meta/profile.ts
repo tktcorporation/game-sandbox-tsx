@@ -740,8 +740,11 @@ export function settle(p: Profile, s: State): Settlement {
   }
   if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
   // X2: the outbound assault becomes holding on a win, gone on a miss (same list as 来る遠征 notice).
+  // Real islands keep `x2Pending` until `reportAssault` confirms (or a rejection rolls trophies back).
   if (s.incursion) {
-    const expeditions = incursionWonEarly ? assaultWon(night.expeditions, s.incursion.code) : assaultLost(night.expeditions, s.incursion.code);
+    const expeditions = incursionWonEarly
+      ? assaultWon(night.expeditions, s.incursion.code, trop.gained)
+      : assaultLost(night.expeditions, s.incursion.code);
     if (expeditions !== night.expeditions) Object.assign(night, { expeditions });
   }
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
@@ -763,9 +766,11 @@ export function settle(p: Profile, s: State): Settlement {
   if (liberated) Object.assign(night, { poiState: { ...newIsland(), ...Object.fromEntries(Object.entries(night.poiState).filter(([, v]) => rivalOf(v.state) !== null)) }, factory: 0, cycle: liberated.cycle, cycleDay: night.day, liberations: [...p.liberations, liberated.days].slice(-50), expeditions: recallAll(night.expeditions) });
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
-  // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped.
+  // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped
+  // (except X2 results still awaiting the defender island's `reportAssault`).
   const away = awayIncome(night);
-  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils + away, expeditions: night.expeditions.filter((e) => e.state !== "gone") } : { ...night, cash: night.cash + income + spoils };
+  const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone" || e.x2Pending);
+  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils + away, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.

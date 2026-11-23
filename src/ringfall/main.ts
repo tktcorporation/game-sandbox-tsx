@@ -21,7 +21,7 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, aiScouted, incomingFor, isAi, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, reportAssault, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
@@ -280,12 +280,7 @@ function onEvent(e: GameEvent, s: State) {
     settlement = settled;
     hub.reload(settled.profile);
     saveProfile(hub.profile);
-    // X2 on a real neighbour: server confirms the node move so both sides sync (trophies via applySync).
-    if (settled.incursion && !isAi(settled.incursion.code)) {
-      const inc = settled.incursion;
-      const out = settled.profile.expeditions.find((e) => e.code === inc.code && e.x2 && e.id > 0);
-      if (out) void reportAssault(inc.code, out.id, !!inc.won);
-    }
+    // X2 on a real neighbour: pending results are flushed (and retried) with the island sync.
     sendIsland(settled, s);
     syncIsland(settled.profile, s);
     // The game's own islands' part in the raid, as their log would tell it: on the results and the map table.
@@ -356,6 +351,14 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     void flushRecalls(
       () => hub.profile,
       (q) => hub.update(q),
+    );
+    // X2 results still awaiting the defender island (network / late) — confirm or roll back a rejected win.
+    void flushAssaultReports(
+      () => hub.profile,
+      (q) => {
+        hub.update(q);
+        saveProfile(hub.profile);
+      },
     );
     if (!r.ok) return;
     // The next raid is under way only once a new run replaced the settled one: the results of the
@@ -674,7 +677,7 @@ function askDepart(walk: boolean) {
     // A newer departure asks for itself, and the island answers it with the same lease.
     if (!r.ok || leaseReq !== req) return;
     if (req.on === "open") lease = r.body;
-    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut)) {
+    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut, r.body.noticed)) {
       raidLent = r.body.expeditions;
       hud.addRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
     }
@@ -845,7 +848,15 @@ function start(go: Launch, from?: State) {
     // X2 short raid: no home battle — the stage is a few rival nodes on the copy.
     battle: x2
       ? undefined
-      : { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
+      : {
+          factory: hub.profile.factory,
+          away: squadsAway(hub.profile),
+          targets: tonight(hub.profile),
+          rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
+          shut: lent?.shut,
+          // X2 notices (lease + synced incoming) for 固める without lending robots.
+          noticed: [...new Set([...(lent?.noticed ?? []), ...incomingFor(hub.profile).map((e) => e.node)])],
+        },
     finale: x2 ? false : finaleOpen(hub.profile),
     ...(x2
       ? { incursion: { code: x2.code, owner: x2.owner, target: x2.target, parcels: x2.parcels } }

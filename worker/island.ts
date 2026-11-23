@@ -636,9 +636,10 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
  * holds nobody off. A node fortified in an earlier raid and still shut is named, so the raid keeps
  * it shut, and its report cannot say it fell.
  */
-function lease(s: IslandState, now: number): { until: number; expeditions: Lent[]; shut: string[]; wrote: boolean } {
+function lease(s: IslandState, now: number): { until: number; expeditions: Lent[]; shut: string[]; noticed: string[]; wrote: boolean } {
   const standing = s.lease && now < s.lease.until ? s.lease : null;
-  // X2 notices are not lent into the owner's raid as robots — the sender plays the short raid after notice.
+  // X2 notices are not lent as robots — the sender plays the short raid — but their targets stay
+  // `noticed` so the owner can 固める in this raid (`Battle.noticed` / fortified report).
   const ids = standing ? standing.ids : s.expeditions.filter((e) => !e.x2).map((e) => e.id);
   const until = standing ? standing.until : now + EXPEDITION.lease * 1000;
   if (!standing) s.lease = ids.length ? { until, ids } : null;
@@ -647,7 +648,10 @@ function lease(s: IslandState, now: number): { until: number; expeditions: Lent[
     .map((e): Lent => ({ id: e.id, by: { ...e.by }, target: NODE_IDS[e.target], kinds: e.units.map((u) => u.kind), state: e.holding ? "holding" : e.arrived ? "attacking" : "coming" }));
   // The nodes still shut from an earlier raid stay shut in this one.
   const shut = NODE_IDS.filter((_, i) => fortUntil(s, i) > now);
-  return { until, expeditions, shut, wrote: !standing && ids.length > 0 };
+  const noticed = [
+    ...new Set(s.expeditions.filter((e) => e.x2 && !e.holding).map((e) => NODE_IDS[e.target])),
+  ];
+  return { until, expeditions, shut, noticed, wrote: !standing && ids.length > 0 };
 }
 
 /**
@@ -716,7 +720,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (op.t === "lease") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const l = lease(s, now);
-    return done(200, { ok: true, until: l.until, expeditions: l.expeditions, shut: l.shut }, l.wrote);
+    return done(200, { ok: true, until: l.until, expeditions: l.expeditions, shut: l.shut, noticed: l.noticed }, l.wrote);
   }
   if (op.t === "unlease") {
     // The raid the lease was for is not taking the expeditions in: the island reckons them again from now.

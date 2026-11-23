@@ -11,8 +11,10 @@ import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
 import { aiBusy, aiByCode, aiChanges, aiIncoming, aiLent, aiNextId, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { assaultAcked, assaultWinRejected } from "./meta/assault";
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
+import { clampTrophies, TROPHY } from "./meta/trophies";
 import type { NodeId } from "./sim/map";
 
 /** An answer: the body of a success, or why it failed. */
@@ -255,6 +257,32 @@ export async function reportAssault(code: string, id: number, won: boolean, time
   );
 }
 
+/** Server answers that mean a pending X2 win cannot land — roll back local holding / trophies. */
+const ASSAULT_WIN_REJECT: ReadonlySet<string> = new Set(["day-limit", "fortified", "node-not-open", "not-assault", "no-expedition", "already-resolved", "protected", "closed-node"]);
+
+/**
+ * Sends each pending X2 result (`Outgoing.x2Pending`) to the defender's island. Retries network
+ * failures later; on an explicit win rejection, drops the local hold and reverses `tropGain`.
+ */
+export async function flushAssaultReports(get: () => Profile, put: (p: Profile) => void): Promise<void> {
+  for (const o of get().expeditions.filter((e) => e.x2 && e.x2Pending && e.id > 0)) {
+    const won = o.state === "holding";
+    const r = await reportAssault(o.code, o.id, won);
+    const p = get();
+    if (r.ok || (!won && (r.error === "no-expedition" || r.error === "no-island"))) {
+      const expeditions = assaultAcked(p.expeditions, o.code);
+      if (expeditions !== p.expeditions) put({ ...p, expeditions });
+      continue;
+    }
+    if (won && ASSAULT_WIN_REJECT.has(r.error)) {
+      const { list, tropGain } = assaultWinRejected(p.expeditions, o.code);
+      const trophies = tropGain > 0 ? clampTrophies((p.trophies ?? TROPHY.start) - tropGain) : p.trophies;
+      put({ ...p, expeditions: list, ...(trophies !== p.trophies ? { trophies } : {}) });
+    }
+    // network / soft errors: leave pending for the next sync.
+  }
+}
+
 /** What a raid's report says beside the island's holds: what became of the expeditions it took in, and the nodes sent at that it fortified. */
 export interface RaidReport {
   lent: { id: number; left: number; waiting?: true }[];
@@ -269,7 +297,7 @@ export interface RaidReport {
  * The owner's raid takes in the expeditions on the island (`POST …/lease`): the island leaves them
  * alone until the raid's report, or until `until`. With no island yet, or no server, nothing.
  */
-export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[]; shut: NodeId[] }>> {
+export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[]; shut: NodeId[]; noticed: NodeId[] }>> {
   await releasing;
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
