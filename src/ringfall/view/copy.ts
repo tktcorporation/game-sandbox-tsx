@@ -130,6 +130,11 @@ export function nextFront(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name}`;
 }
 
+/** First sessions: same as nextFront, with 核 · 制圧 so the line's middle is named. */
+export function nextFrontCapture(name: string): string {
+  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name} · ${TERM.captureCore}`;
+}
+
 export function nextTakeBack(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.takeBack}`;
 }

@@ -17,7 +17,7 @@ const KEY = "ringfall.profile.v1";
 /** A mid-game base: the hideout half built, the factory at its first level, the trader's delivery quest open. */
 const BASE = {
   v: 13, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, day: 15, depots: ["quarry"], seen: "",
-  quests: { progress: {}, done: ["grunts", "village", "medbay"] },
+  quests: { progress: {}, done: ["front", "grunts", "village", "medbay"] },
   hideout: { infirmary: 1, workbench: 1, storage: 1, radio: 0, pouch: 1 },
   stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "valuable", kind: "fuse" }],
 };

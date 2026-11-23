@@ -7,7 +7,7 @@ import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Cont
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
 import { advanceDay, departDepots, unlocked, type DayChange, type FrontChange, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
 import type { IslandEvent } from "../sim/island";
-import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
+import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, withFrontMigrated, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
@@ -1055,7 +1055,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     extracted: num(o.extracted),
     time: num(o.time),
     // The intro quest to build the generator, done, counts as the one to build the infirmary.
-    quests: { progress, done: Array.isArray(q.done) ? [...new Set(q.done.map((d) => (d === "power" ? "medbay" : d)))].filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : [] },
+    // A save from before the front intro that already finished another intro counts front done.
+    quests: { progress, done: withFrontMigrated(Array.isArray(q.done) ? [...new Set(q.done.map((d) => (d === "power" ? "medbay" : d)))].filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : []) },
     region,
     entry,
     entries,

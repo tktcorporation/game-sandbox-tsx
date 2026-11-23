@@ -19,7 +19,7 @@ const valuables = (list) => list.flatMap(([kind, n]) => Array.from({ length: n }
 /** A mid-game base: every module at Lv1 (the storage at 2), the factory at Lv1, the quarry held (its squad flag, the rare shelf). */
 const BASE = {
   v: 19, cash: 5200, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, day: 12, depots: ["supply", "quarry"], seen: "",
-  quests: { progress: {}, done: ["grunts", "village", "medbay", "parts"] },
+  quests: { progress: {}, done: ["front", "grunts", "village", "medbay", "parts"] },
   hideout: { infirmary: 1, workbench: 1, storage: 2, radio: 1, pouch: 1 },
   factory: 1,
   poiState: { supply: { state: "freed" }, quarry: { state: "freed" }, relay: { state: "held" }, pad: { state: "held" }, wreck: { state: "held" }, yard: { state: "held" }, smelter: { state: "held" } },

@@ -135,7 +135,7 @@ takes (`issuedHeals()`), and what is left of them comes home like any other heal
 records what it took (`Profile.lastKit`) and the shelves pick it again while the stash holds things
 like it, a weapon slot left empty taking a starter weapon (`recallLoadout()`). The valuables still wanted (`wanted()`, for the stash's notes and the order in
 which `settle()` keeps what fits) count the factory's levels as well as the hideout's.
-The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
+The trader's quests are data in `meta/quests.ts` (`QUESTS`: five intro quests (front first); credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
 also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
 `Profile.seed`, `Profile.day`, the island and the hideout (take a POI on the front by its core,
 fetch a valuable from a POI's bins, destroy a drone pack or a region's hunting party; numbers in
