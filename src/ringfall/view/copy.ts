@@ -152,6 +152,8 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
+  { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
+  { bad: "仕返し", keep: "sendExpedition", note: "送る／取り返すに揃える" },
 ];
 
 /** No pending synonyms — adopted ones moved to BANNED. */

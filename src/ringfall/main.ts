@@ -556,18 +556,6 @@ const loaded = loadProfile();
 const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => lock());
 // The game's own islands answer from the profile the page plays (island-net.ts, AI の島).
 useAi(() => hub.profile);
-// Signal-station 出撃 into another island's copy (raid-loot stage 6).
-hub.setIncursionStart((go) => {
-  if (fading) return;
-  fading = true;
-  sfx.deploy();
-  fade(true);
-  setTimeout(() => {
-    fading = false;
-    start(go);
-    requestAnimationFrame(() => fade(false));
-  }, 480);
-});
 const campView = new CampView();
 const picker = new DepartPicker(hub, () => answerDepart(true));
 // The title's one line on the goal: the island's six nodes, filled blue as far as this save has taken them.
@@ -826,35 +814,20 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
-  const inc = go.incursion;
   state = newRun(go.seed, kit, region, {
     depots: hub.profile.depots,
     seen: hub.profile.seen,
     from: go.from,
     entry: go.entry,
     routes: hub.profile.routes,
-    // Lead-incursion plays on the other island's copy; home holds stay put until settle strips captures.
-    island: inc ? inc.island : holds(hub.profile),
-    record: inc ? undefined : record,
-    fetch: inc ? undefined : fetch,
-    event: inc ? null : hub.profile.events[0],
-    threat: inc ? 0 : raidThreat(hub.profile),
+    island: holds(hub.profile),
+    record,
+    fetch,
+    event: hub.profile.events[0],
+    threat: raidThreat(hub.profile),
     known: hub.profile.known,
-    // No home battle on a copy raid — only 核 · 制圧 of the target feeds loot.
-    battle: inc
-      ? undefined
-      : { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
-    finale: inc ? false : finaleOpen(hub.profile),
-    ...(inc
-      ? {
-          incursion: {
-            code: inc.code,
-            owner: inc.owner,
-            target: inc.target,
-            parcels: inc.parcels.map((q) => ({ id: q.id, poi: q.poi, kind: q.kind, from: { ...q.from } })),
-          },
-        }
-      : {}),
+    battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
+    finale: finaleOpen(hub.profile),
   });
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
@@ -864,8 +837,7 @@ function start(go: Launch, from?: State) {
       leaseReq.raid = state;
     }
   }
-  if (inc) hud.setCaptureTask(nodeIndex(inc.target));
-  else hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
+  hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   hud.setRaidsDone(hub.profile.raids);
   // Passive traces only: rivals / incoming, no legend or new noun (ux-design M5).
   const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];

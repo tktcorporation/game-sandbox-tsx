@@ -68,7 +68,7 @@ export async function expeditionShots({ browser, port, out, errors }) {
   if (!/となり.*中継塔.*6h/.test(news)) errors.push(`expeditions: the map table's warning reads "${news}"`);
   await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
   await close();
-  // The island's news as marks: someone's attack offers 仕返し, which opens the factory on their island.
+  // The island's news as marks: someone's attack offers 送る, which opens the signal station on their island.
   await pg.evaluate(() =>
     window.ringfallNews([
       { seq: 2, at: 0, t: "taken", node: "yard", by: { code: "Z3P9TR", name: "となり" } },
@@ -88,7 +88,7 @@ export async function expeditionShots({ browser, port, out, errors }) {
   await pg.screenshot({ path: `${out}/156-camp-signal.png` });
   await open("signal");
   const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news.signal-news li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
-  if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the signal station's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
+  if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the signal station's news shows ${answer.items} items and ${answer.buttons} 送る, not 2 and 1`);
   // News that comes while the station is open shows at once.
   await pg.evaluate(() => window.ringfallNews([{ seq: 3, at: 0, t: "landed", node: "relay", by: { code: "H4N8WD", name: "砂丘の人" } }]));
   const more = await pg.evaluate(() => document.querySelectorAll(".island-news.signal-news li").length);
@@ -102,12 +102,12 @@ export async function expeditionShots({ browser, port, out, errors }) {
   await pg.click(".island-news .revenge");
   await pg.evaluate(() => window.advanceTime(200));
   const panel = await pg.evaluate(() => JSON.parse(window.render_game_to_text()).camp?.panel ?? null);
-  if (panel !== "signal") errors.push(`expeditions: 仕返し opened ${panel}, not the signal station`);
+  if (panel !== "signal") errors.push(`expeditions: 送る opened ${panel}, not the signal station`);
   await close();
-  // The factory's panel is the factory's alone: the squads out on expeditions in a line, nothing to send from.
+  // The factory's panel is the factory's alone (Option A: no expedition line).
   await open("factory");
-  const factory = await pg.evaluate(() => ({ exped: !!document.querySelector("#hub-exped"), away: document.querySelector(".factory-away")?.textContent ?? "" }));
-  if (factory.exped || !/遠征\s*2/.test(factory.away)) errors.push(`expeditions: the factory's panel reads ${JSON.stringify(factory)}`);
+  const factory = await pg.evaluate(() => ({ exped: !!document.querySelector("#hub-exped"), away: !!document.querySelector(".factory-away") }));
+  if (factory.exped || factory.away) errors.push(`expeditions: the factory's panel still shows expeditions ${JSON.stringify(factory)}`);
   await pg.screenshot({ path: `${out}/155-expeditions-factory-only.png` });
   await close();
   // The signal station: the expeditions out, each with its state and its recall.

@@ -1638,14 +1638,13 @@ export class Hud {
       // One beat when the return closed a defence result (design-direction juice, no new noun).
       nextEl.classList.toggle("defence-beat", !!overnight.length);
     }
-    // Overnight defence closes into 島の知らせ (same words as the signal station / toast).
-    const allNews = [...overnight, ...news];
+    // Overnight defence + outgoing expeditions close into one 島の知らせ.
+    const allNews = [...overnight, ...expNews, ...news];
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
       island +
       growth +
       defence +
-      (expNews.length ? `<h3>遠征の知らせ</h3><p>${expNews.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "") +
       `<div id="island-news">${newsBlock(allNews)}</div>` +
       events +
       contract +

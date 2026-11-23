@@ -4983,41 +4983,25 @@ body.touch .bag-card:nth-last-child(n + 3) {
   padding-top: 8px;
   border-top: 1px solid rgb(var(--white-rgb) / 0.12);
 }
-/* The factory's path to the signal station (ux-design M2): expeditions live there. */
-.factory-away {
-  margin: 8px 0 0;
-}
-button.factory-signal {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
+/* Island codes folded away from daily entry (Option A); お隣 cards are primary. */
+.exp-codes {
   margin: 0;
-  padding: 8px 10px;
-  border: 1px solid rgb(var(--own-rgb) / 0.35);
-  background: rgb(var(--own-rgb) / 0.12);
-  color: var(--own-light);
-  font: inherit;
+}
+.exp-codes > summary {
+  cursor: pointer;
+  color: var(--muted);
   font-size: 13px;
   font-weight: 800;
-  text-align: left;
-  cursor: pointer;
+  list-style: none;
 }
-button.factory-signal:hover {
-  background: rgb(var(--own-rgb) / 0.2);
+.exp-codes > summary::-webkit-details-marker {
+  display: none;
 }
-button.factory-signal span {
-  margin-left: auto;
-  font-size: 12px;
+.exp-codes[open] > summary {
+  margin-bottom: 6px;
   color: var(--mist);
-  font-weight: 800;
 }
-button.factory-signal b {
-  font-family: var(--num);
-  font-size: 16px;
-  color: var(--own-light);
-}
-/* The island's news on the signal station: a line each, an attack with its 仕返し. */
+/* The island's news on the signal station: one list; an attack offers 送る. */
 #hub ul.island-news.signal-news {
   margin: 0;
   padding: 0;
@@ -5271,10 +5255,6 @@ button.factory-signal b {
   display: inline-flex;
   margin-left: 8px;
   vertical-align: -2px;
-}
-/* Lead-incursion 出撃 beside 送る (raid-loot stage 6). */
-#hub .exp-go.exp-raid {
-  margin-left: 8px;
 }
 .exp-target .exp-go {
   margin-top: 8px;

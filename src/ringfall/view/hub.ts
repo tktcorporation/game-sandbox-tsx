@@ -16,8 +16,7 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
-import type { IncursionPlan } from "../meta/incursion";
-import { answerable, homeSquads, incomingLine, LOG_WORD, logLine, squadsAway, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
+import { answerable, incomingLine, LOG_WORD, logLine, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -402,10 +401,6 @@ export interface Launch {
   seed: number;
   from?: PoiId;
   entry: EntryId;
-  /**
-   * Lead-incursion onto another island's copy (raid-loot stage 6). Left out, a normal home raid.
-   */
-  incursion?: IncursionPlan;
 }
 
 /**
@@ -456,9 +451,6 @@ export class Hub {
   private news: IslandLogEntry[] = [];
   private newsSeen = true;
 
-  /** Starts a lead-incursion Launch from the signal station (main wires this). */
-  private startIncursion: ((go: Launch) => void) | null = null;
-
   constructor(
     public profile: Profile,
     private closed: () => void,
@@ -472,7 +464,6 @@ export class Hub {
       () => this.profile,
       (p) => this.set(p),
       (n) => this.takeNews(n),
-      (plan) => this.launchIncursion(plan),
     );
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
@@ -494,13 +485,13 @@ export class Hub {
 
   /**
    * A log entry as marks: whose, what happened in a word, where; someone's attack also offers to
-   * answer it (仕返し), which opens the factory's expeditions on their island.
+   * answer it with 送る (opens the signal station on their island).
    */
   private newsMarks(n: IslandLogEntry): string {
     const who = n.by.name || n.by.code;
     const node = NODES[nodeIndex(n.node)]?.name ?? n.node;
     const mine = n.t === "wiped" || n.t === "retaken";
-    const back = answerable(n) ? `<button type="button" class="revenge" data-act="exp-revenge" data-arg="${esc(n.by.code)}">${flagIcon()}仕返し</button>` : "";
+    const back = answerable(n) ? `<button type="button" class="revenge" data-act="exp-revenge" data-arg="${esc(n.by.code)}">${flagIcon()}${TERM.sendExpedition}</button>` : "";
     return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}${back}</li>`;
   }
 
@@ -873,32 +864,6 @@ export class Hub {
     return { kit, region: this.region, seed: this.profile.seed, from: from ?? undefined, entry };
   }
 
-  /**
-   * Lead-incursion from the signal station: take the shelves' kit and hand the Launch to main.
-   * Same 出撃 verb as the gate — no departure map (the target is already picked).
-   */
-  private launchIncursion(plan: IncursionPlan) {
-    if (!this.startIncursion) return;
-    const taken = takeKit(this.profile, this.startLoad(), null);
-    if (!taken) return;
-    const { profile, kit } = taken;
-    this.set({ ...profile, region: plan.region, entry: plan.entry });
-    this.load = emptyLoadout();
-    this.close(false);
-    this.startIncursion({
-      kit,
-      region: plan.region,
-      seed: this.profile.seed,
-      entry: plan.entry,
-      incursion: plan,
-    });
-  }
-
-  /** Wires main's raid start for a lead-incursion from the signal station. */
-  setIncursionStart(fn: (go: Launch) => void) {
-    this.startIncursion = fn;
-  }
-
   /** The contract taken for the next raid, or null. */
   contract(): Contract | null {
     return takenContract(this.profile);
@@ -1005,41 +970,33 @@ export class Hub {
       `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}${TERM.factory}</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
       `<div class="mod-body"><h4 class="fac-sub">今の${TERM.factory}</h4>${now}${nodes}` +
       `<h4 class="fac-sub">${next ? TERM.nextLevel : TERM.lastLevel}</h4>${gain}${cost}` +
-      `${fold}${this.factoryLadder ? ladder(levels, lv) : ""}</div></div>` +
-      // Always a path to the signal station: expeditions live there, not on this panel.
-      `<p class="factory-away"><button type="button" class="factory-signal" data-act="open-signal">${flagIcon()}遠征・島の番号へ` +
-      (squadsAway(p) ? `<span>守り <b>${homeSquads(p)}</b>　${TERM.expedition} <b>${squadsAway(p)}</b></span>` : `<span>${TERM.signal}</span>`) +
-      `</button></p>`
+      `${fold}${this.factoryLadder ? ladder(levels, lv) : ""}</div></div>`
     );
   }
 
   /**
-   * The signal station's panel (信号所): everything to do with the other islands, apart from the
-   * factory. The expeditions' section (the neighbours, sending, the expeditions out, this island's
-   * code) draws itself (`#hub-exped`); under it the island's news, each attack with its 仕返し.
+   * The signal station's panel (信号所): 送る and 島の知らせの控え.
+   * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
    */
   private signalPanel(): string {
     return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
   }
 
-  /** The island's news on the signal station, each attack with its 仕返し; nothing with none. */
+  /** One 島の知らせ on the signal station (outgoing + incoming + 島の守り), nothing with none. */
   private signalNews(): string {
     const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
-    const exp = this.expNews.length
-      ? `<h3 class="hub-sub">遠征の知らせ</h3><ul class="island-news signal-news exp-news">${this.expNews.map((n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`).join("")}</ul>`
-      : "";
-    // Who left stock at a 中継ボックス (CoC-style help): names the player already sees, no new noun.
-    const aid = namedAid(this.profile);
-    const help = aid.length
-      ? `<h3 class="hub-sub">島の守り</h3><ul class="island-news signal-news">${aid
-          .slice(0, 4)
-          .map((q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`)
-          .join("")}</ul>`
-      : "";
-    return exp + help + (this.news.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "");
+    const out = this.expNews.map(
+      (n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`,
+    );
+    const aid = namedAid(this.profile).slice(0, 4).map(
+      (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
+    );
+    const incoming = this.news.map((n) => this.newsMarks(n));
+    const items = [...out, ...aid, ...incoming];
+    return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
-  /** Lines of 遠征の知らせ for the results screen (same words as the signal station). */
+  /** Lines of 島の知らせ for the results screen (outgoing expeditions, same words as the signal station). */
   expeditionNews(): string[] {
     const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
     return this.expNews.map((n) => `${n.name} ${word[n.t]} ${NODES[nodeIndex(n.node)]?.name ?? n.node}`);
