@@ -11,6 +11,7 @@ import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
 import { NODES, nodeIndex } from "../sim/map";
+import { TERM } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, robotIcon, SIDE } from "./icons";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -232,7 +233,8 @@ export class ExpeditionPanel {
     const away = squadsAway(p);
     const c = this.conn;
     // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
-    const head = `<div class="mod-head"><strong>${flagIcon()}お隣の島</strong><span></span><b>${flagIcon()}遠征 ${away} / ${factorySquads(p)}</b></div>`;
+    const trop = `<span class="exp-trophy">${TERM.trophy} <b>${p.trophies ?? 0}</b></span>`;
+    const head = `<div class="mod-head"><strong>${flagIcon()}お隣の島</strong>${trop}<b>${flagIcon()}遠征 ${away} / ${factorySquads(p)}</b></div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const send = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.sendForm(p) : "";
     const out = p.expeditions.length
