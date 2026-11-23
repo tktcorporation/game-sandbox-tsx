@@ -639,7 +639,7 @@ body.touch #obj-raid .why {
   opacity: 1;
 }
 
-/* Extraction points: a line each on the objective card. */
+/* Extraction points: only live ones (called craft / flare ready). The map holds the list (ui.md). */
 #obj-exits {
   grid-column: 1 / -1;
   display: flex;
@@ -648,6 +648,9 @@ body.touch #obj-raid .why {
   font-size: 13px;
 }
 #obj-exits:empty {
+  display: none;
+}
+#obj-exits div:not(.live) {
   display: none;
 }
 #obj-exits span {
@@ -659,6 +662,11 @@ body.touch #obj-raid .why {
 }
 #obj-exits .locked b {
   color: var(--muted);
+}
+/* Calm raid: the card breathes — primary step stays, secondary lines already empty. */
+#objective.calm {
+  border-left-color: var(--mist);
+  padding-bottom: 6px;
 }
 
 .ebar {
@@ -2616,13 +2624,7 @@ body.touch #obj-exits {
   font-size: 11px;
   gap: 0;
 }
-/* On a phone the step's line takes the row the nearest exit had: the exit shows only when it is news (a pickup called, a flare in hand). */
-body.touch #obj-exits div:not(.live) {
-  display: none;
-}
-body.touch #obj-exits div:not(.live) span {
-  display: none;
-}
+/* Live-only exits apply on every layout (Round 8); phone keeps the tighter type. */
 body.touch #weapons {
   top: 10px;
   bottom: auto;

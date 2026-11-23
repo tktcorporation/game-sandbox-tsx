@@ -1037,6 +1037,9 @@ export class Hud {
               : "見られている";
     setHtml(st, word ? `${eyeIcon("currentColor", worst === 3 && !tracked && anyLost)}${word}` : "");
     st.className = worst === 3 && !tracked && anyLost ? "lost" : worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
+    // Calm fold (ux-design Round 8): primary step stays; exits / stealth already empty when quiet.
+    const late = s.battle ? s.battle.end - s.time < 120 : false;
+    $("objective").classList.toggle("calm", s.phase === "play" && !word && !$("obj-exits").innerHTML && !late);
   }
 
   /**
@@ -1056,6 +1059,7 @@ export class Hud {
     // Each way off by how it works, in a mark and seconds: a craft to call (the seconds it takes,
     // counting down once called, a tick once landed), a flare (lit when carried) and the seconds to
     // wait, or only the wait.
+    let anyLive = false;
     exits.forEach((x, i) => {
       const ready = extractReady(s, x);
       const left = callLeft(s, x.id);
@@ -1069,12 +1073,14 @@ export class Hud {
           ? `${flareIcon(p.flares > 0)}${x.hold} 秒`
           : `${clockIcon()}${x.hold} 秒`;
       const locked = x.needsFlare && !ready;
-      // A called ship or a flare in hand is news worth a line even on the phone.
+      // A called ship or a flare in hand is news (ui.md): calm days hide the rest (Round 8 fold).
       const live = (x.call && left >= 0) || (x.needsFlare && ready);
+      if (live) anyLive = true;
       const cls = [locked && "locked", i === nearest && "near", live && "live"].filter(Boolean).join(" ");
       lines.push(`<div class="${cls}">${exitIcon()}<b>${x.short}</b><span>${state}</span></div>`);
     });
-    setHtml($("obj-exits"), lines.join(""));
+    // Fold: only live exits stay on the card; the map (M) holds the rest.
+    setHtml($("obj-exits"), anyLive ? lines.join("") : "");
   }
 
   /** The teammate's row on the vitals plate and the tag over its head. */
