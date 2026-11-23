@@ -318,8 +318,8 @@ async function neighbours(env: ApiEnv, player: string, now: number): Promise<Res
 /**
  * /api/islands (a claim) and /api/islands/:code and below (docs/ringfall/multiplayer.md, 遠征): the owner's report (PUT), the
  * island as anyone sees it (GET), the owner's log (GET …/log), the owner's raid taking the
- * expeditions in (POST …/lease), an expedition to it (POST …/expeditions) and its sender calling
- * it home (DELETE …/expeditions/<n>).
+ * expeditions in (POST …/lease), an expedition to it (POST …/expeditions), an X2 assault result
+ * (POST …/assault), and its sender calling it home (DELETE …/expeditions/<n>).
  */
 async function handleIslands(request: Request, env: ApiEnv, now: number, url: URL, draw: () => string): Promise<Response> {
   if (url.pathname === "/api/islands") {
@@ -331,7 +331,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   // …/expeditions/<n> names one expedition by the number the island gave it (a recall).
   const one = parts.length === 3 && parts[1] === "expeditions" && /^[1-9]\d{0,8}$/.test(parts[2]) ? Number(parts[2]) : null;
   const sub = one !== null ? "expedition" : parts.slice(1).join("/");
-  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid")) return fail(404, "not-found");
+  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid" && sub !== "assault")) return fail(404, "not-found");
   const method = request.method;
   const allow =
     sub === ""
@@ -342,7 +342,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
           ? "DELETE"
           : sub === "lease"
             ? "POST, DELETE"
-            : sub === "pings" || sub === "aid"
+            : sub === "pings" || sub === "aid" || sub === "assault"
               ? "POST"
               : "POST";
   if (!allow.split(", ").includes(method)) return notAllowed(allow);
@@ -401,13 +401,19 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     if (!attackers?.includes(code) && (await routeShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
     return ask(ns, code, { t: "aid", from: { code: fromCode, name }, poi: raw.poi, kind: raw.kind }, now);
   }
+  // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
+  if (sub === "assault") {
+    if (!int(raw.id, 1, 1e9) || typeof raw.won !== "boolean") return fail(400, "bad-request");
+    return ask(ns, code, { t: "assault", from: fromCode, id: raw.id, won: raw.won }, now);
+  }
   if (typeof raw.target !== "string" || !int(raw.units, 1, 64)) return fail(400, "bad-request");
   // A neighbour of the sender's this week is reached only by its sea route (the sender holds the node
   // facing it), unless it attacked the sender's island lately: an attack is answered by any way (仕返し).
   if (!attackers?.includes(code) && (await routeShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
   const kinds = squadKinds(factory);
   if (raw.units > kinds.length) return fail(400, "too-many-units");
-  return ask(ns, code, { t: "expedition", from: { code: fromCode, name }, target: raw.target, kinds: kinds.slice(0, raw.units) }, now);
+  const x2 = raw.x2 === true;
+  return ask(ns, code, { t: "expedition", from: { code: fromCode, name }, target: raw.target, kinds: kinds.slice(0, raw.units), ...(x2 ? { x2: true as const } : {}) }, now);
 }
 
 /** The answer to a request under /api/, or null for any other path. */

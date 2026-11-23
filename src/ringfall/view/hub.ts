@@ -1,8 +1,9 @@
 import { PLAYER } from "../sim/config";
-import { aiSalt, incomingFor, isAi, neighboursFor } from "../island-net";
+import { aiSalt, incomingFor, isAi, neighboursFor, readView, sendAssault } from "../island-net";
+import { errorText } from "../meta/island-errors";
 import { assaultLeft, assaultOf, assaultReady, scheduleAssault } from "../meta/assault";
 import { aiByCode, aiNextId, aiView } from "../meta/ai-islands";
-import { planShortRaid, takenOn, type IncursionPlan } from "../meta/incursion";
+import { assaultTarget, planShortRaid, takenOn, type IncursionPlan } from "../meta/incursion";
 import { neighbourFronts, type NeighbourFront } from "../meta/neighbour-front";
 import { homeSquads } from "../meta/expeditions";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
@@ -26,7 +27,7 @@ import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { UI, rarityText } from "./palette";
-import { PHRASE, TERM, assaultNoticeTo, assaultWaitHours, nextAssaultWait, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
+import { PHRASE, TERM, assaultFortified, assaultNoticeTo, assaultWaitHours, nextAssaultWait, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -57,15 +58,18 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
   return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
 }
 
-/** Whether this Gap A front can run an X2 short raid (AI only — real islands are not wired yet). */
-export const isPlayableFront = (f: NeighbourFront): boolean => !!f.ai || isAi(f.code);
+/** Whether this Gap A front can run an X2 short raid (AI and real neighbours). */
+export const isPlayableFront = (_f: NeighbourFront): boolean => true;
 
-/** AI neighbour fronts only — the playable X2 entrances. */
+/** Whether the front's island is an AI copy (notice clock and local view). */
+export const isAiFront = (f: NeighbourFront): boolean => !!f.ai || isAi(f.code);
+
+/** Gap A neighbour fronts — X2 entrances on the map (穴 A / 攻める). */
 export function playableFronts(p: Profile, from?: { x: number; z: number }): NeighbourFront[] {
   return neighbourFronts(p.poiState, neighboursFor(p), from).filter(isPlayableFront);
 }
 
-/** Nearest playable (AI) Gap A front, or null. */
+/** Nearest playable Gap A front, or null. */
 export function playableFrontPick(p: Profile, from: { x: number; z: number } = CAMP.wake): NeighbourFront | null {
   return playableFronts(p, from)[0] ?? null;
 }
@@ -79,15 +83,16 @@ export function nextHandFor(p: Profile): string {
   if (incomingFor(p).length) return PHRASE.nextMapFortifyIncoming;
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
-  // Gap A / X2: only AI fronts are playable — never recommend a real-neighbour mark with no raid.
+  // Gap A / X2: AI or real neighbour front on the map.
   const gap = playableFrontPick(p);
   if (gap) {
+    const ai = isAiFront(gap);
     const out = assaultOf(p.expeditions, gap.code);
-    if (out && !assaultReady(out, true)) {
-      const hours = Math.max(1, Math.ceil(assaultLeft(out, true) / 3600));
+    if (out && !assaultReady(out, ai)) {
+      const hours = Math.max(1, Math.ceil(assaultLeft(out, ai) / 3600));
       return nextAssaultWait(gap.name, hours);
     }
-    if (out && assaultReady(out, true)) return nextShortRaid(gap.name);
+    if (out && assaultReady(out, ai)) return nextShortRaid(gap.name);
     return nextAttack(gap.name);
   }
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
@@ -809,7 +814,7 @@ export class Hub {
       const a = depotAllowance(p, d.poi);
       return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: !this.assaultAim && this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
     });
-    // Gap A / X2: AI fronts only — no entrance for real neighbours until the server path exists.
+    // Gap A / X2: neighbour fronts (AI and real) — map entrance only, no signal-station button.
     const assaults: StartPoint[] = playableFronts(p, CAMP.wake).map((f) => ({
       kind: "assault" as const,
       id: f.code,
@@ -841,9 +846,9 @@ export class Hub {
       return canStartIn(p, id) ? null : { name: regionOf(id).name, why: "道を知らない", how: regionHow(id) };
     }
     if (at.kind === "assault") {
-      // Real-neighbour assaults are not listed; anything still peeked is not playable.
+      // Listed only while the Gap A front is open; a stale peek is shut.
       const f = playableFronts(p).find((n) => n.code === at.id);
-      return f ? null : { name: TERM.shortRaid, why: "短いレイドはAIの島のみ", how: [`<span class="how">${flagIcon(SIDE.rival)}${TERM.shortRaid}</span>`] };
+      return f ? null : { name: TERM.shortRaid, why: `${TERM.front}が開いていない`, how: [`<span class="how">${flagIcon(SIDE.rival)}${TERM.shortRaid}</span>`] };
     }
     if (at.kind === "entry") {
       const e = ENTRIES.find((w) => w.id === at.id);
@@ -918,35 +923,53 @@ export class Hub {
 
   /**
    * Gap A / X2: only when the departure map's assault mark is chosen (`assaultAim`). Schedules a
-   * 来る遠征-shaped notice, then unlocks a short raid. Null = ordinary home depart.
+   * 来る遠征-shaped notice (AI local / real via island API), then unlocks a short raid.
+   * Null = ordinary home depart.
    */
-  gapDepart(now = Date.now()): GapDepart | null {
+  async gapDepart(now = Date.now()): Promise<GapDepart | null> {
     const gap = this.assaultAim;
-    // Explicit assault mark only; real neighbours never become assaultAim (no entrance).
     if (!gap || !isPlayableFront(gap)) return null;
+    const ai = isAiFront(gap);
     const existing = assaultOf(this.profile.expeditions, gap.code);
     if (!existing) {
       const units = Math.max(1, homeSquads(this.profile) || 1);
-      const id = aiNextId(this.profile.expeditions, gap.code);
-      const { list, created } = scheduleAssault(this.profile.expeditions, { code: gap.code, node: gap.shore, units, id, now });
+      let id = aiNextId(this.profile.expeditions, gap.code);
+      let node: NodeId = gap.shore;
+      if (!ai) {
+        const view = await readView(gap.code);
+        if (!view.ok) return { t: "waiting", toast: errorText(view.error) };
+        const pick = assaultTarget(view.body, gap.shore, now);
+        if (!pick) return { t: "waiting", toast: assaultFortified(gap.name) };
+        node = pick;
+        const sent = await sendAssault(gap.code, node, units);
+        if (!sent.ok) return { t: "waiting", toast: errorText(sent.error) };
+        id = sent.body.id;
+      }
+      const { list, created } = scheduleAssault(this.profile.expeditions, { code: gap.code, node, units, id, now });
       if (created) this.set({ ...this.profile, expeditions: list });
       return { t: "scheduled", toast: assaultNoticeTo(gap.name) };
     }
-    if (!assaultReady(existing, true, now)) {
-      const hours = Math.max(1, Math.ceil(assaultLeft(existing, true, now) / 3600));
+    if (!assaultReady(existing, ai, now)) {
+      const hours = Math.max(1, Math.ceil(assaultLeft(existing, ai, now) / 3600));
       return { t: "waiting", toast: assaultWaitHours(gap.name, hours) };
     }
-    const plan = this.shortRaidPlan(gap.code, gap.shore);
-    return plan ? { t: "ready", plan } : { t: "waiting", toast: `${gap.name}はいま攻められない` };
+    const plan = await this.shortRaidPlan(gap.code, existing.node, ai);
+    if (!plan) return { t: "waiting", toast: assaultFortified(gap.name) };
+    return { t: "ready", plan };
   }
 
-  /** Build an X2 plan for an AI neighbour. Own X2 notices do not busy the target (`aiBusy` skips `x2`). */
-  private shortRaidPlan(code: string, target: NodeId): IncursionPlan | null {
-    const a = aiByCode(aiSalt(), code);
-    if (!a) return null;
-    const seized = takenOn(this.profile.incursionTaken, code);
-    const view = aiView(a, aiSalt(), this.profile.day, this.profile.expeditions, "", Date.now(), seized);
-    return planShortRaid(view, target, { ai: true, known: this.profile.entries });
+  /** Build an X2 plan: AI view locally, real neighbour via `GET /api/islands/:code`. */
+  private async shortRaidPlan(code: string, target: NodeId, ai: boolean): Promise<IncursionPlan | null> {
+    if (ai) {
+      const a = aiByCode(aiSalt(), code);
+      if (!a) return null;
+      const seized = takenOn(this.profile.incursionTaken, code);
+      const view = aiView(a, aiSalt(), this.profile.day, this.profile.expeditions, "", Date.now(), seized);
+      return planShortRaid(view, target, { ai: true, known: this.profile.entries });
+    }
+    const r = await readView(code);
+    if (!r.ok) return null;
+    return planShortRaid(r.body, target, { ai: false, known: this.profile.entries, ignoreBusy: true });
   }
 
   /**

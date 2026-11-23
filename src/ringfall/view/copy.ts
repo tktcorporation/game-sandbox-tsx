@@ -168,6 +168,14 @@ export function assaultWaitHours(name: string, hours: number): string {
   return `${name}を${TERM.attack} · あと約 ${hours} 時間（${TERM.incomingExpedition}と同じ予告）`;
 }
 
+/**
+ * X2 ready but the target cannot be raided (fortified / taken / no view).
+ * 【元】（なし） 【案】〜は固められていて攻められない 【理由】来る遠征と同じ「固める」語で拒否理由を出す。
+ */
+export function assaultFortified(name: string): string {
+  return `${name}は${TERM.fortify}られていて攻められない`;
+}
+
 /** Next-hand while an X2 assault is in its notice window. */
 export function nextAssaultWait(name: string, hours: number): string {
   return `${TERM.nextHand}${name}を${TERM.attack} · 予告 あと約 ${hours} 時間`;

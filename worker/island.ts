@@ -1,6 +1,6 @@
 import { CONQUEST, ENEMIES, FACTORY, FACTORY_TOP, PLATE, type EnemyKind } from "../src/ringfall/sim/config";
 import { reckonApart, standing, type Guard, type NodeMeter, type ReckonSquad, type Task, type Unit } from "../src/ringfall/sim/reckon";
-import { parseHold, rivalOf, type PoiHold } from "../src/ringfall/sim/holds";
+import { parseHold, rivalHold, rivalOf, type PoiHold } from "../src/ringfall/sim/holds";
 import { ISLAND_TABLE } from "../src/ringfall/meta/island-table";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 
@@ -91,6 +91,11 @@ export interface Expedition {
   holding: boolean;
   /** Held back by the day's limit at the last tick (`heldBack()`): its node's fight starts again, as at its arrival, when it may attack. */
   waiting?: true;
+  /**
+   * X2 player-led short raid (docs/ringfall/game-design-review.md §5.8): same 来る遠征 notice,
+   * no numeric fight; the sender's `assault` op settles win/loss after the notice.
+   */
+  x2?: true;
 }
 
 /** One of the owner's factory squads defending a node an expedition came to: a turret (`post`) or a squad the factory sent. */
@@ -192,7 +197,8 @@ export type IslandOp =
   | { t: "view" }
   | { t: "log"; player: string; after: number }
   | { t: "whois"; player: string }
-  | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[] }
+  | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[]; x2?: true }
+  | { t: "assault"; from: string; id: number; won: boolean }
   | { t: "ping"; player: string; name: string; x: number; z: number }
   | { t: "aid"; from: Attacker; poi: string; kind: string };
 
@@ -282,8 +288,10 @@ export function publicView(s: IslandState, now: number) {
       by: { ...e.by },
       target: NODE_IDS[e.target],
       units: e.units.length,
-      state: e.holding ? "holding" : !e.arrived ? "coming" : heldBack(s, e, now) ? "waiting" : "attacking",
+      // X2 after notice stands as waiting (no numeric fight) until the sender's assault report.
+      state: e.holding ? "holding" : !e.arrived ? "coming" : e.x2 || heldBack(s, e, now) ? "waiting" : "attacking",
       arriveAt: e.arriveAt,
+      ...(e.x2 ? { x2: true as const } : {}),
     })),
     pings: (s.pings ?? []).map((p) => ({ id: p.id, x: p.x, z: p.z, by: p.by, until: p.until })),
     parcels: (s.parcels ?? []).map((p) => ({ id: p.id, poi: p.poi, kind: p.kind, from: { ...p.from }, at: p.at })),
@@ -351,13 +359,20 @@ function tick(s: IslandState, t: number) {
   for (const e of s.expeditions)
     if (!e.arrived && e.arriveAt <= t && !leased(s, e, t)) {
       e.arrived = true;
-      startFight(s, e.target);
       note(s, t, "landed", e.target, e.by);
+      // X2 waits for the sender's short-raid report; no factory fight in numbers.
+      if (!e.x2) startFight(s, e.target);
+      else e.waiting = true;
     }
   // Those the owner's raid has stand out of the island's reckoning as those held back do.
-  const back = new Set(s.expeditions.filter((e) => heldBack(s, e, t) || (e.arrived && !e.holding && leased(s, e, t))));
+  // X2 not yet settled never joins the numeric fight.
+  const back = new Set(s.expeditions.filter((e) => (e.x2 && !e.holding) || heldBack(s, e, t) || (e.arrived && !e.holding && leased(s, e, t))));
   // One held back until now may attack: its node's fight starts as at its arrival (the turrets go back to their posts).
   for (const e of s.expeditions) {
+    if (e.x2 && !e.holding) {
+      e.waiting = true;
+      continue;
+    }
     if (e.waiting && !back.has(e)) startFight(s, e.target);
     if (back.has(e)) e.waiting = true;
     else delete e.waiting;
@@ -439,7 +454,7 @@ function tick(s: IslandState, t: number) {
  * and held back ones wait for a time of their own (`quietUntil()`).
  */
 function quiet(s: IslandState, t: number): boolean {
-  return !s.defenders.length && !s.meter.some((m) => m) && s.expeditions.every((e) => !e.arrived || e.holding || heldBack(s, e, t) || leased(s, e, t));
+  return !s.defenders.length && !s.meter.some((m) => m) && s.expeditions.every((e) => !e.arrived || e.holding || e.x2 || heldBack(s, e, t) || leased(s, e, t));
 }
 
 /** The first time something happens on a quiet island after `t`: an expedition arriving, a lease running out, or the next UTC day or the node's opening for one held back; Infinity for none. */
@@ -447,6 +462,8 @@ function quietUntil(s: IslandState, t: number): number {
   let at = Infinity;
   for (const e of s.expeditions) {
     if (e.holding) continue;
+    // X2 after notice waits on the sender's assault report, not a tick.
+    if (e.x2 && e.arrived) continue;
     if (leased(s, e, t)) at = Math.min(at, s.lease!.until);
     else if (!e.arrived) at = Math.min(at, e.arriveAt);
     else if (heldBack(s, e, t)) {
@@ -619,9 +636,11 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
  * holds nobody off. A node fortified in an earlier raid and still shut is named, so the raid keeps
  * it shut, and its report cannot say it fell.
  */
-function lease(s: IslandState, now: number): { until: number; expeditions: Lent[]; shut: string[]; wrote: boolean } {
+function lease(s: IslandState, now: number): { until: number; expeditions: Lent[]; shut: string[]; noticed: string[]; wrote: boolean } {
   const standing = s.lease && now < s.lease.until ? s.lease : null;
-  const ids = standing ? standing.ids : s.expeditions.map((e) => e.id);
+  // X2 notices are not lent as robots — the sender plays the short raid — but their targets stay
+  // `noticed` so the owner can 固める in this raid (`Battle.noticed` / fortified report).
+  const ids = standing ? standing.ids : s.expeditions.filter((e) => !e.x2).map((e) => e.id);
   const until = standing ? standing.until : now + EXPEDITION.lease * 1000;
   if (!standing) s.lease = ids.length ? { until, ids } : null;
   const expeditions = s.expeditions
@@ -629,7 +648,45 @@ function lease(s: IslandState, now: number): { until: number; expeditions: Lent[
     .map((e): Lent => ({ id: e.id, by: { ...e.by }, target: NODE_IDS[e.target], kinds: e.units.map((u) => u.kind), state: e.holding ? "holding" : e.arrived ? "attacking" : "coming" }));
   // The nodes still shut from an earlier raid stay shut in this one.
   const shut = NODE_IDS.filter((_, i) => fortUntil(s, i) > now);
-  return { until, expeditions, shut, wrote: !standing && ids.length > 0 };
+  const noticed = [
+    ...new Set(s.expeditions.filter((e) => e.x2 && !e.holding).map((e) => NODE_IDS[e.target])),
+  ];
+  return { until, expeditions, shut, noticed, wrote: !standing && ids.length > 0 };
+}
+
+/**
+ * X2 short-raid result from the attacker: after the 来る遠征 notice, a win takes the node for
+ * them; a loss wipes the notice. Minimal checks — notice elapsed, still x2, not fortified, node
+ * still the owner's when winning. Idempotent when already holding the same node.
+ */
+function assault(s: IslandState, from: string, id: number, won: boolean, now: number): { status: number; body: unknown } {
+  const e = s.expeditions.find((x) => x.id === id && x.by.code === from);
+  if (!e) return { status: 404, body: fail("no-expedition") };
+  if (!e.x2) return { status: 400, body: fail("not-assault") };
+  if (e.holding) {
+    if (won && rivalOf(s.holds[e.target]) === from) return { status: 200, body: { ok: true, id: e.id, hold: s.holds[e.target] } };
+    return { status: 409, body: fail("already-resolved") };
+  }
+  if (now < e.arriveAt) return { status: 409, body: fail("assault-not-ready") };
+  if (fortUntil(s, e.target) > now) return { status: 409, body: fail("fortified") };
+  if (!e.arrived) {
+    e.arrived = true;
+    note(s, now, "landed", e.target, e.by);
+  }
+  if (!won) {
+    s.expeditions = s.expeditions.filter((x) => x !== e);
+    note(s, now, "wiped", e.target, e.by);
+    return { status: 200, body: { ok: true, id, won: false } };
+  }
+  if (s.holds[e.target] !== "freed") return { status: 409, body: fail("node-not-open") };
+  if (takenOn(s, now) >= EXPEDITION.perDay) return { status: 409, body: fail("day-limit") };
+  e.holding = true;
+  delete e.waiting;
+  s.holds[e.target] = rivalHold(from);
+  const poi = NODE_IDS[e.target];
+  if (s.parcels?.length) s.parcels = s.parcels.filter((p) => p.poi !== poi);
+  note(s, now, "taken", e.target, e.by);
+  return { status: 200, body: { ok: true, id, won: true, hold: s.holds[e.target] } };
 }
 
 /**
@@ -663,7 +720,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (op.t === "lease") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const l = lease(s, now);
-    return done(200, { ok: true, until: l.until, expeditions: l.expeditions, shut: l.shut }, l.wrote);
+    return done(200, { ok: true, until: l.until, expeditions: l.expeditions, shut: l.shut, noticed: l.noticed }, l.wrote);
   }
   if (op.t === "unlease") {
     // The raid the lease was for is not taking the expeditions in: the island reckons them again from now.
@@ -673,6 +730,10 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     return done(200, { ok: true }, had);
   }
   if (op.t === "recall") return recall(s, op.from, op.id, now) ? done(200, { ok: true }, true) : done(404, fail("no-expedition"));
+  if (op.t === "assault") {
+    const r = assault(s, op.from, op.id, op.won, now);
+    return done(r.status, r.body, r.status === 200);
+  }
   if (op.t === "view") return done(200, publicView(s, now));
   // Who the sender is, their factory, and the nodes they hold (a neighbour's sea route opens from one of them).
   // Who the sender is, their factory, the nodes they hold (a neighbour's sea route opens from one of
@@ -707,17 +768,29 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     if (s.parcels.length > EXPEDITION.parcelMax) s.parcels = s.parcels.slice(s.parcels.length - EXPEDITION.parcelMax);
     return done(200, { ok: true }, true);
   }
-  // An expedition.
+  // An expedition (optional `x2`: short-raid notice, settled later by `assault`).
   if (op.from.code === s.owner.code) return done(403, fail("own-island"));
   if (ISLAND_TABLE.closed.includes(op.target)) return done(403, fail("closed-node"));
   const i = NODE_IDS.indexOf(op.target);
   if (i < 0 || !op.kinds.length) return done(400, fail("bad-request"));
+  // X2 only takes a node the owner holds (freed) — the short raid's 核 · 制圧 target.
+  if (op.x2 && s.holds[i] !== "freed") return done(409, fail("node-not-open"));
   const why = closedWhy(s, i, now);
   if (why) return done(why.status, fail(why.error));
-  const e: Expedition = { id: s.nextId++, by: { ...op.from }, target: i, units: op.kinds.map(unit), sentAt: now, arriveAt: now + EXPEDITION.notice * 1000, arrived: false, holding: false };
+  const e: Expedition = {
+    id: s.nextId++,
+    by: { ...op.from },
+    target: i,
+    units: op.kinds.map(unit),
+    sentAt: now,
+    arriveAt: now + EXPEDITION.notice * 1000,
+    arrived: false,
+    holding: false,
+    ...(op.x2 ? { x2: true as const } : {}),
+  };
   s.expeditions.push(e);
   note(s, now, "noticed", i, e.by);
-  return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt }, true);
+  return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt, ...(op.x2 ? { x2: true } : {}) }, true);
 }
 
 /** The nodes a report names as taken back in the raid, or null: node ids, each once, at most one per node. Left out, none. */
