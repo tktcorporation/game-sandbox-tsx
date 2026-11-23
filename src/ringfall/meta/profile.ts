@@ -699,8 +699,12 @@ export function settle(p: Profile, s: State): Settlement {
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
   // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
-  const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
+  // X2 / lead-incursion: the copy frees non-stage POIs for a short battlefield — never unlock
+  // those depots (or credit sentVia) on the home profile (Codex #197 P2).
+  const depots = s.incursion ? [...p.depots] : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
+  const depotSent = s.incursion
+    ? { ...p.depotSent }
+    : Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
   // A record of a raid kept from before ways in were learned has walked to none.
   const learned = s.outcome === "extracted" ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e)) : [];
   const entries = knownEntries([...p.entries, ...learned]);

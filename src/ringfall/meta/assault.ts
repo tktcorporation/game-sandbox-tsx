@@ -15,9 +15,9 @@ export const ASSAULT_NOTICE = 12 * 3600;
 /** Seconds of advance notice before an X2 short raid may start. */
 export const assaultNoticeSec = (ai: boolean): number => (ai ? AI.coming * 60 : ASSAULT_NOTICE);
 
-/** An outbound assault still on the way or ready to raid (not gone / recalling). */
+/** An outbound assault notice still open for a short raid (not holding / gone / recalling). */
 export function assaultOf(list: readonly Outgoing[], code: string): Outgoing | null {
-  return alive({ expeditions: list }).find((o) => o.code === code) ?? null;
+  return alive({ expeditions: list }).find((o) => o.code === code && o.state !== "holding") ?? null;
 }
 
 /** Whether the notice has elapsed and the short raid may begin. */
@@ -40,6 +40,8 @@ export function scheduleAssault(
 ): { list: Outgoing[]; created: Outgoing | null } {
   const now = opts.now ?? Date.now();
   if (assaultOf(list, opts.code)) return { list: [...list], created: null };
+  // A completed X2 (`holding`) must not block a fresh notice — drop it before scheduling.
+  const cleared = list.filter((o) => !(o.code === opts.code && (o.state === "holding" || o.state === "gone")));
   const created: Outgoing = {
     code: opts.code,
     node: opts.node,
@@ -49,7 +51,7 @@ export function scheduleAssault(
     state: "coming",
     x2: true,
   };
-  return { list: [...list, created], created };
+  return { list: [...cleared, created], created };
 }
 
 /** Mark the assault holding after a successful X2 制圧 (defender lost the node on their copy). */

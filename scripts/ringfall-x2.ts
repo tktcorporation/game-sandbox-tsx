@@ -70,6 +70,30 @@ check(fullRival, "full plan still mirrors all owner nodes");
   check(isPlayableFront(aiFront), "playable: AI front refused");
 }
 
+// Holding assault is not "ready" — need a fresh notice (Codex #197 P2).
+{
+  const held = [{ code: a.code, node: target, sentAt: 0, id: 1, units: 2, state: "holding" as const, x2: true as const }];
+  check(assaultOf(held, a.code) === null, "holding: still assaultOf");
+  const { list, created } = scheduleAssault(held, { code: a.code, node: target, units: 2, id: 2, now: 1_700_000_000_000 });
+  check(!!created, "holding: could not reschedule");
+  check(list.every((o) => o.state !== "holding" || o.code !== a.code), "holding: old holding kept");
+  check(created!.state === "coming", "holding: new not coming");
+}
+
+// X2 settle must not unlock home depots from the copy's synthetic frees (Codex #197 P2).
+{
+  let p: Profile = { ...newProfile(13), day, seed: 13, trophies: TROPHY.start, depots: [], incursionTaken: [] };
+  const s = newRun(13, starterKit(), plan!.region, {
+    island: plan!.island,
+    entry: plan!.entry,
+    incursion: { code: plan!.code, owner: plan!.owner, target: plan!.target, parcels: plan!.parcels },
+  });
+  check(s.depots.some(Boolean), "fixture: copy enabled no depots");
+  s.outcome = "extracted";
+  const settled = settle(p, s);
+  check(settled.profile.depots.length === 0, "settle: x2 unlocked home depots");
+}
+
 // Gate path: settle without incursion must not invent X2 fields.
 {
   const p = newProfile(3);
