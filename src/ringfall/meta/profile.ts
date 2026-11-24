@@ -28,7 +28,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 40;
+  v: 41;
   cash: number;
   stash: Item[];
   raids: number;
@@ -164,7 +164,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 40,
+    v: 41,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -927,12 +927,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v1–v37 has nothing vehicle-related on Profile to drop (camp vehicle was UI-only).
  * v1–v38 has nothing fortify-related on Profile to drop (fortify was raid/server only); accept saves and emit current.
  * v1–v39 has no island-news archive on Profile; v40 adds `news` (最新 10 件).
+ * v1–v40 has nothing contested-hub-specific on Profile (ownership lives in poiState rival holds);
+ * v41 marks 方向 A 取り合う拠点 (TKT-195) for stack consistency.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -982,12 +984,13 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v38: camp vehicle removed (no Profile fields to drop; stack consistency).
   // v39: fortify (核 · 固める) removed (raid/server only; no Profile fields to drop; stack consistency).
   // v40: 島の知らせの控え（`news`）。v39 以前は無し。
+  // v41: 取り合う海岸拠点（方向 A）。専用フィールドは無し（poiState の rival が持ち主）。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
       : [];
   return {
-    v: 40,
+    v: 41,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,

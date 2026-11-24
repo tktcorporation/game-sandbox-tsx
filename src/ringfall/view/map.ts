@@ -14,7 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import { neighbourFronts } from "../meta/neighbour-front";
-import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
+import { isContestedShore, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
 
 /*
@@ -1014,7 +1014,7 @@ export class IslandMap {
     // A POI the enemy held as the raid began and the player cleared gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "foe";
     const poiText = (i: number) => (s.cleared[i] && hold(i) === "foe" ? `${POIS[i].name} ✓` : POIS[i].name);
-    // E4: rival holds show the owner's name (AI tagged) under the mark.
+    // 方向 A: rival holds (esp. contested coastal hubs) show the owner's name (AI tagged) under the mark.
     const rivalWho = (i: number): string | null => {
       const owner = rivalOf(hold(i));
       if (!owner) return null;
@@ -1024,6 +1024,12 @@ export class IslandMap {
         return n ? `${n.name} AI` : "AI";
       }
       const n = this.neighbours.find((x) => x.code === owner);
+      // Contested shores always prefer a neighbour name when the slot faces them.
+      if (!n && isContestedShore(POIS[i].id)) {
+        const slot = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === POIS[i].id);
+        const bySlot = slot >= 0 ? this.neighbours.find((x) => x.slot === slot) : undefined;
+        if (bySlot) return bySlot.name;
+      }
       return n?.name ?? "他のプレイヤー";
     };
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.

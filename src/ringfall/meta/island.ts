@@ -5,6 +5,7 @@ import { DEPOTS, LANDING_NODES, NODES, POIS, poiIndex, UNLOCKS, type NodeId, typ
 import { capturedIds, nodeHolds, type NodeHold } from "../sim/front";
 import { type Battle } from "../sim/battle";
 import { type State } from "../sim/state";
+import { CONTESTED_SHORES } from "./neighbours";
 
 /*
  * The island between raids (docs/ringfall/island-v2.md): one raid is one day, and each node is the
@@ -127,13 +128,20 @@ export const finaleOpen = (p: Pick<IslandDay, "poiState">): boolean => {
 };
 
 /**
- * 島の解放までの進み（2026-11-24）: 自分の拠点だけを数える（お隣に取られた拠点は N に入れない）。
+ * 島の解放までの進み（2026-11-24／方向 A）: 自分の拠点だけを数える（お隣に取られた拠点は N に入れない）。
+ * 取り合う海岸 4 拠点も自分のときは数える。取らなくても 16 には届く（`nonContestedNodeCount`）。
  * `nodes` = あと何拠点で 16／`landing` = 16 以上だが発着場の隣が無い／`finale` = 決戦が開いている。
  */
 export type LiberationStatus = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
 
 /** 発着場に隣接する拠点の表示名（採掘場・中継塔）。 */
 export const padNeighbourNames = (): string[] => LANDING_NODES.pad.map((id) => NODES.find((n) => n.id === id)?.name ?? id);
+
+/** Freeable nodes that are not contested with a neighbour (16 must remain reachable with only these). */
+export const nonContestedNodeCount = (): number => NODES.filter((n) => !CONTESTED_SHORES.includes(n.id)).length;
+
+/** Contested coastal hubs the player holds (方向 A). */
+export const contestedOwned = (p: Pick<IslandDay, "poiState">): NodeId[] => playerNodes(p).filter((id) => CONTESTED_SHORES.includes(id));
 
 /** From a profile / island day. */
 export function liberationStatus(p: Pick<IslandDay, "poiState">): LiberationStatus {

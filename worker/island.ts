@@ -3,7 +3,7 @@ import { reckonApart, standing, type Guard, type NodeMeter, type ReckonSquad, ty
 import { parseHold, rivalHold, rivalOf, type PoiHold } from "../src/ringfall/sim/holds";
 import { ISLAND_TABLE } from "../src/ringfall/meta/island-table";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
-import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
+import { CONTESTED_SHORES as CLIENT_CONTESTED, isContestedShore as clientContested } from "../src/ringfall/meta/neighbours";
 
 /*
  * One island on the server (docs/ringfall/multiplayer.md, 戦いの解き方): its owner, the nodes' holds
@@ -34,9 +34,9 @@ export function migrateIslandState(s: IslandState): IslandState {
 }
 
 /** Coastal hubs contested with a neighbour (観測所・浄水場・ロボット工場・追跡レーダー). */
-export const CONTESTED_SHORES: readonly string[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
+export const CONTESTED_SHORES: readonly string[] = CLIENT_CONTESTED;
 
-export const isContestedShore = (id: string): boolean => CONTESTED_SHORES.includes(id);
+export const isContestedShore = (id: string): boolean => clientContested(id);
 
 /** The rules of expeditions and the server's pace. */
 export const EXPEDITION = {

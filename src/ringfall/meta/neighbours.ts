@@ -39,6 +39,14 @@ export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[]
   { x: -980, z: -940, shore: "radar" },
 ];
 
+/**
+ * Coastal hubs contested with a neighbour (方向 A / TKT-195): 観測所・浄水場・ロボット工場・追跡レーダー.
+ * Holding one counts toward 「島の解放まで · 拠点 あと N」; 16 is still reachable without them.
+ */
+export const CONTESTED_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
+
+export const isContestedShore = (id: NodeId | string): boolean => (CONTESTED_SHORES as readonly string[]).includes(id);
+
 /** Whether the sea route to neighbour slot `k` is open: the player holds the node facing it. */
 export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);
 
