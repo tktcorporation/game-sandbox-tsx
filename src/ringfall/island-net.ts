@@ -442,9 +442,9 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
  */
 export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }).profile;
 
-export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[] } {
+export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[]; notes: string[] } {
   const r = s.ticket < applied ? applySync(p, { reported: s.synced.reported }) : ((applied = s.ticket), applySync(p, s.synced));
   // トロフィーの増減は必ず知らせの一行と一緒に Profile.news へ残す.
-  if (!r.notes.length) return { profile: r.profile, news: r.news };
-  return { profile: { ...r.profile, news: pushNews(r.profile.news ?? [], r.notes) }, news: r.news };
+  if (!r.notes.length) return { profile: r.profile, news: r.news, notes: r.notes };
+  return { profile: { ...r.profile, news: pushNews(r.profile.news ?? [], r.notes) }, news: r.news, notes: r.notes };
 }

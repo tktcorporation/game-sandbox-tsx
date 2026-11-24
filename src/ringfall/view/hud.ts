@@ -1497,11 +1497,42 @@ export class Hud {
   }
 
   /**
+   * 起動時の一枚: 留守中の対人結果（リザルトと同じ文・並び）。
+   * 回収・戦闘の記録は出さない。見たら信号所の控えに残っている。
+   */
+  awayResults(before: Profile, after: Profile, lines: readonly string[], trop: string | null, next = "") {
+    this.newsKeep = [];
+    this.clearDayTimers();
+    this.daySkip = null;
+    $("result-title").textContent = TERM.islandNews;
+    $("day-result").innerHTML = "";
+    $("day-result").onclick = null;
+    const canvas = document.getElementById("day-map") as HTMLCanvasElement | null;
+    if (canvas) canvas.hidden = true;
+    $("haul-line").innerHTML = "";
+    const statsBox = document.getElementById("stats-box");
+    if (statsBox) (statsBox as HTMLElement).hidden = true;
+    $("stats").innerHTML = "";
+    const lib = `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(after))}</p>`;
+    const tropLine = trop ? `<p class="trop-line">${trop}</p>` : "";
+    $("home").innerHTML = lib + `<div id="island-news">${newsBlock(lines)}</div>` + tropLine;
+    const tip = next || nextHandFor(after);
+    const nextEl = $("next-hand");
+    if (nextEl) {
+      nextEl.hidden = !tip;
+      nextEl.textContent = tip;
+      nextEl.classList.remove("defence-beat");
+    }
+  }
+
+  /**
    * Results after a raid. `before` is the profile just before settle — used only to show how the
    * haul fed the base (wanted / buildable). `next` is the one-line hand into the next sortie.
    */
   results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "", expNews: readonly string[] = []) {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
+    const statsBox = document.getElementById("stats-box");
+    if (statsBox) (statsBox as HTMLElement).hidden = false;
     $("day-result").innerHTML = this.dayResult(s, settled);
     // Tap the day's map to skip the beat wait (Round 10); 野営地に戻る still leaves as before.
     $("day-result").onclick = () => this.skipDayBeat();

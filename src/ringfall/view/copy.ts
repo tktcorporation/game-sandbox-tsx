@@ -200,6 +200,23 @@ export function pushNews(prev: readonly string[], lines: readonly string[]): str
   return [...fresh, ...prev].slice(0, NEWS_KEEP);
 }
 
+/**
+ * 起動時の一枚（留守中の対人）: 控えに増えた行のうち、トロフィー行は別枠、残りは島の知らせ。
+ * どちらも空なら一枚を出さない（null）。
+ */
+export function awaySheetParts(
+  beforeNews: readonly string[],
+  afterNews: readonly string[],
+): { lines: string[]; trop: string | null } | null {
+  const seen = new Set(beforeNews);
+  const fresh = afterNews.filter((l) => l.trim() && !seen.has(l));
+  if (!fresh.length) return null;
+  const trop = fresh.find((l) => l.startsWith(TERM.trophy)) ?? null;
+  const lines = trop ? fresh.filter((l) => l !== trop) : fresh;
+  if (!lines.length && !trop) return null;
+  return { lines, trop };
+}
+
 /** 島の解放までの一行（野営・レイド中・リザルト）。材料はプレイヤー向けの語だけ。 */
 export type LiberationCopy = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
 

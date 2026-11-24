@@ -36,7 +36,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { newsIncursion, PHRASE, TERM } from "./view/copy";
+import { awaySheetParts, newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -618,9 +618,29 @@ function readyRaid() {
   whenIdle(walks);
 }
 
+/**
+ * 起動時の一枚を出しているあいだ true。野営地に戻るで閉じ、同じ同期の結果を二度出さない。
+ * セッション中いちど同期したら awayBooted が立ち、レイド帰営の openCamp では再同期しない。
+ */
+let awaySheetOpen = false;
+let awayBooted = false;
+/** 一枚を開く直前の解放進度（差を出すため）。 */
+let awayBefore: Profile | null = null;
+
 /** Wakes the player in the camp, the teammate beside them: from the title, after the results. */
 function openCamp() {
+  // 起動時の一枚を閉じる（同じ結果を二度出さない）。
+  if (awaySheetOpen) {
+    awaySheetOpen = false;
+    awayBefore = null;
+    hud.endResults();
+    $("results").hidden = true;
+    lock();
+    return;
+  }
   // The expeditions on the game's own islands stand as their clock has them, so the settle pays the nodes they hold.
+  const beforeNews = [...(hub.profile.news ?? [])];
+  const beforeSnap: Profile = { ...hub.profile, news: beforeNews, poiState: { ...hub.profile.poiState } };
   const fresh = refreshAi(hub.profile);
   if (fresh !== hub.profile) hub.update(fresh);
   departing = inside = null;
@@ -653,6 +673,46 @@ function openCamp() {
   fade(true, true);
   requestAnimationFrame(() => fade(false));
   lock();
+  // タイトルから野営に立ったときだけ、留守中の対人を一度同期して一枚で出す。
+  if (!awayBooted) {
+    awayBooted = true;
+    void deliverAwayNews(beforeSnap);
+  }
+}
+
+/**
+ * 野営起動時: 島を同期し、留守中に届いた対人の結果があればリザルトと同じ文の一枚を出す。
+ * 控えは takeSync / hub.update ですでに Profile.news へ入る。一枚はセッションで一度だけ。
+ */
+function deliverAwayNews(before: Profile) {
+  void syncOwn(before, false).then((r) => {
+    void flushRecalls(
+      () => hub.profile,
+      (q) => hub.update(q),
+    );
+    void flushAssaultReports(
+      () => hub.profile,
+      (q) => {
+        hub.update(q);
+        saveProfile(hub.profile);
+      },
+    );
+    if (!r.ok || !camping || running || awaySheetOpen || !$("results").hidden) return;
+    const { profile, news } = takeSync(hub.profile, r.body);
+    if (profile !== hub.profile) hub.update(profile);
+    world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
+    if (news.length) hub.takeNews(news);
+    saveProfile(hub.profile);
+    const parts = awaySheetParts(before.news ?? [], hub.profile.news ?? []);
+    if (!parts) return;
+    // 同期のあいだに出撃やリザルトが開いていたら重ねない。
+    if (!camping || running || departing || !$("results").hidden || hub.station !== null) return;
+    awayBefore = before;
+    awaySheetOpen = true;
+    hud.awayResults(before, hub.profile, parts.lines, parts.trop, hub.nextHand());
+    $("results").hidden = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+  });
 }
 
 /** Opens a station's panel: the camp stands still and the pointer is let go. */
