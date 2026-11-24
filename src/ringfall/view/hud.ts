@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, relayOf } from "./copy";
+import { PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf } from "./copy";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -1554,21 +1554,13 @@ export class Hud {
     };
     // A record of a raid kept from before ways in were learned has walked to none.
     const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
-    // 解放までの一行（前日との差）を ○日目の直後に。島の収入・トロフィーはその下。
+    // 答え合わせの並び: 解放までの残り → 島の知らせ → トロフィー →（次の一手は #next-hand）→ その他.
     const libLine =
       settled && before
         ? `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(settled.profile))}</p>`
         : settled
           ? `<p class="lib-delta">${liberationLine(liberationStatus(settled.profile))}</p>`
           : "";
-    // The day's income from the nodes the player holds.
-    // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
-    const island =
-      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated || settled?.trophies || libLine
-        ? `<h3 class="day-end">${settled?.day ?? ""} 日目</h3>${libLine}<p>${settled?.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled?.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled?.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled?.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}${settled?.trophies ? `<span>${TERM.trophy}<b>${settled.trophies.before} → ${settled.trophies.after}</b></span>` : ""}</p>`
-        : "";
-    const growth = settled && before ? this.baseGrowth(before, settled) : "";
-    const defence = this.defenceLines(s, settled);
     const tip = next || (settled ? nextHandFor(settled.profile) : "");
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1576,15 +1568,29 @@ export class Hud {
       nextEl.textContent = tip;
       nextEl.classList.remove("defence-beat");
     }
-    // Outgoing expeditions close into 島の知らせ; keep them if late sync updates news.
+    // Outgoing expeditions + お隣を攻めた勝ち負け + 同期の知らせ.
     this.newsKeep = [...expNews];
-    const allNews = [...this.newsKeep, ...news];
+    const inc = settled?.incursion;
+    const incLine = inc
+      ? newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settled?.trophies?.gained : undefined)
+      : null;
+    const allNews = [...this.newsKeep, ...(incLine ? [incLine] : []), ...news];
+    const tropLine = settled?.trophies
+      ? `<p class="trop-line">${TERM.trophy} <b>${settled.trophies.before.toLocaleString()} → ${settled.trophies.after.toLocaleString()}</b></p>`
+      : "";
+    const growth = settled && before ? this.baseGrowth(before, settled) : "";
+    const defence = this.defenceLines(s, settled);
+    const dayHead = settled ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews)}</div>${tropLine}` : "";
+    const islandExtra =
+      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated
+        ? `<p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
+        : "";
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
-      island +
+      dayHead +
+      islandExtra +
       growth +
       defence +
-      `<div id="island-news">${newsBlock(allNews)}</div>` +
       (settled
         ? (sent.length ? `<h3 class="mark">${depotIcon()}${TERM.relayBox}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.

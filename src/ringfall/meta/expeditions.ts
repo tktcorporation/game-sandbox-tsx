@@ -310,6 +310,11 @@ export function lentResults(lent: readonly LentIn[], battle: Pick<Battle, "squad
 /** A node's name for the lines below, or its id for one the game does not know. */
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
 
+/**
+ * 島の知らせに出す記録か。予告（noticed）は出さない（事前の警告は見せない決定）。
+ */
+export const newsVisible = (e: IslandLogEntry): boolean => e.t !== "noticed";
+
 /** A log entry as a line of news, naming whoever came. */
 export function logLine(e: IslandLogEntry): string {
   const at = nodeName(e.node);

@@ -22,7 +22,7 @@ import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultRep
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
-import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
+import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import type { IncursionPlan } from "./meta/incursion";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -36,7 +36,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { PHRASE, TERM } from "./view/copy";
+import { newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -287,8 +287,9 @@ function onEvent(e: GameEvent, s: State) {
       if (!raidAi.scouted && raidAi.lent.some((l) => l.state === "coming")) markScouted();
       raidAi = null;
       if (news.length) {
+        const shown = news.filter(newsVisible);
         hub.takeNews(news);
-        aiNews = news.map(logLine);
+        aiNews = shown.map(logLine);
         islandNews = [...aiNews];
       }
     }
@@ -370,8 +371,9 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     // The sync read the neighbours again: the horizon shows them as they now stand.
     world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
     if (!news.length) return;
+    const shown = news.filter(newsVisible);
     hub.takeNews(news);
-    islandNews = [...aiNews, ...news.map(logLine)];
+    islandNews = [...aiNews, ...shown.map(logLine)];
     if (!$("results").hidden) hud.setNews(islandNews);
   });
 }
@@ -892,8 +894,16 @@ function finish() {
   $("banner").className = "";
   hud.show(false);
   const next = settlement ? hub.nextHand() : "";
+  const expLines = hub.expeditionNews();
+  // お隣を攻めた勝ち負けも島の知らせの控えへ（リザルトと同じ文）。
+  if (settlement?.incursion) {
+    const inc = settlement.incursion;
+    hub.recordNews([
+      newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settlement.trophies?.gained : undefined),
+    ]);
+  }
   // 遠征の知らせ closes on the return screen (my help mattered) — same heading as the signal station.
-  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, hub.expeditionNews());
+  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, expLines);
   if (state.outcome === "extracted") {
     // One SE for 生還: finish owns it (soundscape skips victory on `done` to avoid a double).
     sfx.extracted();

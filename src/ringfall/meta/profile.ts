@@ -28,7 +28,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 39;
+  v: 40;
   cash: number;
   stash: Item[];
   raids: number;
@@ -100,6 +100,11 @@ export interface Profile {
    * falls when a node is lost to another player. v31 and older saves start at `TROPHY.start`.
    */
   trophies: number;
+  /**
+   * 島の知らせの控え（リザルトと同じ文、最新 10 件・newest first）。
+   * v39 以前のセーブは無し。ページを読み直しても信号所に残る。
+   */
+  news: string[];
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -159,7 +164,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 39,
+    v: 40,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -191,6 +196,7 @@ export function newProfile(seed = 1): Profile {
     parcels: [],
     incursionTaken: [],
     trophies: TROPHY.start,
+    news: [],
   };
 }
 
@@ -919,13 +925,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v1–v34 field `events` is ignored and dropped (v35).
  * v1–v36 has nothing map-table-related on Profile to drop (the station was UI-only); emit as current.
  * v1–v37 has nothing vehicle-related on Profile to drop (camp vehicle was UI-only).
- * v1–v38 has nothing fortify-related on Profile to drop (fortify was raid/server only); accept saves and emit v39.
+ * v1–v38 has nothing fortify-related on Profile to drop (fortify was raid/server only); accept saves and emit current.
+ * v1–v39 has no island-news archive on Profile; v40 adds `news` (最新 10 件).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -974,8 +981,13 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v37: map table removed (no Profile fields to drop; stack consistency).
   // v38: camp vehicle removed (no Profile fields to drop; stack consistency).
   // v39: fortify (核 · 固める) removed (raid/server only; no Profile fields to drop; stack consistency).
+  // v40: 島の知らせの控え（`news`）。v39 以前は無し。
+  const news =
+    typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
+      ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
+      : [];
   return {
-    v: 39,
+    v: 40,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1001,6 +1013,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     parcels: typeof o.v === "number" && o.v >= 30 ? parseParcels(o.parcels) : [],
     incursionTaken: parseIncursionTaken(o.incursionTaken),
     trophies,
+    news,
     // A save from before the island had an ending is on its first round, begun on day 1.
     cycle: v28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
     cycleDay: v28 && Number.isInteger(o.cycleDay) && (o.cycleDay as number) >= 1 ? Math.min(day, o.cycleDay as number) : 1,

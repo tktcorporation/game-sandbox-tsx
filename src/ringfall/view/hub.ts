@@ -17,12 +17,12 @@ import { saveProfile } from "../meta/storage";
 import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
 import { ExpeditionPanel } from "./expeditions";
-import { LOG_WORD, logLine, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
+import { logLine, newsVisible, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { EXP_OUT_WORD, PLAN_GOAL, PHRASE, TERM, assaultUnavailable, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, assaultUnavailable, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, nextShortRaid, pushNews, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -460,21 +460,20 @@ export class Hub {
     if (station === "signal") this.exped.open();
   }
 
-  /**
-   * A log entry as marks: whose, what happened in a word, where.
-   * E4: no 遠征に出す answer button — attack is on the map.
-   */
-  private newsMarks(n: IslandLogEntry): string {
-    const who = n.by.name || n.by.code;
-    const node = NODES[nodeIndex(n.node)]?.name ?? n.node;
-    const mine = n.t === "wiped" || n.t === "retaken";
-    return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}</li>`;
+  /** 島の知らせの控えを Profile に足して保存する（リザルトと同じ文・最新 NEWS_KEEP 件）。 */
+  recordNews(lines: readonly string[]) {
+    const news = pushNews(this.profile.news ?? [], lines);
+    if (news.join("\0") === (this.profile.news ?? []).join("\0")) return;
+    this.set({ ...this.profile, news });
+    saveProfile(this.profile);
   }
 
   /** Takes the island's news from the server (its log's new entries): the signal station lists them and its mark tells of them until it is opened. */
   takeNews(entries: readonly IslandLogEntry[]) {
-    if (!entries.length) return;
-    this.news = [...entries, ...this.news].slice(0, 8);
+    const visible = entries.filter(newsVisible);
+    if (!visible.length) return;
+    this.news = [...visible, ...this.news].slice(0, NEWS_KEEP);
+    this.recordNews(visible.map(logLine));
     this.newsSeen = this.station === "signal";
     // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
@@ -497,7 +496,8 @@ export class Hub {
       if (t) fresh.push({ t, code: o.code, name: names.get(o.code) ?? o.code, node: o.node });
     }
     if (!fresh.length) return;
-    this.expNews = [...fresh, ...this.expNews].slice(0, 6);
+    this.expNews = [...fresh, ...this.expNews].slice(0, NEWS_KEEP);
+    this.recordNews(fresh.map((n) => expLine(n)));
     this.newsSeen = this.station === "signal";
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
     if (el) el.innerHTML = this.signalNews();
@@ -935,6 +935,7 @@ export class Hub {
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
+    // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
     const unread = this.news.length + this.expNews.length + aid;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
     // Shelves: warehouse growth, and the radio's report (moved here from the removed map table).
@@ -1035,22 +1036,19 @@ export class Hub {
     return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
   }
 
-  /** One 島の知らせ on the signal station (outgoing + incoming + 島の守り), nothing with none. */
+  /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）と島の守り。 */
   private signalNews(): string {
-    const out = this.expNews.map(
-      (n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${EXP_OUT_WORD[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`,
-    );
+    const archive = (this.profile.news ?? []).map((line) => `<li>${esc(line)}</li>`);
     const aid = namedAid(this.profile).slice(0, 4).map(
       (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
     );
-    const incoming = this.news.map((n) => this.newsMarks(n));
-    const items = [...out, ...aid, ...incoming];
+    const items = [...archive, ...aid];
     return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
-  /** Lines of 島の知らせ for the results screen (outgoing expeditions, same words as the signal station). */
+  /** Lines of 島の知らせ for the results screen (outgoing expeditions, same sentences as the signal station). */
   expeditionNews(): string[] {
-    return this.expNews.map((n) => `${n.name} ${EXP_OUT_WORD[n.t]} ${NODES[nodeIndex(n.node)]?.name ?? n.node}`);
+    return this.expNews.map((n) => expLine(n));
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */

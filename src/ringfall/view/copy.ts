@@ -170,6 +170,22 @@ export const EXP_OUT_WORD = {
 /** 今日の作戦・出撃の行名（同じ一手は同じ行名）。 */
 export const PLAN_GOAL = "目的";
 
+/** 信号所に残す島の知らせの件数（2026-11-24 決定）。 */
+export const NEWS_KEEP = 10;
+
+/** お隣を攻めた勝ち負けの一行（リザルト／信号所）。 */
+export function newsIncursion(owner: string, node: string, won: boolean, trop?: number): string {
+  if (won) return trop != null && trop > 0 ? `${owner}の${node}を取った · ${TERM.trophy} +${trop}` : `${owner}の${node}を取った`;
+  return `${owner}の${node}を攻めきれなかった`;
+}
+
+/** 島の知らせの控え: 新しい行を先頭に足し、最新 NEWS_KEEP 件だけ残す。 */
+export function pushNews(prev: readonly string[], lines: readonly string[]): string[] {
+  const fresh = lines.map((s) => s.trim()).filter(Boolean);
+  if (!fresh.length) return prev.length ? [...prev] : [];
+  return [...fresh, ...prev].slice(0, NEWS_KEEP);
+}
+
 /** 島の解放までの一行（野営・レイド中・リザルト）。材料はプレイヤー向けの語だけ。 */
 export type LiberationCopy = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
 
