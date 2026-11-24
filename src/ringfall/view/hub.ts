@@ -5,10 +5,9 @@ import { assaultOf, scheduleAssault } from "../meta/assault";
 import { aiByCode, aiNextId, aiView } from "../meta/ai-islands";
 import { planShortRaid, shortRaidTarget, takenOn, type IncursionPlan } from "../meta/incursion";
 import { neighbourFronts, type NeighbourFront } from "../meta/neighbour-front";
-import { isContestedShore, NEIGHBOUR_SLOTS } from "../meta/neighbours";
+import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { squadsRemaining } from "../meta/expeditions";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
-import { isAiOwner } from "../sim/holds";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -61,12 +60,9 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
   const label = (n: (typeof NODES)[number], i: number): string => {
     const who = rivalOf(holds[i]);
     if (!who) return n.name;
-    const slot = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === n.id);
-    const byCode = neigh.find((x) => x.code === who || (isAiOwner(who) && x.code === who.slice(3)));
-    const bySlot = slot >= 0 ? neigh.find((x) => x.slot === slot) : undefined;
-    const owner = byCode ?? bySlot;
-    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名.
-    return owner ? `${owner.name}の${n.name}` : n.name;
+    const owner = neighbourNameByCode(who, neigh);
+    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名. Unknown code → 他のプレイヤー (not the slot's name).
+    return owner ? `${owner}の${n.name}` : `他のプレイヤーの${n.name}`;
   };
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ i }) => front[i] && rivalOf(holds[i]) !== null)

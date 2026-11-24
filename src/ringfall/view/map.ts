@@ -14,7 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import { neighbourFronts } from "../meta/neighbour-front";
-import { isContestedShore, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
+import { NEIGHBOUR_SLOTS, neighbourNameByCode, routeOpen, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
 
 /*
@@ -1019,18 +1019,10 @@ export class IslandMap {
       const owner = rivalOf(hold(i));
       if (!owner) return null;
       if (isAiOwner(owner)) {
-        const code = owner.slice(3);
-        const n = this.neighbours.find((x) => x.code === code);
-        return n ? `${n.name} AI` : "AI";
+        const n = neighbourNameByCode(owner, this.neighbours);
+        return n ? `${n} AI` : "AI";
       }
-      const n = this.neighbours.find((x) => x.code === owner);
-      // Contested shores always prefer a neighbour name when the slot faces them.
-      if (!n && isContestedShore(POIS[i].id)) {
-        const slot = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === POIS[i].id);
-        const bySlot = slot >= 0 ? this.neighbours.find((x) => x.slot === slot) : undefined;
-        if (bySlot) return bySlot.name;
-      }
-      return n?.name ?? "他のプレイヤー";
+      return neighbourNameByCode(owner, this.neighbours) ?? "他のプレイヤー";
     };
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;

@@ -4,6 +4,7 @@
  * slot of its own, and the factory's expeditions start from them, so sending one needs no code typed.
  * Pure: the answer read here, the requests in island-net.ts.
  */
+import { isAiOwner } from "../sim/holds";
 import { isIslandCode } from "./island-code";
 import type { NodeId } from "../sim/map";
 
@@ -76,6 +77,16 @@ export function parseNeighbours(raw: unknown): Neighbour[] | null {
     out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(last ? { last } : {}) });
   }
   return out;
+}
+
+/**
+ * Display name for a rival hold's owner code among known neighbours.
+ * Resolves by code only (never by the current neighbour slot): a rival may keep a coastal hub
+ * across a weekly redraw while a different player sits that slot (Codex / TKT-195).
+ */
+export function neighbourNameByCode(who: string, neighbours: readonly Pick<Neighbour, "code" | "name">[]): string | null {
+  const n = neighbours.find((x) => x.code === who || (isAiOwner(who) && x.code === who.slice(3)));
+  return n?.name ?? null;
 }
 
 /** How long ago, in its largest unit and a letter: 5m, 3h, 2d (the marks beside a neighbour). */

@@ -4,7 +4,7 @@
  */
 import { FINALE } from "../src/ringfall/sim/config";
 import { NODES, type NodeId } from "../src/ringfall/sim/map";
-import { CONTESTED_SHORES } from "../src/ringfall/meta/neighbours";
+import { CONTESTED_SHORES, neighbourNameByCode } from "../src/ringfall/meta/neighbours";
 import { contestedOwned, liberationStatus, newIsland, nonContestedNodeCount, type Island } from "../src/ringfall/meta/island";
 import { rivalHold } from "../src/ringfall/sim/holds";
 
@@ -49,6 +49,17 @@ const island = (own: NodeId[], rival?: Partial<Record<NodeId, string>>): Island 
   const non = NODES.filter((n) => !CONTESTED_SHORES.includes(n.id)).map((n) => n.id).slice(0, FINALE.nodes);
   const st = liberationStatus({ poiState: island(non) });
   check(st.kind === "landing" || st.kind === "finale", `あと N: 16 non-contested -> ${st.kind}, want landing|finale`);
+}
+
+// Owner labels resolve by code, never by the current slot occupant (Codex).
+{
+  const neigh = [
+    { code: "AAAAAA", name: "スロットの人" },
+    { code: "NEIGH1", name: "ツバキ" },
+  ];
+  check(neighbourNameByCode("NEIGH1", neigh) === "ツバキ", "owner label: known code missed");
+  check(neighbourNameByCode("GONE01", neigh) === null, "owner label: unknown code invented a name");
+  check(neighbourNameByCode("ai-NEIGH1", neigh) === "ツバキ", "owner label: ai- prefix missed");
 }
 
 console.log(`contested: ${CONTESTED_SHORES.join(", ")}; non-contested ${nonContestedNodeCount()}; FINALE ${FINALE.nodes}`);
