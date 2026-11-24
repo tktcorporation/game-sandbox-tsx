@@ -234,7 +234,7 @@ export class Hud {
     this.scout = null;
   }
 
-  /** Lead-incursion objective: take this node by its 核 · 制圧 (raid-loot stage 6). */
+  /** 短いレイド（Short Raid）の目標: この拠点を「核 · 制圧」する。 */
   setCaptureTask(node: number) {
     this.contract = null;
     this.record = null;

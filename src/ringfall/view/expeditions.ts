@@ -1,7 +1,9 @@
 /*
- * The signal station's section (docs/ringfall/multiplayer.md, 信号所): neighbours out at sea, the
- * expeditions already out (and recalls), island news, and this island's code. E4: no 遠征に出す
- * button — attack is on the map. It draws itself apart from the rest of the hub (`#hub-exped`).
+ * 信号所（Signal Station）パネル: お隣の島リスト、トロフィー、島の知らせ、自島コードの確認。
+ *
+ * CoC型への移行（docs/ringfall/pvp-clarity.md）により、能動的な攻めはすべて出撃画面（○○の前線）へ一本化されたため、
+ * 信号所に「遠征に出す」ボタンは設置しない。本パネルは情報閲覧（お隣の偵察・活動ログ確認・過去に出した遠征の引き上げ）
+ * および自島コード管理を担う。ハブとは独立して描画される（`#hub-exped`）。
  */
 import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";

@@ -8,7 +8,7 @@
  */
 import { assaultAcked, assaultNoticeSec, assaultOf, assaultReady, assaultWinRejected, assaultWon, scheduleAssault } from "../src/ringfall/meta/assault";
 import { fortifiable } from "../src/ringfall/sim/front";
-import { assaultTarget, planIncursion, planShortRaid, SHORT_RAID_EXTRA, stageNodes } from "../src/ringfall/meta/incursion";
+import { planIncursion, planShortRaid, SHORT_RAID_EXTRA, shortRaidTarget, stageNodes } from "../src/ringfall/meta/incursion";
 import { aiIsland, aiNodes, aiView, aiNextId } from "../src/ringfall/meta/ai-islands";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { TROPHY } from "../src/ringfall/meta/trophies";
@@ -93,13 +93,13 @@ check(fullRival, "full plan still mirrors all owner nodes");
     pings: [],
     parcels: [],
   };
-  const pick = assaultTarget(shutShore, target);
-  check(!!pick && pick !== target, "assaultTarget: did not fall back from shut shore");
+  const pick = shortRaidTarget(shutShore, target);
+  check(!!pick && pick !== target, "shortRaidTarget: did not fall back from shut shore");
   const busy: IslandView = {
     ...shutShore,
     nodes: shutShore.nodes.map((n) => (n.id === pick ? { ...n, open: false } : n.id === target ? { ...n, hold: "freed", open: true } : n)),
   };
-  check(assaultTarget(busy, target) === target, "assaultTarget: preferred shore not chosen when open");
+  check(shortRaidTarget(busy, target) === target, "shortRaidTarget: preferred shore not chosen when open");
   // Own X2 busy: plan with ignoreBusy.
   const occupied = {
     ...view,
@@ -258,7 +258,7 @@ async function checkDepartAi() {
   check(!!mark, "depart: AI front mark missing");
   if (!mark) return;
   check(!!hub.choose("assault", mark.id), "depart: choose assault failed");
-  const first = await hub.gapDepart(1_700_000_000_000);
+  const first = await hub.departNeighbourFront(1_700_000_000_000);
   check(first?.t === "scheduled", "depart: first confirm not scheduled");
   const notice = assaultOf(hub.profile.expeditions, mark.id);
   check(!!notice?.node, "depart: notice missing node");
@@ -272,11 +272,11 @@ async function checkDepartAi() {
   });
   const hub2 = new Hub({ ...p, expeditions: stale.list }, () => {});
   hub2.choose("assault", mark.id);
-  const ready = await hub2.gapDepart(1_700_000_000_000);
+  const ready = await hub2.departNeighbourFront(1_700_000_000_000);
   check(ready?.t === "ready", `depart: stale shore notice not ready (${ready?.t})`);
   if (ready?.t === "ready") check(ready.plan.stage.length > 0, "depart: ready plan empty");
   hub2.choose("entry", "beach");
-  check((await hub2.gapDepart()) === null, "depart: entry still gapDepart");
+  check((await hub2.departNeighbourFront()) === null, "depart: entry still departNeighbourFront");
 }
 
 void checkDepartAi()

@@ -34,13 +34,13 @@ export interface Outgoing {
   units: number;
   state: ExpeditionState;
   /**
-   * X2 player-led short raid notice (§5.8): stays `coming` until settle; does not busy the
-   * target node or auto-resolve via `aiOutcome` (the player raids the subset themselves).
+   * 他島への短いレイド（Short Raid）の出撃エントリ。
+   * 工場のNPC遠征と区別し、自動解決ではなくプレイヤー自身がレイドで制圧する。
    */
   x2?: true;
-  /** X2 result awaiting `reportAssault` confirmation on the defender's island. */
+  /** 短いレイドの結果が防衛側サーバーへの報告（reportAssault）完了待ちであるフラグ。 */
   x2Pending?: true;
-  /** Trophy gain from a pending X2 win — rolled back if the server rejects the report. */
+  /** 短いレイド勝利による獲得トロフィー（サーバーで拒否された場合はロールバックされる）。 */
   tropGain?: number;
 }
 
@@ -265,7 +265,7 @@ export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]
     return [{ id: e.id, by, target: e.target as NodeId, kinds: e.kinds as EnemyKind[], state: e.state as LentIn["state"] }];
   });
   const shut = Array.isArray(raw.shut) ? NODES.filter((n) => (raw.shut as unknown[]).includes(n.id)).map((n) => n.id) : [];
-  // X2 short-raid targets for 固める (no robot squads lent).
+  // 短いレイド（Short Raid）の迎撃対象ノード（ロボット部隊の貸出はなし）
   const noticed = Array.isArray(raw.noticed) ? NODES.filter((n) => (raw.noticed as unknown[]).includes(n.id)).map((n) => n.id) : [];
   return { until: raw.until, expeditions, shut, noticed };
 }
@@ -460,7 +460,7 @@ export function parseOutgoing(raw: unknown): Outgoing[] {
       }),
     );
   let over = all.length - KEPT;
-  // Keep pending X2 results until the server confirms — do not trim them as ordinary gone.
+  // 相手サーバーの確認待ちである未報告の短いレイド結果は、通常の gone のように削除せず保持する
   const kept = over > 0 ? all.filter((o) => !((o.state === "gone" && !o.x2Pending) && over-- > 0)) : all;
   return kept.slice(-KEPT);
 }

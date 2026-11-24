@@ -1217,7 +1217,7 @@ export class IslandMap {
       label(`${n.name}${n.ai ? " AI" : ""} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
       taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
     }
-    // Gap A: open route, no foothold yet → ○○の前線 mark on the coast approach (攻められる印).
+    // お隣の前線: 航路開通済みかつ自島に陣地なし → ○○の前線マーク（攻められる印）。
     // Use `nodes` (NODES order), never `hold` (POIS order — includes `pad` and shifts coastal slots).
     if (!plain && !this.mini && s.nodes) {
       for (const f of neighbourFronts(s.nodes, this.neighbours)) {

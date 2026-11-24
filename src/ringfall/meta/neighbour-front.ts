@@ -1,7 +1,10 @@
 /*
- * Gap A (docs/ringfall/game-design-review.md §5.4): when the map has no rival hold to
- * attack, an open sea route to a neighbour that still has no foothold on this island shows
- * that neighbour's 「前線」 as an attackable mark on the coast.
+ * お隣の前線（○○の前線 / Neighbour Front）:
+ * 自島にまだライバル拠点がなく、航路が開通しているお隣の島がある場合、
+ * 海岸付近に攻められる印として「○○の前線」を表示する。
+ * 出撃するとそのお隣への短いレイド（Short Raid）が行われる。
+ *
+ * 関連仕様: docs/ringfall/glossary.md, docs/ringfall/pvp-clarity.md
  */
 import { aiOwner, rivalOf, type PoiHold } from "../sim/holds";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
@@ -43,8 +46,8 @@ function hasFoothold(n: Neighbour, owners: Set<string>): boolean {
 }
 
 /**
- * Neighbour fronts to show (Gap A): route open, no foothold yet.
- * Ordered nearest to `from` when given. Accepts NODES-order holds or an Island save.
+ * 表示対象のお隣の前線（航路開通済みかつ自島に陣地なし）を算出する。
+ * `from` が指定された場合は距離が近い順にソートする。
  */
 export function neighbourFronts(
   holdsOrIsland: readonly PoiHold[] | Island,
@@ -76,7 +79,7 @@ export function neighbourFronts(
   return out;
 }
 
-/** The nearest Gap A front, or null. */
+/** 最も近いお隣の前線、または null。 */
 export function neighbourFrontPick(
   holdsOrIsland: readonly PoiHold[] | Island,
   neighbours: readonly Neighbour[],

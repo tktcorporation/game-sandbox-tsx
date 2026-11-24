@@ -117,8 +117,7 @@ export function coreInReach(s: State): number {
 
 /**
  * Whether node `i` can be taken in the raid as it stands: on the front, and not the player's
- * already. A lead-incursion's target (raid-loot stage 6) is always open — the copy has no home
- * front from the camp.
+ * already. A short raid's target is always open — the copy has no home front from the camp.
  */
 export const capturable = (s: Pick<State, "nodes" | "incursion">, i: number) =>
   frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);

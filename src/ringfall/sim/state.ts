@@ -748,8 +748,8 @@ export interface State {
   /** Parcel ids taken this raid (cleared from the island on report). */
   takenParcels: number[];
   /**
-   * Lead-incursion onto another island's copy (raid-loot stage 6). Null on a home raid and on
-   * every sim-gate run — captures do not rewrite the home `poiState`.
+   * 他島への短いレイド出撃パラメータ（IncursionPlan）。自島レイドおよびシミュレーションゲート実行時は null
+   * （相手島コピーでの制圧は自島 poiState に影響しない）。
    */
   incursion: { code: string; owner: string; target: PoiId; parcels: { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] } | null;
   /** Leaving at a depot: which one, and the seconds still to stand there. */
@@ -968,8 +968,8 @@ export interface Start {
    */
   parcels?: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[];
   /**
-   * Lead-incursion onto another island's copy (raid-loot stage 6). Left out, a normal home raid —
-   * the sim gate never sets this, so its hash stays put.
+   * 他島への短いレイド出撃パラメータ。通常の自島レイドでは省略
+   * （シミュレーションゲートでは設定されないため、決定性ハッシュは不変）。
    */
   incursion?: { code: string; owner: string; target: PoiId; parcels: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] };
 }

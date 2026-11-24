@@ -128,7 +128,7 @@ export interface BattleStart {
   /** The player's nodes still shut to expeditions as the raid starts (fortified in an earlier raid, docs/ringfall/multiplayer.md); left out, none. */
   shut?: readonly NodeId[];
   /**
-   * Nodes announced for 固める without lending robot squads (X2 short-raid notices on the lease,
+   * Nodes announced for 固める without lending robot squads (short-raid notices on the lease,
    * and `Profile.incoming`). Merged into `Battle.noticed`.
    */
   noticed?: readonly NodeId[];
@@ -382,7 +382,7 @@ function addRivals(s: Pick<State, "nodes">, b: Battle, rivals: readonly RivalExp
   }
 }
 
-/** Announce nodes for 固める without lending robot squads (X2 notices). */
+/** Announce nodes for 固める without lending robot squads (short-raid notices). */
 function addNoticed(b: Battle, nodes: readonly NodeId[]) {
   for (const id of nodes) {
     const i = nodeIndex(id);

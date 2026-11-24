@@ -282,7 +282,7 @@ function onEvent(e: GameEvent, s: State) {
     settlement = settled;
     hub.reload(settled.profile);
     saveProfile(hub.profile);
-    // X2 on a real neighbour: pending results are flushed (and retried) with the island sync.
+    // 実プレイヤーのお隣への短いレイド: 保留中の勝敗報告を同期時に送信（失敗時は再試行）。
     postRaidSummary(settled, s);
     syncIsland(settled.profile, s);
     // The game's own islands' part in the raid, as their log would tell it: on the results and the map table.
@@ -354,7 +354,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
       () => hub.profile,
       (q) => hub.update(q),
     );
-    // X2 results still awaiting the defender island (network / late) — confirm or roll back a rejected win.
+    // 防衛側島サーバーの確認待ちである未報告の短いレイド結果を送信（拒否時は勝利を取り消し）。
     void flushAssaultReports(
       () => hub.profile,
       (q) => {
@@ -713,20 +713,20 @@ async function answerDepart(go: boolean) {
     lease = null;
   }
   if (go) {
-    // Gap A / X2: schedule 来る遠征 notice, wait, or short-raid — before a home walk-out.
-    const gap = await hub.gapDepart();
-    if (gap?.t === "scheduled" || gap?.t === "waiting") {
-      hud.toast(gap.toast, 1, 2800);
+    // お隣の前線（○○の前線）: 短いレイド出撃、または休止機能ON時の事前予告登録
+    const assault = await hub.departNeighbourFront();
+    if (assault?.t === "scheduled" || assault?.t === "waiting") {
+      hud.toast(assault.toast, 1, 2800);
       lock();
       return;
     }
-    if (d.walk && hub.walksOut() && !gap) {
+    if (d.walk && hub.walksOut() && !assault) {
       const launch = hub.launch();
       if (launch) {
         sfx.deploy();
         start(launch, state);
       }
-    } else ride(gap?.t === "ready" ? gap.plan : undefined);
+    } else ride(assault?.t === "ready" ? assault.plan : undefined);
     return;
   }
   if (d.walk && d.back) {
@@ -836,21 +836,21 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
-  const x2 = go.incursion;
+  const shortRaid = go.incursion;
   state = newRun(go.seed, kit, region, {
-    depots: x2 ? [] : hub.profile.depots,
+    depots: shortRaid ? [] : hub.profile.depots,
     seen: hub.profile.seen,
     from: go.from,
     entry: go.entry,
     routes: hub.profile.routes,
-    island: x2 ? x2.island : holds(hub.profile),
-    record: x2 ? undefined : record,
-    fetch: x2 ? undefined : fetch,
+    island: shortRaid ? shortRaid.island : holds(hub.profile),
+    record: shortRaid ? undefined : record,
+    fetch: shortRaid ? undefined : fetch,
     event: hub.profile.events[0],
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
-    // X2 short raid: no home battle — the stage is a few rival nodes on the copy.
-    battle: x2
+    // 短いレイド: 自島バトルなし（ステージは他島コピーの数拠点）
+    battle: shortRaid
       ? undefined
       : {
           factory: hub.profile.factory,
@@ -858,17 +858,17 @@ function start(go: Launch, from?: State) {
           targets: tonight(hub.profile),
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
           shut: lent?.shut,
-          // Noticed nodes enable 核で固める against 来る遠征 — only while reactive defence is on.
+          // 休止機能: 来る遠征の迎撃（核で固める）は反応型守りON時のみ
           noticed: reactiveDefenseOn()
             ? [...new Set([...(lent?.noticed ?? []), ...incomingFor(hub.profile).map((e) => e.node)])]
             : [],
         },
-    finale: x2 ? false : finaleOpen(hub.profile),
-    ...(x2
-      ? { incursion: { code: x2.code, owner: x2.owner, target: x2.target, parcels: x2.parcels } }
+    finale: shortRaid ? false : finaleOpen(hub.profile),
+    ...(shortRaid
+      ? { incursion: { code: shortRaid.code, owner: shortRaid.owner, target: shortRaid.target, parcels: shortRaid.parcels } }
       : {}),
   });
-  if (x2) hud.setCaptureTask(nodeIndex(x2.target));
+  if (shortRaid) hud.setCaptureTask(nodeIndex(shortRaid.target));
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
     if (lent) leaseReq = null;

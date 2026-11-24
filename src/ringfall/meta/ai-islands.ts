@@ -188,7 +188,7 @@ export function aiView(
  */
 export function aiOutcome(a: AiIsland, salt: number, o: Outgoing, now: number): Outgoing["state"] {
   if (o.state === "sending" || o.state === "recalling" || o.state === "gone") return o.state;
-  // X2 player-led notice: freeze until settle marks holding/gone (do not auto-fight in numbers).
+  // 短いレイド出撃エントリ: settle による勝敗確定（holding/gone）まで状態固定（数値による自動解決は行わない）。
   if (o.x2) return o.state === "holding" ? "holding" : "coming";
   const t = (now - o.sentAt) / 60_000;
   if (t < AI.coming) return "coming";
@@ -203,7 +203,7 @@ export function aiOutcome(a: AiIsland, salt: number, o: Outgoing, now: number): 
 
 /** Whether the player's expedition `o` on island `a` still takes up its node at `now`: being sent, on its way, fighting or holding. */
 export const aiBusy = (a: AiIsland, salt: number, o: Outgoing, now: number): boolean => {
-  // X2 notice is a warning only — the short raid needs the target open.
+  // 短いレイド出撃エントリはノードを占有しない（プレイヤー自身が出撃するため対象ノードは開けておく）。
   if (o.x2) return false;
   const state = aiOutcome(a, salt, o, now);
   return state !== "gone" && state !== "recalling";

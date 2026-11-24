@@ -107,8 +107,7 @@ export interface Profile {
    */
   parcels: Parcel[];
   /**
-   * Parcel ids seized from other islands in lead-incursions (raid-loot stage 6): AI views drop
-   * them so the defender's 島の守り stays partially lost. Soft-default empty on older saves.
+   * 他島への短いレイドで奪取した防衛物資ID（相手島での部分的な防衛物資損失を維持）。
    */
   incursionTaken: { code: string; ids: number[] }[];
   /**
@@ -560,8 +559,8 @@ export interface Settlement {
    */
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
   /**
-   * Lead-incursion settle (raid-loot stage 6): which island was raided and which defence parcels
-   * left it. View / sync only — home `poiState` is unchanged by the copy's captures.
+   * 他島への短いレイド精算: どの島を襲撃し、どの防衛物資を獲得したか。
+   * 画面表示およびサーバー報告用（自島の poiState は相手島の制圧によって書き換えられない）。
    */
   incursion?: { code: string; owner: string; target: PoiId; ids: number[]; won: boolean };
 }
@@ -705,8 +704,7 @@ export function settle(p: Profile, s: State): Settlement {
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
   // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
-  // X2 / lead-incursion: the copy frees non-stage POIs for a short battlefield — never unlock
-  // those depots (or credit sentVia) on the home profile (Codex #197 P2).
+  // 短いレイド: コピー島は非ステージ拠点を解放済み（敵なし）とするため、自島プロフィールのデポやsentViaには反映しない。
   const depots = s.incursion ? [...p.depots] : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
   const depotSent = s.incursion
     ? { ...p.depotSent }
@@ -735,7 +733,7 @@ export function settle(p: Profile, s: State): Settlement {
   // Apply the same overnight pass once the raid's haul and quests are on today's island.
   const { profile: night } = advanceDay(settled, day);
   // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
-  // X2 short-raid wins do not rewrite home holds — award the same swap once here (no double count).
+  // 短いレイド勝利によるトロフィー変動（自島ノードの占有書き換えは行わない）。
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
   let trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
@@ -746,8 +744,8 @@ export function settle(p: Profile, s: State): Settlement {
     trop = { next: clampTrophies(self + gain), gained: trop.gained + gain, lost: trop.lost, taken: [s.incursion!.target as NodeId], dropped: trop.dropped };
   }
   if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
-  // X2: the outbound assault becomes holding on a win, gone on a miss (same list as 来る遠征 notice).
-  // Real islands keep `x2Pending` until `reportAssault` confirms (or a rejection rolls trophies back).
+  // 短いレイド: 出撃エントリを勝利時は holding、敗北時は gone に更新。
+  // 実プレイヤー相手は reportAssault による相手島サーバーの確認まで x2Pending を維持。
   if (s.incursion) {
     const expeditions = incursionWonEarly
       ? assaultWon(night.expeditions, s.incursion.code, trop.gained)
@@ -774,7 +772,7 @@ export function settle(p: Profile, s: State): Settlement {
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
   // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped
-  // (except X2 results still awaiting the defender island's `reportAssault`).
+  // （ただし相手サーバーの報告待ちである x2Pending エントリは残す）
   const away = awayIncome(night);
   const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone" || e.x2Pending);
   const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils + away, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
