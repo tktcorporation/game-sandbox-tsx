@@ -1446,7 +1446,7 @@ window.ringfallMove = {
     state.player.pitch = pitch;
   },
   hold: () => {
-    state.nodes = state.nodes.map(() => "freed");
+    state.nodes = state.nodes.map(() => "own");
   },
   zips: () => ZIPS.map((l, i) => ({ i, a: l.a, b: l.b, fixed: !!l.fixed, length: l.length, from: l.pts[0], to: l.pts[l.pts.length - 1] })),
   zip: (i, at) => {

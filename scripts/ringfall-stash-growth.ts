@@ -31,7 +31,7 @@ const rivalIsland = (p: Profile, rival: PoiId): Profile => {
   const poiState = { ...p.poiState };
   poiState[rival] = { state: rivalHold("Z3P9TR") };
   // Neighbour player ground so the node is on the front (supply next to camp).
-  if (rival !== "supply") poiState.supply = { state: "freed" };
+  if (rival !== "supply") poiState.supply = { state: "own" };
   return { ...p, poiState, day: 5, parcels: [] };
 };
 
@@ -49,7 +49,7 @@ function settleCapture(p0: Profile, poi: PoiId, haul: Item["kind"][] = []) {
     { id: 42, poi, kind: "fuse", from: { code: LOCAL_AID, name: "となり" }, at: 1 },
   ];
   const s = newRun(p.seed, starterKit(), "reservoir", {
-    island: Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id]?.state ?? "held"])),
+    island: Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id]?.state ?? "foe"])),
     depots: p.depots,
   });
   // Hold at raid start must still show rival for seizeRivalLoot.

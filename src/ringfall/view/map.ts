@@ -54,13 +54,13 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  * player's blue, which read on the sand and stay apart from the loot's colours. The titan's pad,
  * the enemy's for good, has a mark of its own in the robots' armour.
  */
-export const HOLD_CSS: Record<"held" | "freed", string> = { held: UI.foe, freed: UI.own };
+export const HOLD_CSS: Record<"foe" | "own", string> = { foe: UI.foe, own: UI.own };
 
 /** Another player's colour on the maps: a green, apart from the two sides', the rogues' violet and the ways off' yellow. */
 export const RIVAL_CSS = UI.rival;
 
 /** The colour of a node held `h`: the enemy's, the player's, or another player's. */
-export const holdCss = (h: PoiHold) => (h === "held" || h === "freed" ? HOLD_CSS[h] : RIVAL_CSS);
+export const holdCss = (h: PoiHold) => (h === "foe" || h === "own" ? HOLD_CSS[h] : RIVAL_CSS);
 
 /**
  * A flare as the HUD's icon draws it, centred on (x, y) and `r` tall from its middle: a red stick
@@ -118,7 +118,7 @@ export const lockReason = (holds: readonly NodeHold[], node: number) => `先に$
 /** The enemy's nodes off the front, whose cores refuse capture: the map puts a padlock on each. */
 export function lockedNodes(holds: readonly NodeHold[]): boolean[] {
   const front = frontNodes(holds);
-  return NODES.map((_, i) => holds[i] !== "freed" && !front[i]);
+  return NODES.map((_, i) => holds[i] !== "own" && !front[i]);
 }
 
 /** The padlock of `lockIcon()` (icons.ts) in its 16-unit box, so the map's lock matches the page's. */
@@ -212,7 +212,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
     g.moveTo(cx + s * 0.2, y + s * 0.9);
     g.lineTo(cx + s * 0.2, y - s * 0.9);
     g.stroke();
-    g.fillStyle = HOLD_CSS.freed;
+    g.fillStyle = HOLD_CSS.own;
     g.beginPath();
     g.moveTo(cx + s * 0.2, y - s * 0.9);
     g.lineTo(cx + s * 1.4, y - s * 0.5);
@@ -273,14 +273,14 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   }
   if (u.turret) {
     plate(s * 1.6);
-    g.fillStyle = HOLD_CSS.freed;
+    g.fillStyle = HOLD_CSS.own;
     g.fillRect(cx + s * 0.2, y - s * 0.1, s * 1.1, s * 0.9);
     g.fillRect(cx + s * 0.6, y - s * 0.7, s * 1.1, s * 0.35);
     cx += s * 2.3;
   }
   if (u.watch) {
     plate(s * 1.5);
-    g.fillStyle = HOLD_CSS.freed;
+    g.fillStyle = HOLD_CSS.own;
     g.beginPath();
     g.arc(cx + s * 0.75, y, s * 0.75, Math.PI * 0.35, Math.PI * 1.65);
     g.arc(cx + s * 1.15, y, s * 0.6, Math.PI * 1.42, Math.PI * 0.58, true);
@@ -291,7 +291,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   if (u.shore) {
     plate(s * 2.0);
     // A red boat, struck through.
-    g.fillStyle = HOLD_CSS.held;
+    g.fillStyle = HOLD_CSS.foe;
     g.beginPath();
     g.moveTo(cx, y);
     g.lineTo(cx + s * 2, y);
@@ -471,13 +471,13 @@ function paintLand(nodes: readonly NodeHold[]) {
   const g = c.getContext("2d")!;
   const img = g.createImageData(cols, rows);
   const rgb = (css: string) => [parseInt(css.slice(1, 3), 16), parseInt(css.slice(3, 5), 16), parseInt(css.slice(5, 7), 16)];
-  const cols4 = { freed: rgb(HOLD_CSS.freed), held: rgb(HOLD_CSS.held), rival: rgb(RIVAL_CSS) };
-  const mine = (k: number) => k === -2 || (k >= 0 && nodes[k] === "freed");
+  const cols4 = { own: rgb(HOLD_CSS.own), foe: rgb(HOLD_CSS.foe), rival: rgb(RIVAL_CSS) };
+  const mine = (k: number) => k === -2 || (k >= 0 && nodes[k] === "own");
   for (let n = 0; n < cols * rows; n++) {
     const k = own[n];
     if (k === -1) continue;
-    const h = k === -2 ? "freed" : nodes[k];
-    const col = h === "freed" || h === "held" ? cols4[h] : cols4.rival;
+    const h = k === -2 ? "own" : nodes[k];
+    const col = h === "own" || h === "foe" ? cols4[h] : cols4.rival;
     img.data[n * 4] = col[0];
     img.data[n * 4 + 1] = col[1];
     img.data[n * 4 + 2] = col[2];
@@ -1114,8 +1114,8 @@ export class IslandMap {
     const taken: Rect[] = [];
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
     // A POI the enemy held as the raid began and the player cleared gets a tick after its name; who holds it is its mark's colour.
-    const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
-    const poiText = (i: number) => (s.cleared[i] && hold(i) === "held" ? `${POIS[i].name} ✓` : POIS[i].name);
+    const hold = (i: number): PoiHold => s.hold?.[i] ?? "foe";
+    const poiText = (i: number) => (s.cleared[i] && hold(i) === "foe" ? `${POIS[i].name} ✓` : POIS[i].name);
     // E4: rival holds show the owner's name (AI tagged) under the mark.
     const rivalWho = (i: number): string | null => {
       const owner = rivalOf(hold(i));
@@ -1185,7 +1185,7 @@ export class IslandMap {
       const r = 13 * dpr;
       if (p.x < -r || p.y < -r || p.x > g.canvas.width + r || p.y > g.canvas.height + r) continue;
       // The sea route from the coast's node: lit while the player holds that node, faint and dashed till then.
-      const open = routeOpen(k, (id) => hold(poiIndex(id)) === "freed");
+      const open = routeOpen(k, (id) => hold(poiIndex(id)) === "own");
       const shore = POIS[poiIndex(slot.shore)];
       const q = at(shore.x, shore.z);
       g.save();
@@ -1474,14 +1474,14 @@ export class IslandMap {
         // The garrison's plate: a shield in the colour of the rarity that pierces it.
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
-        if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
+        if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "own");
         // Marked by the enemy for the coming night: a red crescent at its foot; blue once fortified.
         const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
         const k = nodeIndex(poi.id as NodeId);
-        if (night?.targets.includes(k) && hold(i) === "freed") drawMoon(g, p.x - r * 1.25, p.y + r * 0.95, r * 0.62, night.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[1]);
+        if (night?.targets.includes(k) && hold(i) === "own") drawMoon(g, p.x - r * 1.25, p.y + r * 0.95, r * 0.62, night.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[1]);
         // Another player's expedition is sent at it: a green landing arrow at its other foot; blue once fortified.
         const noticed = s.noticed ?? s.battle?.noticed;
-        if (noticed?.includes(k) && hold(i) === "freed") drawLanding(g, p.x + r * 1.35, p.y + r * 1.05, r * 0.8, s.battle?.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[3]);
+        if (noticed?.includes(k) && hold(i) === "own") drawLanding(g, p.x + r * 1.35, p.y + r * 1.05, r * 0.8, s.battle?.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[3]);
       }
       if (poi.boss && s.finale) {
         // Open to the decisive battle: a gold ring, pulsing.
@@ -1495,7 +1495,7 @@ export class IslandMap {
       }
       if (poi.boss) {
         // The titan's eye, in the robots' red.
-        g.fillStyle = HOLD_CSS.held;
+        g.fillStyle = HOLD_CSS.foe;
         g.beginPath();
         g.arc(p.x, p.y, r * 0.38, 0, Math.PI * 2);
         g.fill();
@@ -1562,8 +1562,8 @@ export class IslandMap {
     if (!locked[this.picked]) this.picked = -1;
     if (s.battle && s.nodes) this.drawBattle(g, s, at, dpr, label);
     // The nodes that changed hands: a thick ring in the colour each turned (a node lost to another player, or passing between others, in theirs).
-    const turned = (id: NodeId) => (s.nodes ? holdCss(s.nodes[nodeIndex(id)]) : HOLD_CSS.held);
-    for (const [ids, col] of [[s.changed?.gained ?? [], () => HOLD_CSS.freed], [s.changed?.lost ?? [], turned], [s.changed?.moved ?? [], turned]] as const)
+    const turned = (id: NodeId) => (s.nodes ? holdCss(s.nodes[nodeIndex(id)]) : HOLD_CSS.foe);
+    for (const [ids, col] of [[s.changed?.gained ?? [], () => HOLD_CSS.own], [s.changed?.lost ?? [], turned], [s.changed?.moved ?? [], turned]] as const)
       for (const id of ids) {
         const n = NODES[nodeIndex(id)];
         const p = at(n.x, n.z);

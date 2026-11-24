@@ -53,18 +53,18 @@ export function trophyDelta(
   const dropped: NodeId[] = [];
   for (let i = 0; i < NODES.length; i++) {
     const id = NODES[i].id;
-    const was = before[i] ?? "held";
-    const now = after[i] ?? "held";
+    const was = before[i] ?? "foe";
+    const now = after[i] ?? "foe";
     const wasRival = rivalOf(was);
     const nowRival = rivalOf(now);
-    // Took a rival (or any non-freed that ends freed from a rival start).
-    if (wasRival !== null && now === "freed") {
+    // Took a rival (or any non-own that ends own from a rival start).
+    if (wasRival !== null && now === "own") {
       const { gain } = trophySwap(self + gained - lost, rivalTrophiesOf(wasRival));
       gained += gain;
       taken.push(id);
     }
-    // Lost a freed node to a rival.
-    if (was === "freed" && nowRival !== null) {
+    // Lost an owned node to a rival.
+    if (was === "own" && nowRival !== null) {
       const { loss } = trophySwap(rivalTrophiesOf(nowRival), self + gained - lost);
       lost += loss;
       dropped.push(id);

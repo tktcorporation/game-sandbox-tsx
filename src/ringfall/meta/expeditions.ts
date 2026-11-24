@@ -130,9 +130,9 @@ export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: numbe
 /** The holds of an owner's report (`PUT /api/islands/:code`): each node's in the server's order (`ISLAND_TABLE`). */
 export const reportHolds = (p: { poiState: Island }): PoiHold[] =>
   ISLAND_TABLE.nodes.map((n) => {
-    const h = p.poiState[n.id as NodeId]?.state ?? "held";
+    const h = p.poiState[n.id as NodeId]?.state ?? "foe";
     // A node one of the game's own islands holds (meta/ai-islands.ts) is no player's to the server: the enemy's.
-    return isAiOwner(rivalOf(h)) ? "held" : h;
+    return isAiOwner(rivalOf(h)) ? "foe" : h;
   });
 
 /**
@@ -143,7 +143,7 @@ export const reportHolds = (p: { poiState: Island }): PoiHold[] =>
  * cannot undo it by reporting the node as its own.
  */
 export function retakenNodes(before: { poiState: Island }, after: { poiState: Island }, captured: readonly string[]): NodeId[] {
-  return NODES.filter((n) => after.poiState[n.id]?.state === "freed" && (captured.includes(n.id) || rivalOf(before.poiState[n.id]?.state ?? "held") !== null)).map((n) => n.id);
+  return NODES.filter((n) => after.poiState[n.id]?.state === "own" && (captured.includes(n.id) || rivalOf(before.poiState[n.id]?.state ?? "foe") !== null)).map((n) => n.id);
 }
 
 /** Nodes taken back still to report (`Profile.retaken`) with `more` added: each once, in `NODES` order. */
@@ -211,7 +211,7 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
   const parcels = s.parcels ? [...s.parcels] : p.parcels;
   // T1: ownership that changed while away (mergeHolds) moves trophies once here — settle will not
-  // see the same freed→rival transition again because `p.poiState` already matches.
+  // see the same own→rival transition again because `p.poiState` already matches.
   let trophies = p.trophies;
   if (poiState !== p.poiState && typeof p.trophies === "number") {
     const next = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState)).next;

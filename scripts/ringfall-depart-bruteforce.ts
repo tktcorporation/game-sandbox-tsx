@@ -49,7 +49,7 @@ const fail = (msg: string) => {
 
 const freeAll = (p: Profile): Profile => {
   const poiState = { ...p.poiState };
-  for (const n of NODES) if (n.id !== "pad") poiState[n.id] = { state: "freed" };
+  for (const n of NODES) if (n.id !== "pad") poiState[n.id] = { state: "own" };
   return {
     ...p,
     poiState,
@@ -60,7 +60,7 @@ const freeAll = (p: Profile): Profile => {
 
 const freeIds = (p: Profile, ids: PoiId[]): Profile => {
   const poiState = { ...p.poiState };
-  for (const id of ids) poiState[id] = { state: "freed" };
+  for (const id of ids) poiState[id] = { state: "own" };
   return {
     ...p,
     poiState,

@@ -22,11 +22,11 @@ assert.equal(clampTrophies(99999), TROPHY.max);
 }
 
 {
-  const before = NODES.map(() => "held" as const);
+  const before = NODES.map(() => "foe" as const);
   const after = [...before];
   const i = 0;
   before[i] = rivalHold("AAAAAA");
-  after[i] = "freed";
+  after[i] = "own";
   const d = trophyDelta(1000, before, after);
   assert.ok(d.gained >= TROPHY.base - TROPHY.maxBonus);
   assert.equal(d.taken.length, 1);
@@ -34,9 +34,9 @@ assert.equal(clampTrophies(99999), TROPHY.max);
 }
 
 {
-  const before = NODES.map(() => "held" as const);
+  const before = NODES.map(() => "foe" as const);
   const after = [...before];
-  before[0] = "freed";
+  before[0] = "own";
   after[0] = rivalHold("BBBBBB");
   const d = trophyDelta(1000, before, after);
   assert.ok(d.lost > 0);
@@ -46,14 +46,14 @@ assert.equal(clampTrophies(99999), TROPHY.max);
 
 {
   const p = newProfile(1);
-  assert.equal(p.v, 32);
+  assert.equal(p.v, 33);
   assert.equal(p.trophies, TROPHY.start);
   const raw = JSON.parse(JSON.stringify(p));
   raw.v = 31;
   delete raw.trophies;
   const old = parseProfile(raw, 1);
   assert.ok(old);
-  assert.equal(old.v, 32);
+  assert.equal(old.v, 33);
   assert.equal(old.trophies, TROPHY.start);
 }
 
@@ -61,7 +61,7 @@ assert.equal(clampTrophies(99999), TROPHY.max);
 {
   const p = newProfile(3);
   const id = NODES[0].id;
-  p.poiState = { ...p.poiState, [id]: { state: "freed" } };
+  p.poiState = { ...p.poiState, [id]: { state: "own" } };
   const before = p.trophies;
   const { profile } = applySync(p, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
   assert.ok(profile.trophies! < before);

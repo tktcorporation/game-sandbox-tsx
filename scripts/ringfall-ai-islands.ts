@@ -56,7 +56,7 @@ for (const a of aiIslands(SALT)) {
 const at = (day: number, freed: NodeId[], expeditions: Outgoing[] = []): Profile => {
   const p = newProfile(3);
   const poiState = { ...p.poiState };
-  for (const id of freed) poiState[id] = { state: "freed" };
+  for (const id of freed) poiState[id] = { state: "own" };
   return { ...p, day, poiState, expeditions };
 };
 const shore = NEIGHBOUR_SLOTS[0].shore;
@@ -100,7 +100,7 @@ const STATION = nodeIndex(shore);
 const b = s.battle!;
 const spot = { ...s.player.pos };
 let t = 0;
-for (; t < 1500 / TICK && s.phase === "play" && s.nodes[STATION] === "freed"; t++) {
+for (; t < 1500 / TICK && s.phase === "play" && s.nodes[STATION] === "own"; t++) {
   b.squads = b.squads.filter((q) => q.side === 3);
   s.enemies = s.enemies.filter((e) => e.rival);
   step(s, idleInput(), false);
@@ -116,8 +116,8 @@ const after = settle(p, s).profile;
 if (after.poiState[shore].state !== rivalHold(aiOwner(first.code))) fail(`the next day the station is ${after.poiState[shore].state}`);
 const news = aiRaidNews(p, after, SALT, [], NOW);
 if (news.length !== 1 || news[0].t !== "taken" || news[0].by.code !== first.code) fail(`the news read ${JSON.stringify(news)}`);
-if (reportHolds(after)[NODES.findIndex((n) => n.id === shore)] !== "held") fail("the report gives the server the island's node");
-const synced = mergeHolds(after.poiState, NODES.map((n) => ({ id: n.id, hold: n.id === shore ? "held" : after.poiState[n.id].state })));
+if (reportHolds(after)[NODES.findIndex((n) => n.id === shore)] !== "foe") fail("the report gives the server the island's node");
+const synced = mergeHolds(after.poiState, NODES.map((n) => ({ id: n.id, hold: n.id === shore ? "foe" : after.poiState[n.id].state })));
 if (synced[shore].state !== after.poiState[shore].state) fail("a sync from the server undid the island's node");
 const next = aiLent(after, SALT, []);
 if (!next.some((l) => l.target === shore && l.state === "holding")) fail("the next raid stands no squad of the island at the station");

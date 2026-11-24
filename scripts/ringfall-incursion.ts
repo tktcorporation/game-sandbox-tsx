@@ -31,7 +31,7 @@ check(parcels.some((q) => q.poi === target), "ai parcels: target node has no sto
 const plan = planIncursion(view, target, { ai: true, known: [] });
 check(!!plan, "plan: refused an open AI node");
 check(plan?.target === target, "plan: wrong target");
-check(rivalOf(plan!.island[target] ?? "held") !== null, "plan: target is not rival-held on the copy");
+check(rivalOf(plan!.island[target] ?? "foe") !== null, "plan: target is not rival-held on the copy");
 
 // Gate path: settle without incursion must not invent seized loot.
 {
@@ -91,7 +91,7 @@ check(rivalOf(plan!.island[target] ?? "held") !== null, "plan: target is not riv
 {
   const island = viewToRaidIsland(view, `ai-${a.code}`);
   check(island[target] === rivalHold(`ai-${a.code}`), "viewToRaidIsland: target not rival");
-  check(NODES.filter((n) => !held.includes(n.id)).every((n) => island[n.id] === "held" || n.id === "pad"), "viewToRaidIsland: enemy nodes");
+  check(NODES.filter((n) => !held.includes(n.id)).every((n) => island[n.id] === "foe" || n.id === "pad"), "viewToRaidIsland: enemy nodes");
 }
 
 // A few idle steps on an incursion run must not throw (sim smoke).

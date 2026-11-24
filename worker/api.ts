@@ -63,6 +63,12 @@ export interface IslandPost {
 const json = (status: number, body: unknown) => Response.json(body, { status });
 const fail = (status: number, error: ApiError) => json(status, { ok: false, error });
 
+/**
+ * 202 Accepted response for optional Worker bindings (D1 DB or ISLAND DO) that are not yet bound.
+ * Returns `{ ok: false, error }` with HTTP 202 so clients can skip gracefully without error logging.
+ */
+const unbound = (error: "no-database" | "no-island-server") => json(202, { ok: false, error });
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const int = (v: unknown, lo: number, hi: number): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
@@ -217,7 +223,7 @@ async function ownCode(env: ApiEnv, code: string, player: string, now: number) {
  * that is no neighbour of theirs (named by its code: a friend's, an attacker's answered) is open,
  * as is any when the database cannot be read.
  */
-async function routeShut(env: ApiEnv, player: string, code: string, held: readonly string[], now: number): Promise<boolean> {
+async function isNeighbourRouteShut(env: ApiEnv, player: string, code: string, held: readonly string[], now: number): Promise<boolean> {
   try {
     const pick = (await env.DB?.prepare("SELECT slot FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 AND code = ?3").bind(player, Math.floor(now / NEIGHBOURS.weekMs), code).all<{ slot: number }>())?.results[0];
     const shore = pick ? NEIGHBOUR_SLOTS[pick.slot]?.shore : undefined;
@@ -261,7 +267,7 @@ const mix32 = (s: string) => {
  */
 async function neighbours(env: ApiEnv, player: string, now: number): Promise<Response> {
   const db = env.DB;
-  if (!db) return fail(202, "no-database");
+  if (!db) return unbound("no-database");
   try {
     const mine = (await db.prepare("SELECT i.code AS code, s.held AS held FROM islands i LEFT JOIN island_summaries s ON s.player_id = i.player_id WHERE i.player_id = ?1").bind(player).all<{ code: string; held: number | null }>()).results[0];
     if (!mine) return json(200, { ok: true, neighbours: [] });
@@ -324,13 +330,13 @@ async function neighbours(env: ApiEnv, player: string, now: number): Promise<Res
 async function handleIslands(request: Request, env: ApiEnv, now: number, url: URL, draw: () => string): Promise<Response> {
   if (url.pathname === "/api/islands") {
     if (request.method !== "POST") return notAllowed("POST");
-    return env.ISLAND ? claimIsland(request, env, env.ISLAND, now, draw) : fail(202, "no-island-server");
+    return env.ISLAND ? claimIsland(request, env, env.ISLAND, now, draw) : unbound("no-island-server");
   }
   const parts = url.pathname.split("/").slice(3);
   const code = parseIslandCode(parts[0]);
   // …/expeditions/<n> names one expedition by the number the island gave it (a recall).
-  const one = parts.length === 3 && parts[1] === "expeditions" && /^[1-9]\d{0,8}$/.test(parts[2]) ? Number(parts[2]) : null;
-  const sub = one !== null ? "expedition" : parts.slice(1).join("/");
+  const recalledExpeditionId = parts.length === 3 && parts[1] === "expeditions" && /^[1-9]\d{0,8}$/.test(parts[2]) ? Number(parts[2]) : null;
+  const sub = recalledExpeditionId !== null ? "expedition" : parts.slice(1).join("/");
   if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid" && sub !== "assault")) return fail(404, "not-found");
   const method = request.method;
   const allow =
@@ -342,19 +348,17 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
           ? "DELETE"
           : sub === "lease"
             ? "POST, DELETE"
-            : sub === "pings" || sub === "aid" || sub === "assault"
-              ? "POST"
-              : "POST";
+            : "POST";
   if (!allow.split(", ").includes(method)) return notAllowed(allow);
   const ns = env.ISLAND;
-  if (!ns) return fail(202, "no-island-server");
+  if (!ns) return unbound("no-island-server");
   if (sub === "" && method === "GET") return ask(ns, code, { t: "view" }, now);
   if (sub === "log" || sub === "lease" || sub === "pings") {
     // The owner's secret id goes in a header, never in the URL, where logs and histories keep it.
     const player = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
     if (!UUID.test(player)) return fail(401, "unauthorized");
     // A raid of the owner's takes the island's expeditions in.
-    if (sub === "lease") return ask(ns, code, { t: method === "DELETE" ? "unlease" : "lease", player }, now);
+    if (sub === "lease") return ask(ns, code, { t: method === "DELETE" ? "releaseLease" : "lease", player }, now);
     if (sub === "pings") {
       const body = await readJson(request);
       if (body instanceof Response) return body;
@@ -394,11 +398,11 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   // The name others see is the one the sender's island keeps, not one the request names.
   const { factory, name, held, attackers } = (await who.json()) as { factory: number; name: string; held?: string[]; attackers?: string[] };
   // A recall: the sender, shown to own the island the expedition came from, calls it home.
-  if (one !== null) return ask(ns, code, { t: "recall", from: fromCode, id: one }, now);
+  if (recalledExpeditionId !== null) return ask(ns, code, { t: "recall", from: fromCode, id: recalledExpeditionId }, now);
   // Aid donation (ux-design C2): a valuable left at a depot on the target island for offline defence.
   if (sub === "aid") {
     if (typeof raw.kind !== "string" || !raw.kind || typeof raw.poi !== "string") return fail(400, "bad-request");
-    if (!attackers?.includes(code) && (await routeShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
+    if (!attackers?.includes(code) && (await isNeighbourRouteShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
     return ask(ns, code, { t: "aid", from: { code: fromCode, name }, poi: raw.poi, kind: raw.kind }, now);
   }
   // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
@@ -409,7 +413,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (typeof raw.target !== "string" || !int(raw.units, 1, 64)) return fail(400, "bad-request");
   // A neighbour of the sender's this week is reached only by its sea route (the sender holds the node
   // facing it), unless it attacked the sender's island lately: an attack is answered by any way (仕返し).
-  if (!attackers?.includes(code) && (await routeShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
+  if (!attackers?.includes(code) && (await isNeighbourRouteShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
   const kinds = squadKinds(factory);
   if (raw.units > kinds.length) return fail(400, "too-many-units");
   const x2 = raw.x2 === true;
@@ -440,7 +444,7 @@ export async function handleApi(request: Request, env: ApiEnv, now = Date.now(),
   }
   if (pathname !== "/api/island") return fail(404, "not-found");
   if (request.method !== "POST") return notAllowed("POST");
-  if (!env.DB) return fail(202, "no-database");
+  if (!env.DB) return unbound("no-database");
   const body = await readJson(request);
   if (body instanceof Response) return body;
   const post = parseIslandPost(body.raw);

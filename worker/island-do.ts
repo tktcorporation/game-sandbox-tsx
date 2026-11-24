@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import { advance, islandOp, nextAlarm, type IslandOp, type IslandState } from "./island";
+import { advance, islandOp, migrateIslandState, nextAlarm, type IslandOp, type IslandState } from "./island";
 
 /*
  * One island's Durable Object (docs/ringfall/multiplayer.md, 戦いの解き方): the only writer of that
@@ -19,26 +19,28 @@ export class IslandDO implements DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const { op, now } = (await request.json()) as { op: IslandOp; now: number };
-    const state = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
+    const raw = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
+    const state = raw ? migrateIslandState(raw) : null;
     const r = islandOp(state, op, now);
     if (r.state && r.changed) await this.ctx.storage.put(KEY, r.state);
-    await this.arm(r.state, now);
+    await this.scheduleNextAlarm(r.state, now);
     return Response.json(r.body, { status: r.status });
   }
 
   async alarm(): Promise<void> {
-    const state = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
-    if (!state) return;
+    const raw = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
+    if (!raw) return;
+    const state = migrateIslandState(raw);
     const now = Date.now();
     const { behind, moved } = advance(state, now);
     if (moved) await this.ctx.storage.put(KEY, state);
     // The alarm that fired is spent: the next goes on at once for an island further behind than one reckoning.
     if (behind) await this.ctx.storage.setAlarm(now + 1);
-    else await this.arm(state, now);
+    else await this.scheduleNextAlarm(state, now);
   }
 
   /** Sets the alarm to `nextAlarm()`, or clears it when nothing on the island can change. */
-  private async arm(state: IslandState | null, now: number) {
+  private async scheduleNextAlarm(state: IslandState | null, now: number) {
     const at = nextAlarm(state, now);
     const set = await this.ctx.storage.getAlarm();
     if (at === null) {

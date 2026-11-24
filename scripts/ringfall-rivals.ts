@@ -48,7 +48,7 @@ const STATION = nodeIndex("station");
 function island(freed: NodeId[], rival: NodeId[] = []): Profile {
   const p = newProfile(8);
   const poiState = { ...p.poiState };
-  for (const id of freed) poiState[id] = { state: "freed" };
+  for (const id of freed) poiState[id] = { state: "own" };
   for (const id of rival) poiState[id] = { state: rivalHold(OWNER) };
   return { ...p, poiState };
 }
@@ -112,7 +112,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   const tp = island(["supply", "relay", "waterworks"]);
   const ts = raid(tp, { factory: 0, rivals: [{ owner: OWNER, target: "relay", kinds: ["grunt", "grunt", "grunt"], at: 5 }] });
   quiet(ts.battle!);
-  r.take = until(ts, 900, () => ts.nodes[RELAY] !== "freed");
+  r.take = until(ts, 900, () => ts.nodes[RELAY] !== "own");
   if (ts.nodes[RELAY] !== rivalHold(OWNER)) return fail(`an expedition sent to the undefended relay left it ${ts.nodes[RELAY]} after 900 s`);
   if (!ts.battle!.taken.some((t) => t.node === "relay" && t.side === 3)) return fail("the relay taken by another player is not among the nodes that changed hands");
   if (!ts.battle!.squads.some((q) => q.side === 3 && q.owner === OWNER && q.to === RELAY && q.task === "hold")) return fail("the expedition does not hold the relay it took");
@@ -131,8 +131,8 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   ft.battle!.fortified.push(RELAY);
   if (fortifiable(ft, RELAY)) return fail("a fortified node can be fortified again");
   const stood = r.take + 2 * CONQUEST.capture + 60;
-  until(ft, stood, () => ft.nodes[RELAY] !== "freed");
-  if (ft.nodes[RELAY] !== "freed") return fail(`the fortified relay fell to the expedition (${ft.nodes[RELAY]})`);
+  until(ft, stood, () => ft.nodes[RELAY] !== "own");
+  if (ft.nodes[RELAY] !== "own") return fail(`the fortified relay fell to the expedition (${ft.nodes[RELAY]})`);
   if (!ft.battle!.squads.some((q) => q.side === 3 && q.to === RELAY)) return fail("the expedition at the fortified relay is gone");
   r.fortified = stood;
   if (raid(tp, { factory: 0 }).battle!.noticed.length) return fail("a battle with no expedition announces one");
@@ -146,7 +146,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   r.transit.t = until(
     xs,
     1200,
-    () => xs.nodes[SUP] !== "freed",
+    () => xs.nodes[SUP] !== "own",
     (evs) => {
       evs.forEach((e) => e.t === "nodeThreat" && threats.set(e.node, (threats.get(e.node) ?? 0) + 1));
       const f = battleFocus(xs);
@@ -156,7 +156,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   r.transit.threats = (threats.get(QUARRY) ?? 0) + (threats.get(RELAY) ?? 0);
   if (r.transit.focus) return fail(`the battle's focus named a node the expedition only passed through on ${r.transit.focus} steps`);
   if (xs.nodes[SUP] !== rivalHold(OWNER)) return fail(`an expedition sent through the player's ground to the supply depot left it ${xs.nodes[SUP]} after 1200 s`);
-  if (xs.nodes[QUARRY] !== "freed" || xs.nodes[RELAY] !== "freed" || r.transit.threats) return fail(`the expedition came at the nodes on its way: quarry ${xs.nodes[QUARRY]}, relay ${xs.nodes[RELAY]}, ${r.transit.threats} threats there`);
+  if (xs.nodes[QUARRY] !== "own" || xs.nodes[RELAY] !== "own" || r.transit.threats) return fail(`the expedition came at the nodes on its way: quarry ${xs.nodes[QUARRY]}, relay ${xs.nodes[RELAY]}, ${r.transit.threats} threats there`);
   if (xs.battle!.taken.some((t) => t.node !== "supply") || xs.battle!.meter.some((m, i) => m && i !== SUP)) return fail(`the expedition began taking a node it was not sent to: ${JSON.stringify(xs.battle!.taken)}`);
 
   // watched: the player stands 60 m from the last node on the expedition's way to the supply depot, so its squad is
@@ -174,7 +174,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   until(
     wsx,
     600,
-    () => wsx.nodes[last] !== "freed",
+    () => wsx.nodes[last] !== "own",
     (evs) => {
       // Nothing else in the world: the island's own robots would bring the expedition down on its way.
       wsx.enemies = wsx.enemies.filter((e) => e.battle);
@@ -184,7 +184,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   );
   r.watched.seen = Math.round(r.watched.seen);
   if (!r.watched.seen) return fail(`the expedition's robots never stood by the ${NODES[last].id}'s core in the world, its way run on to the supply depot`);
-  if (r.watched.threats || wsx.nodes[last] !== "freed" || wsx.battle!.meter[last]) return fail(`in the world the expedition came at the ${NODES[last].id} it only passed: ${r.watched.threats} threats, now ${wsx.nodes[last]}`);
+  if (r.watched.threats || wsx.nodes[last] !== "own" || wsx.battle!.meter[last]) return fail(`in the world the expedition came at the ${NODES[last].id} it only passed: ${r.watched.threats} threats, now ${wsx.nodes[last]}`);
 
   // turrets on the way: the factory's turrets stand at the player's quarry and relay; the expedition fights the one it meets as it passes, and takes neither node.
   const tp3 = island(["supply", "quarry", "relay"]);
@@ -199,14 +199,14 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   until(t3, 900, () => t3.battle!.squads.some((q) => q.side === 3 && q.to === SUP) || (t3.time > 30 && !exp()), (evs) => evs.forEach((e) => e.t === "nodeThreat" && (e.node === QUARRY || e.node === RELAY) && turretThreats.add(e.node)));
   r.transit.turret = Math.round(full - health());
   if (r.transit.turret <= 0) return fail("the expedition walked past the factory's turret on its way without fighting it");
-  if (t3.nodes[QUARRY] !== "freed" || t3.nodes[RELAY] !== "freed" || turretThreats.size) return fail(`with turrets on its way the expedition came at the nodes it passed: quarry ${t3.nodes[QUARRY]}, relay ${t3.nodes[RELAY]}, threats at ${[...turretThreats].join()}`);
+  if (t3.nodes[QUARRY] !== "own" || t3.nodes[RELAY] !== "own" || turretThreats.size) return fail(`with turrets on its way the expedition came at the nodes it passed: quarry ${t3.nodes[QUARRY]}, relay ${t3.nodes[RELAY]}, threats at ${[...turretThreats].join()}`);
 
   // retake: another player's relay next to the player's supply depot, one robot of theirs holding it; the factory at its top.
   const rp = island(["supply"], ["relay"]);
   const rs = raid(rp, { factory: FACTORY_TOP, rivals: [{ owner: OWNER, target: "relay", kinds: ["grunt"], at: 0 }] });
   quiet(rs.battle!, true);
   if (!rs.battle!.squads.some((q) => q.side === 3 && q.to === RELAY && q.task === "hold")) return fail("an expedition at the relay its owner holds does not stand there from the start");
-  r.retake = until(rs, 1200, () => rs.nodes[RELAY] === "freed");
+  r.retake = until(rs, 1200, () => rs.nodes[RELAY] === "own");
   if (r.retake < 0) return fail(`the factory's squads never took back another player's relay (${rs.nodes[RELAY]}) in 1200 s`);
   if (!rs.battle!.taken.some((t) => t.node === "relay" && t.side === 0)) return fail("the relay taken back is not among the nodes that changed hands");
 
@@ -214,13 +214,13 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   const fp = island(["supply"], ["station"]);
   const fs = raid(fp, { factory: 0 });
   if (!frontNodes(fs.nodes)[STATION]) return fail("another player's node next to the player's ground is not on the front");
-  if (frontNodes(fs.nodes).some((on, i) => on !== (fs.nodes[i] !== "freed" && (CAMP_NEXT.includes(i) || NEIGHBOURS[i].some((k) => fs.nodes[k] === "freed"))))) return fail("another player's node changed the rest of the front");
+  if (frontNodes(fs.nodes).some((on, i) => on !== (fs.nodes[i] !== "own" && (CAMP_NEXT.includes(i) || NEIGHBOURS[i].some((k) => fs.nodes[k] === "own"))))) return fail("another player's node changed the rest of the front");
   useCore(fs, STATION);
   if (fs.capture?.node !== STATION || fs.events.some((e) => e.t === "coreShielded")) return fail("the core of another player's node on the front refused the player");
   if (enemyNodes(fs.nodes) !== NODES.length - 2) return fail(`with one node the player's and one another player's the enemy holds ${enemyNodes(fs.nodes)}`);
   // At the fewest nodes that make the enemy a level stronger, one of them another player's instead brings it back down.
   const lift = STRENGTH.byShare.map(([share]) => Math.ceil(share * NODES.length - 1e-9)).filter((k) => k > 0 && strengthFor(k) > strengthFor(k - 1))[0];
-  const enemyAt = NODES.map((_, i) => (i < lift ? "freed" : "held"));
+  const enemyAt = NODES.map((_, i) => (i < lift ? "own" : "foe"));
   const rivalAt = enemyAt.map((h, i) => (i === 0 ? rivalHold(OWNER) : h));
   r.strength = { at: lift, level: [strengthFor(ownNodes(enemyAt)), strengthFor(ownNodes(rivalAt))] };
   if (lift === undefined || r.strength.level[1] !== strengthFor(lift - 1) || r.strength.level[0] <= r.strength.level[1]) return fail(`with ${lift} nodes the enemy's the strength is ${r.strength.level[0]}, with one of them another player's ${r.strength.level[1]}`);
@@ -255,29 +255,29 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
 
   // pure: a squad of another player's at a node of the player's nobody holds takes it in numbers.
   const plain: ReckonSquad = { id: 1, side: 3, owner: OWNER, units: [{ kind: "grunt" as EnemyKind, hp: 100, shield: 0 }], to: 0, task: "attack", x: 0, z: 0, arrived: true, live: false, ashore: 0 };
-  let f = { holds: ["freed", "held"] as State["nodes"], squads: [plain], guards: [[], []], watched: [false, false], rarity: 1 as const, meter: [null, null] as Battle["meter"], threat: [false, false] };
+  let f = { holds: ["own", "foe"] as State["nodes"], squads: [plain], guards: [[], []], watched: [false, false], rarity: 1 as const, meter: [null, null] as Battle["meter"], threat: [false, false] };
   const frozen = JSON.stringify(f);
-  for (let k = 1; k <= 60 && f.holds[0] === "freed"; k++) {
+  for (let k = 1; k <= 60 && f.holds[0] === "own"; k++) {
     const out = reckonApart(f, CONQUEST.tick);
     if (k === 1 && JSON.stringify(f) !== frozen) return fail("the reckoning in numbers changed its input");
     f = { ...f, holds: out.holds, squads: out.squads, meter: out.meter, threat: out.threat };
-    if (out.holds[0] !== "freed") r.pure = k;
+    if (out.holds[0] !== "own") r.pure = k;
   }
   if (f.holds[0] !== rivalHold(OWNER) || r.pure !== Math.ceil(CONQUEST.capture / CONQUEST.tick) || f.squads[0].task !== "hold") return fail(`the reckoning in numbers left the node ${f.holds[0]} after ${r.pure} calls, its squad ${f.squads[0]?.task}`);
 
   // The same in numbers with the node shut (fortified): the meter never fills for another player's squad.
-  let shut = { holds: ["freed", "held"] as State["nodes"], squads: [plain], guards: [[], []], present: [null, null], meter: [null, null] as Battle["meter"], threat: [false, false], shut: [true, false] };
+  let shut = { holds: ["own", "foe"] as State["nodes"], squads: [plain], guards: [[], []], present: [null, null], meter: [null, null] as Battle["meter"], threat: [false, false], shut: [true, false] };
   for (let k = 1; k <= 60; k++) {
     const out = reckonCaptures(shut, CONQUEST.tick);
     shut = { ...shut, holds: out.holds, squads: out.squads, meter: out.meter, threat: out.threat };
   }
-  if (shut.holds[0] !== "freed" || shut.meter[0]) return fail(`a shut node in numbers was left ${shut.holds[0]}, its meter ${JSON.stringify(shut.meter[0])}`);
+  if (shut.holds[0] !== "own" || shut.meter[0]) return fail(`a shut node in numbers was left ${shut.holds[0]}, its meter ${JSON.stringify(shut.meter[0])}`);
 
   // two expeditions: A (owner a) takes node 0, which B (owner b) only passes through on its way to node 1; B keeps
   // coming for node 1 and, once it stands there, takes it. In numbers, as a server would reckon them.
   const grunt = () => ({ kind: "grunt" as EnemyKind, hp: 100, shield: 0 });
   let two = {
-    holds: ["freed", "freed"] as State["nodes"],
+    holds: ["own", "own"] as State["nodes"],
     squads: [
       { id: 1, side: 3 as const, owner: "a", units: [grunt()], to: 0, task: "attack" as const, x: 0, z: 0, arrived: true, live: false, ashore: 0 },
       { id: 2, side: 3 as const, owner: "b", units: [grunt()], to: 0, task: "attack" as const, x: 0, z: 0, arrived: true, live: false, ashore: 0, passing: true },
@@ -290,24 +290,24 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   for (let k = 1; k <= 120 && r.two[1] < 0; k++) {
     const out = reckonCaptures(two, CONQUEST.tick);
     two = { ...two, holds: out.holds, squads: out.squads, meter: out.meter, threat: out.threat };
-    if (r.two[0] < 0 && out.holds[0] !== "freed") {
+    if (r.two[0] < 0 && out.holds[0] !== "own") {
       r.two[0] = k;
       const b = two.squads.find((q) => q.id === 2)!;
       if (b.task !== "attack") return fail(`the expedition passing through the node another took was set to ${b.task}`);
       // B walks on: it comes to node 1, its way done.
       two = { ...two, squads: two.squads.map((q) => (q.id === 2 ? { ...q, to: 1, passing: undefined } : q)) };
     }
-    if (out.holds[1] !== "freed") r.two[1] = k;
+    if (out.holds[1] !== "own") r.two[1] = k;
   }
   if (two.holds[0] !== rivalHold("a") || two.holds[1] !== rivalHold("b")) return fail(`two expeditions left the nodes ${two.holds.join()} (calls ${r.two.join()})`);
 
   // saves: a v26 save keeps another player's node; a v25 one reads it as the enemy's.
   const kept = parseProfile(JSON.parse(JSON.stringify(after.profile)));
-  if (!kept || kept.v !== 32 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
+  if (!kept || kept.v !== 33 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
   const old = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 25 })));
-  if (!old || old.poiState.relay.state !== "held") return fail(`a v25 save loaded the relay as ${old?.poiState.relay.state}`);
+  if (!old || old.poiState.relay.state !== "foe") return fail(`a v25 save loaded the relay as ${old?.poiState.relay.state}`);
   const bad = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, poiState: { ...after.profile.poiState, relay: { state: "rival:" } } })));
-  if (!bad || bad.poiState.relay.state !== "held") return fail(`a save with an empty owner loaded the relay as ${bad?.poiState.relay.state}`);
+  if (!bad || bad.poiState.relay.state !== "foe") return fail(`a save with an empty owner loaded the relay as ${bad?.poiState.relay.state}`);
 
   // none: a battle whose only expedition sets off after the battle has ended plays as one given none.
   const np = island(["supply", "relay"]);

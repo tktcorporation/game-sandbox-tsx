@@ -24,8 +24,8 @@ export interface BarOpts {
 /** The bar's HTML for `holds` (`NODES` order); `change` makes the boundary slide from before it. */
 export function nodeRow(holds: readonly NodeHold[], change?: { gained?: readonly NodeId[]; lost?: readonly NodeId[] }, o: BarOpts = {}): string {
   const n = NODES.length;
-  const own = holds.filter((h) => h === "freed").length;
-  const rival = holds.filter((h) => h !== "freed" && h !== "held").length;
+  const own = holds.filter((h) => h === "own").length;
+  const rival = holds.filter((h) => h !== "own" && h !== "foe").length;
   const from = Math.max(0, Math.min(n, o.from ?? own - (change?.gained?.length ?? 0) + (change?.lost?.length ?? 0)));
   const risk = Math.min(own, o.risk ?? 0);
   const style = `--n:${n};--own-n:${own};--from:${from};--risk:${risk};--delay:${o.delay ?? (change ? 0.5 : 0)}s${rival ? `;--rival-n:${rival}` : ""}`;

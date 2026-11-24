@@ -433,10 +433,10 @@ export class Hud {
       case "poiStart":
         {
           // What the POI's standing on the island means on arrival.
-          const h = s.hold?.[e.poi] ?? "held";
+          const h = s.hold?.[e.poi] ?? "foe";
           const name = POIS[e.poi].name;
           if (POIS[e.poi].boss) this.banner(name);
-          else this.banner(name, "", h === "freed");
+          else this.banner(name, "", h === "own");
         }
         break;
       case "poiClear":
@@ -543,7 +543,7 @@ export class Hud {
       }
       case "coreTaken": {
         // e.node is a NODES index; s.hold is per POI. Rival at raid start → loot in 倉庫へ届いた.
-        const holdAt = s.hold ? rivalOf(s.hold[poiIndex(NODES[e.node].id)] ?? "held") !== null : false;
+        const holdAt = s.hold ? rivalOf(s.hold[poiIndex(NODES[e.node].id)] ?? "foe") !== null : false;
         this.toast(
           `${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}${holdAt ? `<span class="toast-sub">倉庫へ届く</span>` : ""}`,
           1,
@@ -566,7 +566,7 @@ export class Hud {
       }
       case "nodeTaken": {
         const name = NODES[e.node].name;
-        const owner = rivalOf(s.nodes[e.node] ?? "held");
+        const owner = rivalOf(s.nodes[e.node] ?? "foe");
         if (e.side === 3) this.toast(`${coreIcon(SIDE.rival)}${name}<span class="toast-sub">${esc(owner !== null ? (this.rivalNames.get(owner) ?? "他のプレイヤー") : "他のプレイヤー")}が制圧</span>`, 0, 4000);
         else this.toast(`${coreIcon(e.side === 0 ? SIDE.own : SIDE.enemy)}${name}`, e.side === 0 ? 1 : 0, 4000);
         break;
@@ -591,7 +591,7 @@ export class Hud {
 
   /** The island's tug of war under the compass: blue as the player takes nodes, pulsing where the enemy is about to take one. */
   private islandRow(s: State) {
-    const own = s.nodes.filter((h) => h === "freed").length;
+    const own = s.nodes.filter((h) => h === "own").length;
     const b = s.battle;
     const risk = s.phase === "play" ? atRisk(s).filter(Boolean).length : 0;
     const contested = s.phase === "play" && (!!s.capture || !!b?.meter.some((m) => m));
@@ -666,7 +666,7 @@ export class Hud {
     oc.hidden = !poi || s.phase !== "play";
     if (poi) {
       const node = nodeIndex(poi.id);
-      const own = node >= 0 && s.nodes[node] === "freed";
+      const own = node >= 0 && s.nodes[node] === "own";
       const taking = node >= 0 && s.capture?.node === node;
       const mark = node < 0 ? "" : own ? coreIcon(SIDE.own) : coreIcon(foeSide(s.nodes[node]), !taking && !capturable(s, node));
       // Not ticked for another player's POI: it starts cleared, standing no garrison.
@@ -1331,7 +1331,7 @@ export class Hud {
     if (t.kind === "core") {
       const n = NODES[t.node];
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
-      if (s.nodes[t.node] === "freed") {
+      if (s.nodes[t.node] === "own") {
         if (s.fortify?.node === t.node) {
           return tip(`${coreIcon(SIDE.own)}${TERM.fortifyCore} ${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
         }
@@ -1438,7 +1438,7 @@ export class Hud {
       for (const id of back ? c.lost : c.gained) out.add(id);
       return out;
     };
-    const night = new Set<string>(NODES.filter((n) => settled.profile.poiState[n.id].state === "freed").map((n) => n.id));
+    const night = new Set<string>(NODES.filter((n) => settled.profile.poiState[n.id].state === "own").map((n) => n.id));
     const battle = after(night, settled.night, true);
     const left = after(battle, settled.after, true);
     const start = after(left, settled.raid, true);
@@ -1451,12 +1451,12 @@ export class Hud {
     // A node not the player's in a beat is another player's where it was theirs then, else the enemy's.
     const other = (id: string, rivals: Rivals): PoiHold => {
       const who = rivals[id];
-      return who !== undefined ? rivalHold(who) : "held";
+      return who !== undefined ? rivalHold(who) : "foe";
     };
-    const holdsOf = (ids: Set<string>, rivals: Rivals) => NODES.map((n): PoiHold => (ids.has(n.id) ? "freed" : other(n.id, rivals)));
+    const holdsOf = (ids: Set<string>, rivals: Rivals) => NODES.map((n): PoiHold => (ids.has(n.id) ? "own" : other(n.id, rivals)));
     const scene = (ids: Set<string>, rivals: Rivals, changed?: Settlement["raid"] & { moved?: (typeof NODES)[number]["id"][] }) => ({
       ...end,
-      hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "freed" : other(POIS[i].id, rivals))),
+      hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "own" : other(POIS[i].id, rivals))),
       nodes: holdsOf(ids, rivals),
       changed,
     });

@@ -28,17 +28,17 @@ export function statements(sql: string): string[] {
 }
 
 /** Each database's bringing up in this isolate, once; a failed one is tried again on the next request. */
-const ready = new WeakMap<Db, Promise<void>>();
+const schemaReadyPromises = new WeakMap<Db, Promise<void>>();
 
 /** Applies the migrations `db` has not recorded, each with its record in one batch (a transaction on D1). */
 export function ensureSchema(db: Db, migrations: readonly Migration[]): Promise<void> {
-  let p = ready.get(db);
+  let p = schemaReadyPromises.get(db);
   if (!p) {
     p = apply(db, migrations).catch((e) => {
-      ready.delete(db);
+      schemaReadyPromises.delete(db);
       throw e;
     });
-    ready.set(db, p);
+    schemaReadyPromises.set(db, p);
   }
   return p;
 }

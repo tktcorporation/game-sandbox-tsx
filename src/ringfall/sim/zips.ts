@@ -16,7 +16,7 @@ import { hypot2, hypot3 } from "./hypot";
  */
 
 /** Whether the player holds end `id` of a link: the camp always, a node while it is theirs. */
-const holdsEnd = (s: { readonly nodes: readonly string[] }, id: string) => id === "camp" || s.nodes[nodeIndex(id)] === "freed";
+const holdsEnd = (s: { readonly nodes: readonly string[] }, id: string) => id === "camp" || s.nodes[nodeIndex(id)] === "own";
 
 /** Whether cable `i` is up: both its ends held. */
 export const zipUp = (s: { readonly nodes: readonly string[] }, i: number) => !!ZIPS[i].fixed || (holdsEnd(s, ZIPS[i].a) && holdsEnd(s, ZIPS[i].b));

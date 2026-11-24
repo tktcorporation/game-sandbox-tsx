@@ -187,7 +187,7 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
 {
   const id = "7c9e6679-7425-40de-944b-e07fc1f0d3c4";
   const base = newProfile(1);
-  const p: Profile = { ...base, poiState: { ...base.poiState, supply: { state: "freed" }, relay: { state: rivalHold("rival-1") } } };
+  const p: Profile = { ...base, poiState: { ...base.poiState, supply: { state: "own" }, relay: { state: rivalHold("rival-1") } } };
   const s = newRun(5, starterKit(), "reservoir", { island: holds(p) });
   s.stats.captured = ["quarry"];
   s.outcome = "extracted";

@@ -23,7 +23,7 @@ export type BenchJob =
 function battleRaid(freed: NodeId[], factory: number, skill: string, r: number): RaidResult {
   const p = newProfile(7);
   const poiState = { ...p.poiState };
-  for (const id of freed) poiState[id] = { state: "freed" };
+  for (const id of freed) poiState[id] = { state: "own" };
   return playState(newRun(4000 + r * 7919, starterKit(), "reservoir", { island: holds({ ...p, poiState }), battle: { factory } }), skill, r);
 }
 

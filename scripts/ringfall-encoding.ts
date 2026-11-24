@@ -117,7 +117,7 @@ await saveToD1(alreadyMangled);
 const report = await handleApi(new Request(`${url}/api/islands/${code}`, {
   method: "PUT",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ player: { id, name: alreadyMangled }, holds: Array(21).fill("held"), retaken: [], factory: 0, day: 1 }),
+  body: JSON.stringify({ player: { id, name: alreadyMangled }, holds: Array(21).fill("foe"), retaken: [], factory: 0, day: 1 }),
 }), env, at);
 assert.equal(report?.status, 200);
 assert.equal(storage.storedOwnerName(), alreadyMangled);

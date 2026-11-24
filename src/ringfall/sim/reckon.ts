@@ -14,7 +14,7 @@ import type { PoiHold } from "./holds";
 export type Side = 0 | 1 | 2 | 3;
 
 /** Whose a node's standing is: the player's, the enemy's or another player's (the rogues hold none). */
-export const sideOf = (h: PoiHold): Side => (h === "freed" ? 0 : h === "held" ? 1 : 3);
+export const sideOf = (h: PoiHold): Side => (h === "own" ? 0 : h === "foe" ? 1 : 3);
 
 /** A member of a squad while it is numbers: its kind, health and shield. */
 export interface Unit {
@@ -304,7 +304,7 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
       else meter[i] = who === undefined ? { side, t: dt } : { side, t: dt, owner: who };
       if (meter[i]!.t >= CONQUEST.capture) {
         meter[i] = null;
-        holds[i] = side === 0 ? "freed" : side === 3 ? `rival:${who!}` : "held";
+        holds[i] = side === 0 ? "own" : side === 3 ? `rival:${who!}` : "foe";
         for (const q of squads) {
           // A squad only passing through goes on to the node it was sent to, whoever took this one.
           if (q.to !== i || q.task === "post" || q.passing) continue;

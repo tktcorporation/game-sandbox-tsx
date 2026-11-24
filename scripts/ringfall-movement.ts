@@ -115,7 +115,7 @@ function rideOnce(i: number, dir: 1 | -1): string | null {
   const l = ZIPS[i];
   const from = dir > 0 ? l.pts[0] : l.pts[l.pts.length - 1];
   const s = emptyRun(from.x, from.z, 0);
-  s.nodes = s.nodes.map(() => "freed");
+  s.nodes = s.nodes.map(() => "own");
   const p = s.player;
   const to = zipPoint(l, dir > 0 ? 1 : l.length - 1);
   p.yaw = yawOf(to.dx * dir, to.dz * dir);
@@ -140,7 +140,7 @@ export function courseTimes(): { len: number; sprint: number; chain: number; zip
   // A zipline's first `len` metres along the ground from its end, the longest cable with no pylon in them.
   const l = ZIPS.filter((z) => !z.fixed).sort((a, b) => b.length - a.length)[0];
   const s = emptyRun(l.pts[0].x, l.pts[0].z, 0);
-  s.nodes = s.nodes.map(() => "freed");
+  s.nodes = s.nodes.map(() => "own");
   grabZip(s, ZIPS.indexOf(l), 0.5);
   const x0 = s.player.pos.x;
   const z0 = s.player.pos.z;
@@ -317,13 +317,13 @@ export function checkZips(): string | { up: number; missing: string[] } {
   const s = newRun(3);
   for (let k = 0; k < 64; k++) {
     // Who holds each node, from a hash of k: every cable checked against both, either and neither end held.
-    s.nodes = NODES.map((_, n) => (((k * 2654435761 + n * 40503) >>> 7) % 3 === 0 ? "freed" : "held"));
+    s.nodes = NODES.map((_, n) => (((k * 2654435761 + n * 40503) >>> 7) % 3 === 0 ? "own" : "foe"));
     for (let i = 0; i < ZIPS.length; i++) {
       if (ZIPS[i].fixed) {
         if (!zipUp(s, i)) return `zip scenario: the lift ${ZIPS[i].b} was down`;
         continue;
       }
-      const held = zipNodes(i).every((n) => n < 0 || s.nodes[n] === "freed");
+      const held = zipNodes(i).every((n) => n < 0 || s.nodes[n] === "own");
       if (zipUp(s, i) !== held) return `zip scenario: ${ZIPS[i].a}–${ZIPS[i].b} was ${held ? "down" : "up"} with its ends ${held ? "" : "not "}both held`;
     }
   }
@@ -358,7 +358,7 @@ function checkZipExits(): string | null {
     if (l.fixed) continue;
     // The leap from the middle of the cable.
     const s = emptyRun(l.pts[0].x, l.pts[0].z, 0);
-    s.nodes = s.nodes.map(() => "freed");
+    s.nodes = s.nodes.map(() => "own");
     grabZip(s, i, l.length / 2);
     if (!s.player.zip) return `${l.a}–${l.b} was not taken hold of in its middle`;
     s.player.ult = 1;
@@ -381,7 +381,7 @@ function checkZipExits(): string | null {
     for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2])
       for (const secs of [1, 3, 5, 7]) {
         const t = emptyRun(l.pts[0].x, l.pts[0].z, yaw);
-        t.nodes = t.nodes.map(() => "freed");
+        t.nodes = t.nodes.map(() => "own");
         grabZip(t, i, l.length / 2);
         play(t, secs, () => idleInput(), (o) => !o.player.zip);
         if (!t.player.zip) continue;

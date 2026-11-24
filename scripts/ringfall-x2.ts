@@ -44,13 +44,13 @@ check(stage.length >= 1 && stage.length <= 1 + SHORT_RAID_EXTRA, `stage: size ${
 const plan = planShortRaid(view, target, { ai: true, known: [] });
 check(!!plan, "planShortRaid: refused an open AI node");
 check(plan?.stage.length === stage.length, "plan: stage mismatch");
-check(rivalOf(plan!.island[target] ?? "held") !== null, "plan: target not rival on stage");
+check(rivalOf(plan!.island[target] ?? "foe") !== null, "plan: target not rival on stage");
 // Non-stage freeable nodes are cleared (freed) — short battlefield.
 const full = planIncursion(view, target, { ai: true, known: [] });
 check(!!full, "full plan for compare");
-const shortFreed = NODES.filter((n) => n.id !== "pad" && !plan!.stage.includes(n.id)).every((n) => plan!.island[n.id] === "freed");
+const shortFreed = NODES.filter((n) => n.id !== "pad" && !plan!.stage.includes(n.id)).every((n) => plan!.island[n.id] === "own");
 check(shortFreed, "plan: non-stage not cleared");
-const fullRival = NODES.filter((n) => held.includes(n.id)).every((n) => rivalOf(full!.island[n.id] ?? "held") !== null);
+const fullRival = NODES.filter((n) => held.includes(n.id)).every((n) => rivalOf(full!.island[n.id] ?? "foe") !== null);
 check(fullRival, "full plan still mirrors all owner nodes");
 
 // Notice: schedule then ready only after assaultNoticeSec (AI uses AI.coming minutes).
@@ -86,7 +86,7 @@ check(fullRival, "full plan still mirrors all owner nodes");
     protectedUntil: 0,
     nodes: NODES.map((n) => ({
       id: n.id,
-      hold: n.id === target ? "held" : held.includes(n.id) ? "freed" : "held",
+      hold: n.id === target ? "foe" : held.includes(n.id) ? "own" : "foe",
       open: n.id !== target && held.includes(n.id),
     })),
     expeditions: [],
@@ -97,7 +97,7 @@ check(fullRival, "full plan still mirrors all owner nodes");
   check(!!pick && pick !== target, "shortRaidTarget: did not fall back from shut shore");
   const busy: IslandView = {
     ...shutShore,
-    nodes: shutShore.nodes.map((n) => (n.id === pick ? { ...n, open: false } : n.id === target ? { ...n, hold: "freed", open: true } : n)),
+    nodes: shutShore.nodes.map((n) => (n.id === pick ? { ...n, open: false } : n.id === target ? { ...n, hold: "own", open: true } : n)),
   };
   check(shortRaidTarget(busy, target) === target, "shortRaidTarget: preferred shore not chosen when open");
   // Own X2 busy: plan with ignoreBusy.
@@ -115,7 +115,7 @@ check(fullRival, "full plan still mirrors all owner nodes");
   const def: Profile = {
     ...base,
     trophies: TROPHY.start,
-    poiState: { ...base.poiState, [target]: { state: "freed" } },
+    poiState: { ...base.poiState, [target]: { state: "own" } },
   };
   const before = holdsOf(def.poiState);
   const after = before.map((h, i) => (NODES[i]!.id === target ? (`rival:ATTACK` as const) : h));
@@ -193,7 +193,7 @@ check(fullRival, "full plan still mirrors all owner nodes");
 // Defender battle: X2 noticed enables 固める without lending robots (Codex #199 P1).
 {
   const home = newRun(31, starterKit(), "reservoir", {
-    island: { [target]: "freed" },
+    island: { [target]: "own" },
     battle: { factory: 0, noticed: [target] },
   });
   check(!!home.battle?.noticed.includes(nodeIndex(target)), "noticed: battle missing X2 target");
@@ -244,7 +244,7 @@ async function checkDepartAi() {
 
   const shores = NEIGHBOUR_SLOTS.map((s) => s.shore);
   const poiState = { ...newProfile(17).poiState };
-  for (const id of shores) poiState[id] = { state: "freed" };
+  for (const id of shores) poiState[id] = { state: "own" };
   const p: Profile = {
     ...newProfile(17),
     day,
