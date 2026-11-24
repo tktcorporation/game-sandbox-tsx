@@ -22,7 +22,7 @@ export class IslandDO implements DurableObject {
     const state = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
     const r = islandOp(state, op, now);
     if (r.state && r.changed) await this.ctx.storage.put(KEY, r.state);
-    await this.arm(r.state, now);
+    await this.scheduleNextAlarm(r.state, now);
     return Response.json(r.body, { status: r.status });
   }
 
@@ -34,11 +34,11 @@ export class IslandDO implements DurableObject {
     if (moved) await this.ctx.storage.put(KEY, state);
     // The alarm that fired is spent: the next goes on at once for an island further behind than one reckoning.
     if (behind) await this.ctx.storage.setAlarm(now + 1);
-    else await this.arm(state, now);
+    else await this.scheduleNextAlarm(state, now);
   }
 
   /** Sets the alarm to `nextAlarm()`, or clears it when nothing on the island can change. */
-  private async arm(state: IslandState | null, now: number) {
+  private async scheduleNextAlarm(state: IslandState | null, now: number) {
     const at = nextAlarm(state, now);
     const set = await this.ctx.storage.getAlarm();
     if (at === null) {
