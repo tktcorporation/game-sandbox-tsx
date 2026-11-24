@@ -624,15 +624,12 @@ function readyRaid() {
  */
 let awaySheetOpen = false;
 let awayBooted = false;
-/** 一枚を開く直前の解放進度（差を出すため）。 */
-let awayBefore: Profile | null = null;
 
 /** Wakes the player in the camp, the teammate beside them: from the title, after the results. */
 function openCamp() {
   // 起動時の一枚を閉じる（同じ結果を二度出さない）。
   if (awaySheetOpen) {
     awaySheetOpen = false;
-    awayBefore = null;
     hud.endResults();
     $("results").hidden = true;
     lock();
@@ -707,7 +704,6 @@ function deliverAwayNews(before: Profile) {
     if (!parts) return;
     // 同期のあいだに出撃やリザルトが開いていたら重ねない。
     if (!camping || running || departing || !$("results").hidden || hub.station !== null) return;
-    awayBefore = before;
     awaySheetOpen = true;
     hud.awayResults(before, hub.profile, parts.lines, parts.trop, hub.nextHand());
     $("results").hidden = false;
