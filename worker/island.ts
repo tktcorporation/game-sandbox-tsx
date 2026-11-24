@@ -637,7 +637,8 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
     if (r.left <= 0) {
       s.expeditions = s.expeditions.filter((x) => x !== e);
       appendLog(s, now, "wiped", i, e.by);
-      if (theirs) {
+      // Same-day shield (方向 A): do not flip ownership via the leased wipe path either.
+      if (theirs && !isShielded(s, i, now)) {
         s.holds[i] = op.holds[i] === "own" ? "own" : "foe";
         appendLog(s, now, "released", i, e.by);
       }
@@ -645,12 +646,12 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
     }
     e.units = e.units.slice(0, r.left);
     const told = op.holds[i];
-    if (e.holding && theirs && told === "foe") {
+    if (e.holding && theirs && told === "foe" && !isShielded(s, i, now)) {
       // The enemy took the node from its holders, who are at it again.
       s.holds[i] = "foe";
       e.holding = false;
       appendLog(s, now, "released", i, e.by);
-    } else if (!e.holding && rivalOf(told) === e.by.code && takenOn(s, now) < EXPEDITION.perDay) {
+    } else if (!e.holding && rivalOf(told) === e.by.code && takenOn(s, now) < EXPEDITION.perDay && !isShielded(s, i, now)) {
       s.holds[i] = told;
       e.holding = true;
       appendLog(s, now, "taken", i, e.by);

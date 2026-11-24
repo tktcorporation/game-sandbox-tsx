@@ -662,6 +662,44 @@ const T2 = T1 + 400_000;
   check(mirAgain.status === 409 && (mirAgain.body as { error?: string }).error === "shielded", "mirror: same-day flip was allowed");
   const mirFlip = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + DAY }, T1 + DAY);
   check(mirFlip.status === 200 && mir.holds[station] === "own", "mirror: next-day flip to own refused");
+  // Codex: leased wipe must not bypass same-day shield (retaken + lent left:0).
+  const lentShield = island({ station: "own", supply: "own", quarry: "own" }, 0);
+  op(lentShield, { t: "expedition", from: B, target: "station", kinds: top.slice(0, 1) }, T1);
+  const lentId = lentShield.expeditions[0]!.id;
+  op(lentShield, { t: "lease", player: A.id }, T1 + 1000);
+  op(
+    lentShield,
+    {
+      t: "report",
+      player: A,
+      retaken: [],
+      holds: holdsWith({ station: `rival:${B.code}`, supply: "own", quarry: "own" }) as IslandState["holds"],
+      factory: 0,
+      day: 50,
+      lent: [{ id: lentId, left: 1 }],
+    },
+    T1 + 1_500_000,
+  );
+  check(lentShield.holds[station] === `rival:${B.code}` && !!lentShield.shielded?.nodes.includes(station), "shield lent: take/shield failed");
+  const lease2 = op(lentShield, { t: "lease", player: A.id }, T1 + 1_600_000);
+  check(lease2.status === 200 && (lease2.body as { expeditions?: unknown[] }).expeditions?.length === 1, "shield lent: re-lease failed");
+  const lentWipe = op(
+    lentShield,
+    {
+      t: "report",
+      player: A,
+      retaken: ["station"],
+      holds: holdsWith({ station: "own", supply: "own", quarry: "own" }) as IslandState["holds"],
+      factory: 0,
+      day: 50,
+      lent: [{ id: lentId, left: 0 }],
+    },
+    T1 + 1_700_000,
+  );
+  check(
+    lentShield.holds[station] === `rival:${B.code}` && ((lentWipe.body as { shielded?: string[] }).shielded ?? []).includes("station"),
+    "shield lent: wipe+retaken bypassed same-day shield",
+  );
   console.log(`shield: station shielded then retaken next day; mirror flip blocked same day`);
 }
 

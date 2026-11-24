@@ -260,6 +260,8 @@ async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string
     }
   }
   const week = Math.floor(now / NEIGHBOURS.weekMs);
+  // Mirror only when B's weekly picks name A (an explicit shore pair). Do not fall back to the
+  // same node id — B's same-named shore may face a different neighbour C (Codex / TKT-195).
   const row = (
     await db
       ?.prepare(
@@ -269,7 +271,8 @@ async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string
       .bind(bCode, week, aCode)
       .all<{ slot: number }>()
   )?.results[0];
-  const theirShore = row && NEIGHBOUR_SLOTS[row.slot] ? NEIGHBOUR_SLOTS[row.slot].shore : aShore;
+  const theirShore = row !== undefined && NEIGHBOUR_SLOTS[row.slot] ? NEIGHBOUR_SLOTS[row.slot].shore : undefined;
+  if (!theirShore) return;
   await ask(ns, bCode, { t: "contestedMirror", shore: theirShore, owner: ownerCode, at: now }, now);
 }
 
