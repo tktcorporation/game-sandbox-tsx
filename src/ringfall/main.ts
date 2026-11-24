@@ -21,7 +21,7 @@ import { currentStory } from "./meta/story";
 import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
-import { sendIsland } from "./net";
+import { postRaidSummary } from "./post-raid-summary";
 import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { reactiveDefenseOn } from "./meta/features";
 import { loadIdentity } from "./meta/identity";
@@ -34,7 +34,7 @@ import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
 import { step } from "./sim/step";
 import { hurtAlly, placeAlly } from "./sim/ally";
-import { haulValue } from "./sim/results";
+import { haulAndSentWorth } from "./sim/results";
 import { bagLoad } from "./sim/world";
 import { getMixer, preferLowPower, savedMusic, savedVolume, setMusicVolume, setVolume, unlock, type Mixer } from "./view/audio";
 import { Music, type Mood } from "./view/music";
@@ -282,8 +282,8 @@ function onEvent(e: GameEvent, s: State) {
     settlement = settled;
     hub.reload(settled.profile);
     saveProfile(hub.profile);
-    // X2 on a real neighbour: pending results are flushed (and retried) with the island sync.
-    sendIsland(settled, s);
+    // 実プレイヤーのお隣への短いレイド: 保留中の勝敗報告を同期時に送信（失敗時は再試行）。
+    postRaidSummary(settled, s);
     syncIsland(settled.profile, s);
     // The game's own islands' part in the raid, as their log would tell it: on the results and the map table.
     if (raidAi) {
@@ -354,7 +354,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
       () => hub.profile,
       (q) => hub.update(q),
     );
-    // X2 results still awaiting the defender island (network / late) — confirm or roll back a rejected win.
+    // 防衛側島サーバーの確認待ちである未報告の短いレイド結果を送信（拒否時は勝利を取り消し）。
     void flushAssaultReports(
       () => hub.profile,
       (q) => {
@@ -713,20 +713,20 @@ async function answerDepart(go: boolean) {
     lease = null;
   }
   if (go) {
-    // Gap A / X2: schedule 来る遠征 notice, wait, or short-raid — before a home walk-out.
-    const gap = await hub.gapDepart();
-    if (gap?.t === "scheduled" || gap?.t === "waiting") {
-      hud.toast(gap.toast, 1, 2800);
+    // お隣の前線（○○の前線）: 短いレイド出撃、または休止機能ON時の事前予告登録
+    const assault = await hub.departNeighbourFront();
+    if (assault?.t === "scheduled" || assault?.t === "waiting") {
+      hud.toast(assault.toast, 1, 2800);
       lock();
       return;
     }
-    if (d.walk && hub.walksOut() && !gap) {
+    if (d.walk && hub.walksOut() && !assault) {
       const launch = hub.launch();
       if (launch) {
         sfx.deploy();
         start(launch, state);
       }
-    } else ride(gap?.t === "ready" ? gap.plan : undefined);
+    } else ride(assault?.t === "ready" ? assault.plan : undefined);
     return;
   }
   if (d.walk && d.back) {
@@ -836,21 +836,21 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
-  const x2 = go.incursion;
+  const shortRaid = go.incursion;
   state = newRun(go.seed, kit, region, {
-    depots: x2 ? [] : hub.profile.depots,
+    depots: shortRaid ? [] : hub.profile.depots,
     seen: hub.profile.seen,
     from: go.from,
     entry: go.entry,
     routes: hub.profile.routes,
-    island: x2 ? x2.island : holds(hub.profile),
-    record: x2 ? undefined : record,
-    fetch: x2 ? undefined : fetch,
+    island: shortRaid ? shortRaid.island : holds(hub.profile),
+    record: shortRaid ? undefined : record,
+    fetch: shortRaid ? undefined : fetch,
     event: hub.profile.events[0],
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
-    // X2 short raid: no home battle — the stage is a few rival nodes on the copy.
-    battle: x2
+    // 短いレイド: 自島バトルなし（ステージは他島コピーの数拠点）
+    battle: shortRaid
       ? undefined
       : {
           factory: hub.profile.factory,
@@ -858,17 +858,17 @@ function start(go: Launch, from?: State) {
           targets: tonight(hub.profile),
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
           shut: lent?.shut,
-          // Noticed nodes enable 核で固める against 来る遠征 — only while reactive defence is on.
+          // 休止機能: 来る遠征の迎撃（核で固める）は反応型守りON時のみ
           noticed: reactiveDefenseOn()
             ? [...new Set([...(lent?.noticed ?? []), ...incomingFor(hub.profile).map((e) => e.node)])]
             : [],
         },
-    finale: x2 ? false : finaleOpen(hub.profile),
-    ...(x2
-      ? { incursion: { code: x2.code, owner: x2.owner, target: x2.target, parcels: x2.parcels } }
+    finale: shortRaid ? false : finaleOpen(hub.profile),
+    ...(shortRaid
+      ? { incursion: { code: shortRaid.code, owner: shortRaid.owner, target: shortRaid.target, parcels: shortRaid.parcels } }
       : {}),
   });
-  if (x2) hud.setCaptureTask(nodeIndex(x2.target));
+  if (shortRaid) hud.setCaptureTask(nodeIndex(shortRaid.target));
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
     if (lent) leaseReq = null;
@@ -1157,7 +1157,7 @@ window.render_game_to_text = () => {
     storm: s.storm,
     debris: s.bins.filter((b) => b.debris).map((b) => ({ x: b.x, y: +b.y.toFixed(1), z: b.z, open: b.open }))[0] ?? null,
     crews: s.squads.flatMap((q, i) => (q.crew ? [{ squad: i, members: s.enemies.filter((e) => e.squad === i).map((e) => ({ x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z) })), bin: q.crew.bin >= 0 ? { x: s.bins[q.crew.bin].x, y: s.bins[q.crew.bin].y, z: s.bins[q.crew.bin].z } : null, searching: q.crew.searchT > 0, bag: q.bag ?? [], leaving: q.crew.leaving }] : [])),
-    settled: settlement && { event: settlement.event, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed },
+    settled: settlement && { event: settlement.event, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed },
     contract: running && hub.contract() ? { t: hub.contract()!.t, ...contractProgress(hub.contract()!, s) } : null,
     records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
@@ -1171,7 +1171,7 @@ window.render_game_to_text = () => {
     cleared: s.cleared,
     hold: s.hold,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
-    haul: { items: s.player.haul, tools: s.player.tools, value: haulValue(s), bag: bagLoad(s.player) },
+    haul: { items: s.player.haul, tools: s.player.tools, value: haulAndSentWorth(s), bag: bagLoad(s.player) },
     routes: s.routes,
     depots: s.depots,
     depotSpots: DEPOTS.map((d) => ({ poi: d.poi, x: d.x, z: d.z, yaw: d.yaw })),

@@ -17,7 +17,7 @@ import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
 import { callLeft, debrisBin, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
-import { haulValue } from "../sim/results";
+import { haulAndSentWorth } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
 import { IslandMap, islandScene, shieldedBy } from "./map";
@@ -234,7 +234,7 @@ export class Hud {
     this.scout = null;
   }
 
-  /** Lead-incursion objective: take this node by its 核 · 制圧 (raid-loot stage 6). */
+  /** 短いレイド（Short Raid）の目標: この拠点を「核 · 制圧」する。 */
   setCaptureTask(node: number) {
     this.contract = null;
     this.record = null;
@@ -692,7 +692,7 @@ export class Hud {
     const bagCells = this.bagCells(p);
     this.bag.frame(s, dt, bagCells);
     // Worth only once something is carried: an empty "回収 0" is noise on a fresh spawn.
-    const worth = haulValue(s);
+    const worth = haulAndSentWorth(s);
     setHtml($("obj-bag"), `バッグ ${bagCells}${bagLoad(p)}/${BAG.slots}${worth ? `<span class="worth">・回収 ${worth}</span>` : ""}`);
     // The raid's deadline is the battle's end (past it the raid ends as a wipe), as a clock; the next
     // reinforcements as their mark and seconds; a raid above 強度 0 says so first.
@@ -1596,7 +1596,7 @@ export class Hud {
       .join("");
     const lost = s.outcome !== "extracted";
     const sentValue = s.sent.reduce((n, k) => n + VALUABLES[k].value, 0);
-    const value = haulValue(s);
+    const value = haulAndSentWorth(s);
     const carried = [
       ...(Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const),
       ...TOOL_KINDS.map((k) => [TOOLS[k].label, s.player.tools.filter((t) => t === k).length] as const),

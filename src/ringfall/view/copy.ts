@@ -115,8 +115,8 @@ export const TERM = {
   /** Ranking T1 — signal station / map table. */
   trophy: "トロフィー",
   /**
-   * X2 short raid onto a neighbour island's subset (§5.8).
-   * 【元】（なし・写し全体） 【案】短いレイド 【理由】段階6を避けつつ他島へ攻めに行く感。
+   * お隣の島の一部への短いレイド（Short Raid）。
+   * 【元】（なし・写し全体） 【案】短いレイド 【理由】全島ミラーを避けつつ他島へ攻めに行く感。
    */
   shortRaid: "短いレイド",
 } as const satisfies Record<TermId, string>;
@@ -169,30 +169,30 @@ export function nextAttack(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.attack}`;
 }
 
-/** Gap A / X2: notice posted (same vocabulary as 来る遠征). */
+/** お隣の前線: 予告登録完了トースト（休止機能: 反応型守りON時）。 */
 export function assaultNoticeTo(name: string): string {
   return `${name}へ${TERM.incomingExpedition}の予告を立てた`;
 }
 
-/** Gap A / X2: still inside the notice window. */
+/** お隣の前線: 予告猶予時間中の待ちトースト（休止機能: 反応型守りON時）。 */
 export function assaultWaitHours(name: string, hours: number): string {
   return `${name}を${TERM.attack} · あと約 ${hours} 時間（${TERM.incomingExpedition}と同じ予告）`;
 }
 
 /**
- * X2 ready but the target cannot be raided (fortified / taken / no view).
+ * 相手拠点が要塞化・占有変更等で出撃できないときのエラートースト。
  * 【元】（なし） 【案】〜は固められていて攻められない 【理由】来る遠征と同じ「固める」語で拒否理由を出す。
  */
 export function assaultFortified(name: string): string {
   return `${name}は${TERM.fortify}られていて攻められない`;
 }
 
-/** Next-hand while an X2 assault is in its notice window. */
+/** 次の一手: 予告猶予時間中の表示（休止機能: 反応型守りON時）。 */
 export function nextAssaultWait(name: string, hours: number): string {
   return `${TERM.nextHand}${name}を${TERM.attack} · 予告 あと約 ${hours} 時間`;
 }
 
-/** Next-hand when the X2 short raid may start. */
+/** 次の一手: 短いレイド出撃が可能になったときの表示。 */
 export function nextShortRaid(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.shortRaid} · ${name}を${TERM.attack}`;
 }

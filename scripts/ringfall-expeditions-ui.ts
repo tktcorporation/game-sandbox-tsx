@@ -40,7 +40,7 @@ import { step } from "../src/ringfall/sim/step";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
-import { alive, answerRecall, fortifiedNodes, incomingLine, incomingOf, LANDING, lentResults, lentRivals, parseLease, recallAll, numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
+import { expeditionsOut, answerRecall, fortifiedNodes, incomingLine, incomingOf, LANDING, lentResults, lentRivals, parseLease, recallAll, numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, squadsRemaining, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { EXPEDITION, islandOp, publicView, squadKinds, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
 import { readView, SEND_TIMEOUT_MS, sendExpedition, takeReport, takeSync } from "../src/ringfall/island-net";
@@ -285,7 +285,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   const all = recallAll(list);
   const done = answerRecall(all, { code: A, id: 4 });
   console.log(`recall: one -> ${one.map((o) => o.state).join()}, all -> ${all.map((o) => o.state).join()} (away ${squadsAway({ expeditions: all })}, paying ${awayIncome({ expeditions: all })}), answered -> ${done.map((o) => o.state).join()}`);
-  check(one.map((o) => o.state).join() === "recalling,coming,sending" && all.map((o) => o.state).join() === "recalling,recalling,sending" && alive({ expeditions: all }).length === 1 && awayIncome({ expeditions: all }) === 0, "recall: an expedition called home still takes a squad or pays");
+  check(one.map((o) => o.state).join() === "recalling,coming,sending" && all.map((o) => o.state).join() === "recalling,recalling,sending" && expeditionsOut({ expeditions: all }).length === 1 && awayIncome({ expeditions: all }) === 0, "recall: an expedition called home still takes a squad or pays");
   check(done.map((o) => o.id).join() === "5,0" && recallAll(all) === all && refreshOutgoing(all, B, { [A]: view })[0].state === "recalling", "recall: an answered recall stayed, or a view put a recalled expedition back");
 }
 
@@ -295,8 +295,8 @@ function island(freed: string[], rival: string[] = []): Profile {
   const p0 = { ...island([]), factory: 2 };
   const p1 = { ...p0, expeditions: [...away(1), ...away(1, "gone")] };
   const p2 = { ...p0, expeditions: away(3) };
-  console.log(`cost: factory Lv2 keeps ${factorySquads(p0)}; one away leaves ${homeSquads(p1)} (away ${squadsAway(p1)}), three leave ${homeSquads(p2)}; can send ${canSend(p1)} / ${canSend(p2)}`);
-  check(squadsAway(p1) === 1 && homeSquads(p1) === factorySquads(p0) - 1 && homeSquads(p2) === 0 && canSend(p1) && !canSend(p2), "cost: the squads away are not taken from the factory's");
+  console.log(`cost: factory Lv2 keeps ${factorySquads(p0)}; one away leaves ${squadsRemaining(p1)} (away ${squadsAway(p1)}), three leave ${squadsRemaining(p2)}; can send ${canSend(p1)} / ${canSend(p2)}`);
+  check(squadsAway(p1) === 1 && squadsRemaining(p1) === factorySquads(p0) - 1 && squadsRemaining(p2) === 0 && canSend(p1) && !canSend(p2), "cost: the squads away are not taken from the factory's");
   // In the battle: a factory of level 0 keeps one squad out; with it away, none comes out.
   const squadsOut = (away: number) => {
     const s: State = newRun(9, starterKit(), "reservoir", { island: holds(island(["supply"])), battle: { factory: 0, ...(away ? { away } : {}) } });
@@ -330,8 +330,8 @@ function island(freed: string[], rival: string[] = []): Profile {
   const out = { ...island([]), factory: 2, expeditions: [pending] };
   const done = answerSend(out.expeditions, pending, 9, 4);
   const refused = answerSend(out.expeditions, pending, null);
-  console.log(`sending: while out away ${squadsAway(out)} (home ${homeSquads(out)} of ${factorySquads(out)}); answered ${JSON.stringify(done)}; refused ${refused.length} left`);
-  check(squadsAway(out) === 1 && homeSquads(out) === factorySquads(out) - 1, "sending: a send being made does not take its squad");
+  console.log(`sending: while out away ${squadsAway(out)} (home ${squadsRemaining(out)} of ${factorySquads(out)}); answered ${JSON.stringify(done)}; refused ${refused.length} left`);
+  check(squadsAway(out) === 1 && squadsRemaining(out) === factorySquads(out) - 1, "sending: a send being made does not take its squad");
   check(done.length === 1 && done[0].state === "coming" && done[0].id === 9 && done[0].units === 4, "sending: the answer did not make it the server's expedition");
   check(refused.length === 0, "sending: a refused send kept its squad");
   check(refreshOutgoing(out.expeditions, A, { [B]: { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [] } })[0] === pending, "sending: a refresh made a send being made gone");

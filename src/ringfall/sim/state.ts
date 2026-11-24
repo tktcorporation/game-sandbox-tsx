@@ -526,10 +526,11 @@ export type GameEvent =
   | { t: "crewOut"; x: number; z: number; n: number }
   /** A core's capture started (the alarm), was refused off the front, and the node was taken (places in `NODES`). */
   | { t: "coreStart"; node: number }
-  /** The player starts fortifying a node of theirs marked for the night, and has fortified it (`FORTIFY`). */
   /** The raid's momentum rose to `level` (`MOMENTUM`). */
   | { t: "momentum"; level: number }
+  /** The player starts fortifying a node of theirs marked for the night (`FORTIFY`). */
   | { t: "fortifyStart"; node: number }
+  /** The player has fortified a marked node (`FORTIFY`). */
   | { t: "fortified"; node: number }
   /** A wave of a core's siege is announced (its beam stands at x, z; wave `wave` of `of`), and its squad steps out. */
   | { t: "siegeWarn"; node: number; x: number; z: number; wave: number; of: number }
@@ -747,8 +748,8 @@ export interface State {
   /** Parcel ids taken this raid (cleared from the island on report). */
   takenParcels: number[];
   /**
-   * Lead-incursion onto another island's copy (raid-loot stage 6). Null on a home raid and on
-   * every sim-gate run — captures do not rewrite the home `poiState`.
+   * 他島への短いレイド出撃パラメータ（IncursionPlan）。自島レイドおよびシミュレーションゲート実行時は null
+   * （相手島コピーでの制圧は自島 poiState に影響しない）。
    */
   incursion: { code: string; owner: string; target: PoiId; parcels: { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] } | null;
   /** Leaving at a depot: which one, and the seconds still to stand there. */
@@ -967,8 +968,8 @@ export interface Start {
    */
   parcels?: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[];
   /**
-   * Lead-incursion onto another island's copy (raid-loot stage 6). Left out, a normal home raid —
-   * the sim gate never sets this, so its hash stays put.
+   * 他島への短いレイド出撃パラメータ。通常の自島レイドでは省略
+   * （シミュレーションゲートでは設定されないため、決定性ハッシュは不変）。
    */
   incursion?: { code: string; owner: string; target: PoiId; parcels: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] };
 }

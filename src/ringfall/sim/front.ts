@@ -12,10 +12,12 @@ import type { State } from "./state";
 import { hypot2 } from "./hypot";
 
 /*
- * The front (docs/ringfall/island-v2.md): the six freeable POIs are nodes joined along the roads
- * (`FRONT_LINKS`). The player holds the camp and the nodes taken; a node next to that ground is
- * on the front, and only a node on the front can be taken, by capturing its core (`FRONT`). The
- * pure rules here serve the raid, the island's nights (meta/island.ts) and the maps alike.
+ * The front (docs/ringfall/island-v2.md): the freeable POIs are nodes joined along the roads
+ * (`FRONT_LINKS` / `NODES`). The player holds the camp and the nodes taken; a node next to that
+ * ground is on the front, and only a node on the front can be taken, by capturing its core
+ * (`FRONT`). Query helpers here (`frontNodes`, `ownNodes`, …) are pure; `stepFront` / `useZones`
+ * / siege waves mutate the raid's `State` (and a module-level zone cache). The same hold rules
+ * also feed the island's nights (`meta/island.ts`) and the maps.
  */
 
 /** Who holds a node: the enemy, the player, or another player (sim/holds.ts). Another player's node is not the player's: on the front it is taken by its core as the enemy's is. */
@@ -115,8 +117,7 @@ export function coreInReach(s: State): number {
 
 /**
  * Whether node `i` can be taken in the raid as it stands: on the front, and not the player's
- * already. A lead-incursion's target (raid-loot stage 6) is always open — the copy has no home
- * front from the camp.
+ * already. A short raid's target is always open — the copy has no home front from the camp.
  */
 export const capturable = (s: Pick<State, "nodes" | "incursion">, i: number) =>
   frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
@@ -225,19 +226,21 @@ export function stepFront(s: State) {
   c.wait = Math.max(0, c.wait - TICK);
   if (!next || c.wait > 0 || c.t < next.at * FRONT.capture) return;
   if (dist2d(s.player.pos, NODES[c.node].core) >= FRONT.siege.near) return;
-  if (callWave(s, c.node, next, c.waves, waves.length)) c.waves++;
+  if (consumeSiegeWaveSlot(s, c.node, next, c.waves, waves.length)) c.waves++;
   else c.wait = FRONT.siege.retry;
 }
 
 /**
- * Wave `k` of node `i`'s siege is announced: a beam on open ground a walk of `FRONT.siege.dist`
- * from the core, on the side of a neighbouring node the enemy holds (the waves take the
- * neighbours in turn, nearest first), where its squad steps out `FRONT.siege.warn` seconds on.
- * The ground may be in the player's sight: the beam is the warning. True when the wave was
- * called, or when the enemy has no neighbouring node to send one from; false when no ground
- * turned up.
+ * Tries to consume siege wave slot `k` of node `i`.
+ *
+ * - true → bump `c.waves` (slot done): a warn beam was placed, **or** no neighbouring enemy node
+ *   exists to send from (skip the slot; same as a placed beam for the counter).
+ * - false → set `c.wait` and retry later: no open ground for a beam this tick.
+ *
+ * When placing: beam on open ground a walk of `FRONT.siege.dist` from the core, toward a
+ * neighbouring enemy node (in turn, nearest first); the squad steps out `FRONT.siege.warn` later.
  */
-function callWave(s: State, i: number, wave: SiegeWave, k: number, of: number): boolean {
+function consumeSiegeWaveSlot(s: State, i: number, wave: SiegeWave, k: number, of: number): boolean {
   const n = NODES[i];
   const c = s.capture!;
   const from = NEIGHBOURS[i].filter((j) => s.nodes[j] === "held").sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core));

@@ -1,11 +1,11 @@
-import { DEPOT, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, FINALE, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, FINALE, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, departDepots, unlocked, type DayChange, type FrontChange, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
+import { advanceDay, dayChange, departDepots, unlocked, type DayChange, type FrontChange, eventFor, firstEvents, heldIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
 import type { IslandEvent } from "../sim/island";
 import { questBoardOn } from "./features";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, withFrontMigrated, type Quest, type QuestLog } from "./quests";
@@ -107,8 +107,7 @@ export interface Profile {
    */
   parcels: Parcel[];
   /**
-   * Parcel ids seized from other islands in lead-incursions (raid-loot stage 6): AI views drop
-   * them so the defender's 島の守り stays partially lost. Soft-default empty on older saves.
+   * 他島への短いレイドで奪取した防衛物資ID（相手島での部分的な防衛物資損失を維持）。
    */
   incursionTaken: { code: string; ids: number[] }[];
   /**
@@ -126,8 +125,6 @@ export interface KitPicks {
   keys: PoiId[];
   heals: Record<HealKind, number>;
 }
-
-export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 
 /** The way in a new player knows: the reservoir's first. */
 export const FIRST_ENTRY: EntryId = HOME_REGION.entries[0];
@@ -175,7 +172,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
-  for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
+  for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   const p: Omit<Profile, "board"> = { v: 32, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [], trophies: TROPHY.start };
   return { ...p, board: makeBoard(p) };
 }
@@ -246,7 +243,7 @@ export function wares(p: Profile): Item[] {
   for (const kind of Object.keys(META.weapon) as WeaponKind[])
     for (let r = 0; r <= best; r++) out.push({ t: "weapon", kind, rarity: r as Rarity });
   for (let tier = 1; tier <= best; tier++) out.push({ t: "armor", tier: tier as Rarity });
-  for (const kind of HEALS) out.push({ t: "heal", kind });
+  for (const kind of HEAL_KINDS) out.push({ t: "heal", kind });
   for (const kind of onSale(p.hideout)) out.push({ t: "valuable", kind });
   return out;
 }
@@ -284,11 +281,11 @@ export function issuedHeals(p: Pick<Profile, "hideout"> & Partial<Pick<Profile, 
   const sick = infirmaryHeals(p.hideout);
   // The nodes held that issue a heal (`UNLOCKS[].heal`) add theirs.
   const nodes = p.poiState ? unlocked({ poiState: p.poiState }).heals : [];
-  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, META.starter.heals[k] + sick[k] + nodes.filter((h) => h === k).length)])) as Record<HealKind, number>;
+  return Object.fromEntries(HEAL_KINDS.map((k) => [k, Math.min(HEAL_SPECS[k].max, META.starter.heals[k] + sick[k] + nodes.filter((h) => h === k).length)])) as Record<HealKind, number>;
 }
 
 /** How many heals of a kind a loadout can take from the stash: what it holds, up to what the issued ones leave room for. */
-export function healRoom(p: Profile, _l: Loadout, k: HealKind): number {
+export function healRoom(p: Profile, k: HealKind): number {
   return Math.max(0, Math.min(healCount(p, k), HEAL_SPECS[k].max - issuedHeals(p)[k]));
 }
 
@@ -312,7 +309,7 @@ export function kitPicks(p: Profile, l: Loadout): KitPicks {
       const i = p.stash[n];
       return i?.t === "key" ? [i.poi] : [];
     }),
-    heals: Object.fromEntries(HEALS.map((h) => [h, Math.max(0, Math.min(l.heals[h], healRoom(p, l, h)))])) as Record<HealKind, number>,
+    heals: Object.fromEntries(HEAL_KINDS.map((h) => [h, Math.max(0, Math.min(l.heals[h], healRoom(p, h)))])) as Record<HealKind, number>,
   };
 }
 
@@ -344,7 +341,7 @@ export function recallLoadout(p: Profile): Loadout {
     const n = find((i) => i.t === "key" && i.poi === poi);
     if (n >= 0) l.keys.push(n);
   }
-  for (const h of HEALS) l.heals[h] = Math.max(0, Math.min(last.heals[h] ?? 0, healRoom(p, l, h)));
+  for (const h of HEAL_KINDS) l.heals[h] = Math.max(0, Math.min(last.heals[h] ?? 0, healRoom(p, h)));
   for (const n of starterPicks(p)) if (l.weapons.length < 2 && !l.weapons.includes(n)) l.weapons.push(n);
   return armed(p, l);
 }
@@ -445,7 +442,7 @@ export function takeKit(p: Profile, given: Loadout, from: PoiId | null = null): 
   }
   const issued = issuedHeals(p);
   const heals = { cell: 0, battery: 0, syringe: 0, medkit: 0 } as Record<HealKind, number>;
-  for (const k of HEALS) {
+  for (const k of HEAL_KINDS) {
     // A kind holds at most HEAL_SPECS[k].max, issued ones included.
     let want = Math.min(l.heals[k], HEAL_SPECS[k].max - issued[k]);
     p.stash.forEach((i, n) => {
@@ -468,15 +465,16 @@ export function takeKit(p: Profile, given: Loadout, from: PoiId | null = null): 
     keys,
     weapons,
     armor,
-    heals: Object.fromEntries(HEALS.map((k) => [k, heals[k] + issued[k]])) as Record<HealKind, number>,
+    heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, heals[k] + issued[k]])) as Record<HealKind, number>,
   };
   return { profile: { ...p, stash: p.stash.filter((_, n) => !take.has(n)), lastKit: kitPicks(p, l) }, kit };
 }
 
 /**
- * What the pouch keeps on a wipe: the story records first (a slot each; nothing else tells their
- * story), then the tools, in the order taken, while they fit (they are what opens a route), then
- * the most valuable valuables in the slots left (`at`: their places in `haul`).
+ * What comes home through the pouch on a wipe: the story records first (a slot each; nothing else
+ * tells their story), then the tools, in the order taken, while they fit (they are what opens a
+ * route), then the most valuable valuables in the slots left (`at`: their places in `haul`).
+ * This is the wipe path; `bestFitValuables` is only the valuables knapsack used by pacing.
  */
 export function pouchKeep(haul: ValuableKind[], tools: ToolKind[], slots: number = META.pouch, records: RecordId[] = []): { haul: ValuableKind[]; tools: ToolKind[]; records: RecordId[]; at: number[] } {
   const keptRecords = records.slice(0, slots);
@@ -487,15 +485,15 @@ export function pouchKeep(haul: ValuableKind[], tools: ToolKind[], slots: number
       kept.push(k);
       left -= TOOLS[k].size;
     }
-  const at = pouchPick(haul, left);
+  const at = bestFitValuableSlots(haul, left);
   return { haul: at.map((n) => haul[n]), tools: kept, records: keptRecords, at };
 }
 
-/** The most valuable valuables that fit in `slots` bag slots. */
-export const pouch = (haul: ValuableKind[], slots: number = META.pouch): ValuableKind[] => pouchPick(haul, slots).map((n) => haul[n]);
+/** The most valuable valuables that fit in `slots` bag slots (valuables only; wipe uses `pouchKeep`). */
+export const bestFitValuables = (haul: ValuableKind[], slots: number = META.pouch): ValuableKind[] => bestFitValuableSlots(haul, slots).map((n) => haul[n]);
 
 /** The places in `haul` of the most valuable valuables that fit in `slots` bag slots. */
-function pouchPick(haul: ValuableKind[], slots: number): number[] {
+function bestFitValuableSlots(haul: ValuableKind[], slots: number): number[] {
   // Knapsack over the few slots: best[c] is the best pick using at most c slots.
   let best: { value: number; pick: number[] }[] = Array.from({ length: slots + 1 }, () => ({ value: 0, pick: [] }));
   haul.forEach((k, n) => {
@@ -526,8 +524,8 @@ export interface Settlement {
   soldFor: number;
   /** The island's day the raid was played on (the profile is on the next). */
   day: number;
-  /** POIs that turned the player's overnight. */
-  freed: PoiId[];
+  /** Nodes that became the player's overnight (`DayChange.gained`). */
+  gained: NodeId[];
   /** The nodes that turned the player's overnight, and those the enemy took, all told and in turn (`DayChange`). */
   front: FrontChange;
   /** Other players' nodes beat by beat (`DayChange.rivals`); left out, none. */
@@ -535,7 +533,7 @@ export interface Settlement {
   raid: FrontChange;
   after: FrontChange;
   night: FrontChange;
-  /** Credits the nodes the player holds paid at this settle (`frontIncome()`). */
+  /** Credits the nodes the player holds paid at this settle (`heldIncome()`). */
   income: number;
   /** The raid won the decisive battle (`FINALE`): the days the round took, and the rounds now behind the player; left out, it did not. */
   liberated?: { days: number; cycle: number };
@@ -561,8 +559,8 @@ export interface Settlement {
    */
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
   /**
-   * Lead-incursion settle (raid-loot stage 6): which island was raided and which defence parcels
-   * left it. View / sync only — home `poiState` is unchanged by the copy's captures.
+   * 他島への短いレイド精算: どの島を襲撃し、どの防衛物資を獲得したか。
+   * 画面表示およびサーバー報告用（自島の poiState は相手島の制圧によって書き換えられない）。
    */
   incursion?: { code: string; owner: string; target: PoiId; ids: number[]; won: boolean };
 }
@@ -658,7 +656,7 @@ export function settle(p: Profile, s: State): Settlement {
     for (const w of pl.weapons) if (w && !w.starter) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
     if (pl.armor > 0) home.push({ t: "armor", tier: pl.armor });
     // Every heal left comes home, the issued ones too.
-    for (const k of HEALS) for (let i = pl.heals[k]; i > 0; i--) home.push({ t: "heal", kind: k });
+    for (const k of HEAL_KINDS) for (let i = pl.heals[k]; i > 0; i--) home.push({ t: "heal", kind: k });
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
     for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
     for (const k of tools) home.push({ t: "tool", kind: k });
@@ -690,9 +688,10 @@ export function settle(p: Profile, s: State): Settlement {
   }
   // Lead-incursion: the copy's captures must not rewrite the home island's nodes.
   const day = s.incursion ? { ...raidDay(s), captured: [] as NodeId[] } : raidDay(s);
-  const { change } = advanceDay(p, day);
+  // Overnight change first (contracts / freedAt) while today's island still holds the stash packing.
+  const change = dayChange(p, day);
   const taken = takenContract(p);
-  const contract = taken && { c: taken, cash: threatPay(taken.reward.cash, s.threat ?? 0), done: contractDone(taken, { freed: change.freed, home: fetched, wiped: s.stats.wiped ?? [] }) };
+  const contract = taken && { c: taken, cash: threatPay(taken.reward.cash, s.threat ?? 0), done: contractDone(taken, { gained: change.gained, home: fetched, wiped: s.stats.wiped ?? [] }) };
   const story = currentStory(p.records);
   const told = story && records.includes(story.id) ? story : null;
   // What came home and what the quests and the contract pay claim stash room together, in one `keepOrder()`.
@@ -705,8 +704,7 @@ export function settle(p: Profile, s: State): Settlement {
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
   // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
-  // X2 / lead-incursion: the copy frees non-stage POIs for a short battlefield — never unlock
-  // those depots (or credit sentVia) on the home profile (Codex #197 P2).
+  // 短いレイド: コピー島は非ステージ拠点を解放済み（敵なし）とするため、自島プロフィールのデポやsentViaには反映しない。
   const depots = s.incursion ? [...p.depots] : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
   const depotSent = s.incursion
     ? { ...p.depotSent }
@@ -716,7 +714,7 @@ export function settle(p: Profile, s: State): Settlement {
   const entries = knownEntries([...p.entries, ...learned]);
   const kept = STORIES.map((t) => t.id).filter((id) => p.records.includes(id) || told?.id === id);
   const freedAt = { ...p.freedAt };
-  for (const id of change.freed) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
+  for (const id of change.gained) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
   // Aid parcels left / taken this raid (ux-design C2): keep local until the island server answers.
   // `LOCAL_AID` survives parseProfile when sync never ran (Codex: empty code was dropped).
   // Lead-incursion taken ids are the defender's, not this island's — do not strip home parcels.
@@ -732,9 +730,10 @@ export function settle(p: Profile, s: State): Settlement {
   let incursionTaken = p.incursionTaken ?? [];
   if (s.incursion && seized.ids.length) incursionTaken = withTaken(incursionTaken, s.incursion.code, seized.ids);
   const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept, parcels, incursionTaken };
+  // Apply the same overnight pass once the raid's haul and quests are on today's island.
   const { profile: night } = advanceDay(settled, day);
   // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
-  // X2 short-raid wins do not rewrite home holds — award the same swap once here (no double count).
+  // 短いレイド勝利によるトロフィー変動（自島ノードの占有書き換えは行わない）。
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
   let trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
@@ -745,8 +744,8 @@ export function settle(p: Profile, s: State): Settlement {
     trop = { next: clampTrophies(self + gain), gained: trop.gained + gain, lost: trop.lost, taken: [s.incursion!.target as NodeId], dropped: trop.dropped };
   }
   if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
-  // X2: the outbound assault becomes holding on a win, gone on a miss (same list as 来る遠征 notice).
-  // Real islands keep `x2Pending` until `reportAssault` confirms (or a rejection rolls trophies back).
+  // 短いレイド: 出撃エントリを勝利時は holding、敗北時は gone に更新。
+  // 実プレイヤー相手は reportAssault による相手島サーバーの確認まで x2Pending を維持。
   if (s.incursion) {
     const expeditions = incursionWonEarly
       ? assaultWon(night.expeditions, s.incursion.code, trop.gained)
@@ -763,7 +762,7 @@ export function settle(p: Profile, s: State): Settlement {
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   // The nodes the player holds once the night is over pay their day's credits.
-  const income = frontIncome(night);
+  const income = heldIncome(night);
   // The decisive battle won (`FINALE`): the titan fell with its pad open. The round's days are kept, and the
   // island and the factory start over for the next round; the income above is the freed island's last.
   const liberated = !!s.finale && day.titan ? { days: p.day - p.cycleDay + 1, cycle: p.cycle + 1 } : null;
@@ -773,7 +772,7 @@ export function settle(p: Profile, s: State): Settlement {
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
   // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped
-  // (except X2 results still awaiting the defender island's `reportAssault`).
+  // （ただし相手サーバーの報告待ちである x2Pending エントリは残す）
   const away = awayIncome(night);
   const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone" || e.x2Pending);
   const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils + away, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
@@ -1061,7 +1060,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     const x = i as Record<string, unknown>;
     if (x.t === "weapon") return typeof x.kind === "string" && x.kind in META.weapon && [0, 1, 2, 3].includes(x.rarity as number);
     if (x.t === "armor") return [1, 2, 3].includes(x.tier as number);
-    if (x.t === "heal") return HEALS.includes(x.kind as HealKind);
+    if (x.t === "heal") return HEAL_KINDS.includes(x.kind as HealKind);
     if (x.t === "valuable") return typeof x.kind === "string" && x.kind in VALUABLES;
     if (x.t === "key") return typeof x.poi === "string" && poiIndex(x.poi as PoiId) >= 0;
     if (x.t === "tool") return typeof x.kind === "string" && x.kind in TOOLS;
@@ -1161,7 +1160,7 @@ function parseKitPicks(raw: unknown): KitPicks | null {
   const armor = ([0, 1, 2, 3].includes(r.armor as number) ? r.armor : 0) as Rarity;
   const keys = [...new Set((Array.isArray(r.keys) ? r.keys : []).filter((k): k is PoiId => typeof k === "string" && poiIndex(k as PoiId) >= 0))];
   const h = (r.heals && typeof r.heals === "object" ? r.heals : {}) as Record<string, unknown>;
-  const heals = Object.fromEntries(HEALS.map((k) => [k, Number.isInteger(h[k]) ? Math.max(0, Math.min(HEAL_SPECS[k].max, h[k] as number)) : 0])) as Record<HealKind, number>;
+  const heals = Object.fromEntries(HEAL_KINDS.map((k) => [k, Number.isInteger(h[k]) ? Math.max(0, Math.min(HEAL_SPECS[k].max, h[k] as number)) : 0])) as Record<HealKind, number>;
   return { weapons, armor, keys, heals };
 }
 

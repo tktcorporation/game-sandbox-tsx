@@ -11,7 +11,7 @@ import { BAG, HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from 
 import { ENTRIES, POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
 import { hideoutDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
-import { build, buy, canBuild, deliver, deliverable, hideoutWanted as wanted, newProfile, pouch, sell, settle, shortfall, stashUsed, type Profile } from "../src/ringfall/meta/profile";
+import { build, buy, canBuild, deliver, deliverable, hideoutWanted as wanted, newProfile, bestFitValuables, sell, settle, shortfall, stashUsed, type Profile } from "../src/ringfall/meta/profile";
 import { offered } from "../src/ringfall/meta/quests";
 
 /** What settle() reads of a raid, kept from each bot run. */
@@ -38,7 +38,7 @@ export type Pool = Record<string, Partial<Record<RegionId, RaidRecord[]>>>;
 const CAP = 200;
 
 /** Valuables a recorded raid brings home with a pouch of `slots`. */
-const brought = (r: RaidRecord, slots: number): ValuableKind[] => [...r.sent, ...(r.outcome === "extracted" ? r.player.haul : pouch(r.player.haul, slots))];
+const brought = (r: RaidRecord, slots: number): ValuableKind[] => [...r.sent, ...(r.outcome === "extracted" ? r.player.haul : bestFitValuables(r.player.haul, slots))];
 
 /**
  * The region whose raids bring home the most credits' worth, counting twice what the hideout

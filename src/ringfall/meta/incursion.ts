@@ -1,8 +1,18 @@
 /*
- * Other-island short raid X2 (docs/ringfall/game-design-review.md §5.8): the player raids a
- * *subset* of another island's nodes (not the full mirror of abolished stage 6), takes the
- * target by 核 · 制圧, and 島の守り arrives as 倉庫へ届いた. Helpers stay pure; the sim gate's
- * home-island tables never set Start.incursion, so their hash stays put.
+ * 他島への短いレイド（Short Raid / 攻める）のステージ構築モジュール。
+ *
+ * プレイヤーがお隣の島（他プレイヤーまたはAI）へ出撃する際、相手島全体を模倣するのではなく、
+ * ターゲット拠点およびその周辺（最大2ノード）のみを「ライバル占有」として切り出し、
+ * 短時間で「核 · 制圧」と「防衛物資の奪取」を行う舞台（IncursionPlan）を構築する。
+ *
+ * 責務の分離:
+ *   - 本モジュール（incursion.ts）: 短いレイドのステージ構築（IncursionPlan）、防衛物資（Parcel）の切り出し。
+ *     （Profile.incursionTaken や Settlement.incursion などの永続データ構造に対応）
+ *   - assault.ts: 短いレイド出撃エントリ（Outgoing）の管理、勝敗確定、保留報告、トロフィー計算。
+ *     （POST /api/islands/:code/assault API に対応）
+ *
+ * 関連仕様: docs/ringfall/glossary.md, docs/ringfall/pvp-clarity.md
+ * （※純粋関数群であり、Start.incursion を設定しない自島レイドのシミュレーション決定性には影響しない）
  */
 import type { ValuableKind } from "../sim/config";
 import { rivalHold, type PoiHold } from "../sim/holds";
@@ -12,14 +22,15 @@ import type { Parcel } from "./parcels";
 import { LOCAL_AID } from "./parcels";
 import type { AiIsland } from "./ai-islands";
 
-/** How many nodes beside the target may stay on the short-raid stage (X2). */
+/** 短いレイド（Short Raid）のステージに標的以外に残す隣接ノードの最大数。 */
 export const SHORT_RAID_EXTRA = 2;
 
 /**
- * Node to aim an X2 notice at: prefer `prefer` when the owner holds it open, else the nearest
- * open freed node (real islands may not hold the coastal id that opened the attacker's route).
+ * 短いレイドの標的拠点を決定する。
+ * 希望の拠点（prefer）が解放中ならそれを優先し、なければ最も近い解放済み拠点を返す。
+ * 新規島保護中や解放拠点が1つもない場合は null。
  */
-export function assaultTarget(view: Pick<IslandView, "nodes" | "protectedUntil">, prefer: NodeId, now = Date.now()): NodeId | null {
+export function shortRaidTarget(view: Pick<IslandView, "nodes" | "protectedUntil">, prefer: NodeId, now = Date.now()): NodeId | null {
   if (islandProtected(view, now)) return null;
   const open = view.nodes.filter((n) => n.hold === "freed" && n.open && nodeIndex(n.id) >= 0);
   if (!open.length) return null;
@@ -33,49 +44,31 @@ export function assaultTarget(view: Pick<IslandView, "nodes" | "protectedUntil">
   return open[0]!.id as NodeId;
 }
 
-/** What a short / lead-incursion raid needs to start: the copy's holds, the target, and defence stock. */
+/** 他島への短いレイド開始に必要なパラメータ（コピーの占有状態、ターゲット、防衛物資など）。 */
 export interface IncursionPlan {
   code: string;
   owner: string;
   target: NodeId;
   region: RegionId;
   entry: EntryId;
-  /** Who holds each POI on the copy: stage nodes as `rival:…`, the rest cleared (X2) or enemy-held (legacy full). */
+  /** コピー上の各拠点状態: ステージノードは rival:…、その他は解放済み（freed）。 */
   island: Partial<Record<PoiId, PoiHold>>;
-  /** Defence stock on the copy (at least the target's); seized on 制圧 into 倉庫へ届いた. */
+  /** コピー上に配置された防衛物資（制圧時に「倉庫へ届いた」として獲得）。 */
   parcels: Parcel[];
-  /** Nodes on the short stage (target first). Empty when the plan is a legacy full mirror. */
+  /** ステージ上に残す拠点IDリスト（標的が先頭）。 */
   stage: NodeId[];
 }
 
-/** Whether the island still blocks expeditions / short raids (新規島の保護). */
+/** 相手島が新規プレイヤー保護期間中（`protectedUntil > now`）かどうか。 */
 export const islandProtected = (v: Pick<IslandView, "protectedUntil">, now = Date.now()): boolean =>
   !!v.protectedUntil && v.protectedUntil > now;
 
-/** The owner's code as a battle / rival id: AI islands use `ai-` + code, others the island code. */
+/** レイド内での対戦相手ID文字列を生成（AIなら `ai-${code}`、実プレイヤーなら島コード）。 */
 export const incursionOwnerId = (code: string, ai: boolean): string => (ai ? `ai-${code}` : code);
 
 /**
- * An island view as a raid's `Start.island`: every node the owner holds becomes another player's
- * (`rival:owner`), so 核 · 制圧 and seizeRivalLoot work as on the home front; the rest stay held.
- * Legacy full-mirror helper — X2 uses `viewToShortRaidIsland` instead.
- */
-export function viewToRaidIsland(view: Pick<IslandView, "code" | "nodes">, ownerId: string): Partial<Record<PoiId, PoiHold>> {
-  const out: Partial<Record<PoiId, PoiHold>> = {};
-  for (const p of POIS) {
-    if (p.boss) {
-      out[p.id] = "held";
-      continue;
-    }
-    const n = view.nodes.find((x) => x.id === p.id);
-    out[p.id] = n?.hold === "freed" ? rivalHold(ownerId) : "held";
-  }
-  return out;
-}
-
-/**
- * X2 stage: the target plus up to `SHORT_RAID_EXTRA` FRONT_LINKS neighbours the owner still holds,
- * nearest first. Only these stay rival-held on the copy.
+ * 短いレイドのステージ範囲を決定する。
+ * 標的拠点に加え、相手が保持する接続隣接ノードを距離順に最大 `extra` 個（既定2個）選定する。
  */
 export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extra = SHORT_RAID_EXTRA, forceOpen?: NodeId): NodeId[] {
   const ownerHeld = new Set(
@@ -84,8 +77,9 @@ export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extr
   if (!ownerHeld.has(target)) return [];
   const t = NODES[nodeIndex(target)];
   const linked = FRONT_LINKS.flatMap(([a, b]) => {
-    if (a === target && typeof b === "string" && ownerHeld.has(b as NodeId)) return [b as NodeId];
-    if (b === target && a !== "camp" && ownerHeld.has(a as NodeId)) return [a as NodeId];
+    // FRONT_LINKS のタプルは [camp | NodeId, NodeId] なので a のみ "camp" を除外する
+    if (a === target && ownerHeld.has(b)) return [b];
+    if (b === target && a !== "camp" && ownerHeld.has(a)) return [a];
     return [];
   });
   linked.sort((a, b) => {
@@ -97,10 +91,11 @@ export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extr
 }
 
 /**
- * X2 copy: only `stage` nodes are rival-held; every other freeable POI is freed (no garrison), so
- * the raid stays on a few nodes. The titan pad stays held.
+ * 短いレイド用コピー島の拠点占有マップを生成する。
+ * `stage` ノードのみを相手保持（rival:owner）とし、他の非ボスノードは解放済み（freed = 敵なし）にして
+ * 数拠点のみに絞った戦場を形成する。タイタン発射台（pad）は敵保持のまま。
  */
-export function viewToShortRaidIsland(ownerId: string, stage: readonly NodeId[]): Partial<Record<PoiId, PoiHold>> {
+export function shortRaidIsland(ownerId: string, stage: readonly NodeId[]): Partial<Record<PoiId, PoiHold>> {
   const on = new Set(stage);
   const out: Partial<Record<PoiId, PoiHold>> = {};
   for (const p of POIS) {
@@ -113,25 +108,25 @@ export function viewToShortRaidIsland(ownerId: string, stage: readonly NodeId[])
   return out;
 }
 
-/** A way in of the target's region (the copy's geography is the same world). */
+/** 対象拠点の地域に対応する進入路（既知のものを優先）を返す。 */
 export function entryForTarget(target: NodeId, known: readonly EntryId[] = []): EntryId {
   const region = poiRegion(target);
   const prefer = region.entries.find((e) => known.includes(e));
   return prefer ?? region.entries[0] ?? ENTRIES[0].id;
 }
 
-/** Parcels on the view at `poi` (and, when empty, none — the settle still lays a reserve). */
+/** 指定拠点に配備されている防衛物資（Parcel）を抽出する。 */
 export function parcelsAt(view: Pick<IslandView, "parcels">, poi: PoiId): Parcel[] {
   return (view.parcels ?? []).filter((q) => q.poi === poi);
 }
 
 /**
- * Defence stock the game's islands show at their held nodes: one common material per held node,
- * hashed so a day is stable. `taken` drops ids already seized in a short raid.
+ * AI島が保持している防衛物資を日付やソルトから決定論的に生成する。
+ * `taken` に含まれる既奪取物資は除外される。
  */
 export function aiDefenceParcels(a: AiIsland, salt: number, day: number, held: readonly NodeId[], taken: readonly number[] = []): Parcel[] {
   const gone = new Set(taken);
-  // Same common pool as an empty rival 中継ボックス reserve (seizeRivalLoot).
+  // 中継ボックスの通常素材プールと同じ
   const pool: ValuableKind[] = ["parts", "fuse", "board"];
   const out: Parcel[] = [];
   held.forEach((id, n) => {
@@ -151,7 +146,84 @@ const nodeSalt = (id: string) => {
 };
 
 /**
- * Legacy full-mirror plan (stage 6 shape). Prefer `planShortRaid` for X2.
+ * 短いレイド（Short Raid）の出撃計画を生成する。
+ * 相手の解放拠点の中から対象拠点および隣接拠点のみをステージとして抽出し、防衛物資を切り出す。
+ * 保護期間中、対象が閉鎖中、または相手が保持していない場合は null。
+ */
+export function planShortRaid(
+  view: IslandView,
+  target: string,
+  opts: { ai: boolean; known?: readonly EntryId[]; extra?: number; /** 自身の出撃予告が占有中であっても計画を立てる */ ignoreBusy?: boolean } = { ai: false },
+): IncursionPlan | null {
+  if (islandProtected(view)) return null;
+  const node = NODES.find((n) => n.id === target);
+  if (!node) return null;
+  const slot = view.nodes.find((n) => n.id === target);
+  if (!slot || slot.hold !== "freed") return null;
+  // 相手島ノードは遠征中（自身の襲撃含む）に閉鎖されるため、ignoreBusy で自身の分を許可できる
+  if (!slot.open && !opts.ignoreBusy) return null;
+  const stage = stageNodes(view, node.id, opts.extra ?? SHORT_RAID_EXTRA, opts.ignoreBusy ? node.id : undefined);
+  if (!stage.length) return null;
+  const ownerId = incursionOwnerId(view.code, opts.ai);
+  const island = shortRaidIsland(ownerId, stage);
+  const parcels = stage.flatMap((id) => parcelsAt(view, id));
+  return {
+    code: view.code,
+    owner: view.owner,
+    target: node.id,
+    region: regionOf(node.region).id,
+    entry: entryForTarget(node.id, opts.known),
+    island,
+    parcels,
+    stage,
+  };
+}
+
+/** 過去にその島から奪取済みの防衛物資IDリストを取得する（セーブデータ管理用）。 */
+export function takenOn(list: readonly { code: string; ids: number[] }[] | undefined, code: string): number[] {
+  return list?.filter((e) => e.code === code).flatMap((e) => e.ids) ?? [];
+}
+
+/** 新たに奪取した防衛物資IDをセーブデータへマージ追記する。 */
+export function withTaken(
+  list: readonly { code: string; ids: number[] }[] | undefined,
+  code: string,
+  ids: readonly number[],
+): { code: string; ids: number[] }[] {
+  if (!ids.length) return list ? [...list] : [];
+  const out = [...(list ?? [])];
+  const i = out.findIndex((e) => e.code === code);
+  if (i < 0) return [...out, { code, ids: [...ids] }];
+  const set = new Set([...out[i]!.ids, ...ids]);
+  out[i] = { code, ids: [...set] };
+  return out;
+}
+
+/* =========================================================================
+ * レガシー: 廃止された全島ミラー形式（テスト・旧仕様比較用）
+ * ========================================================================= */
+
+/**
+ * （レガシー全島ミラー用ヘルパー）
+ * 相手島の保持ノードをすべて rival:owner としてマップ化する。
+ * 現在の短いレイドでは使用せず、`shortRaidIsland` を使用する。
+ */
+export function viewToRaidIsland(view: Pick<IslandView, "code" | "nodes">, ownerId: string): Partial<Record<PoiId, PoiHold>> {
+  const out: Partial<Record<PoiId, PoiHold>> = {};
+  for (const p of POIS) {
+    if (p.boss) {
+      out[p.id] = "held";
+      continue;
+    }
+    const n = view.nodes.find((x) => x.id === p.id);
+    out[p.id] = n?.hold === "freed" ? rivalHold(ownerId) : "held";
+  }
+  return out;
+}
+
+/**
+ * （レガシー全島ミラー計画）
+ * 短いレイドには `planShortRaid` を使用すること。
  */
 export function planIncursion(
   view: IslandView,
@@ -176,57 +248,4 @@ export function planIncursion(
     parcels,
     stage: [],
   };
-}
-
-/**
- * X2 short raid: only a few of the owner's open nodes stay on the stage. Null when protected,
- * the target is shut, or the owner does not hold it.
- */
-export function planShortRaid(
-  view: IslandView,
-  target: string,
-  opts: { ai: boolean; known?: readonly EntryId[]; extra?: number; /** Own X2 notice already occupies the target — still plan. */ ignoreBusy?: boolean } = { ai: false },
-): IncursionPlan | null {
-  if (islandProtected(view)) return null;
-  const node = NODES.find((n) => n.id === target);
-  if (!node) return null;
-  const slot = view.nodes.find((n) => n.id === target);
-  if (!slot || slot.hold !== "freed") return null;
-  // Real islands mark a node closed while any expedition (including our own X2) is on it.
-  if (!slot.open && !opts.ignoreBusy) return null;
-  const stage = stageNodes(view, node.id, opts.extra ?? SHORT_RAID_EXTRA, opts.ignoreBusy ? node.id : undefined);
-  if (!stage.length) return null;
-  const ownerId = incursionOwnerId(view.code, opts.ai);
-  const island = viewToShortRaidIsland(ownerId, stage);
-  const parcels = stage.flatMap((id) => parcelsAt(view, id));
-  return {
-    code: view.code,
-    owner: view.owner,
-    target: node.id,
-    region: regionOf(node.region).id,
-    entry: entryForTarget(node.id, opts.known),
-    island,
-    parcels,
-    stage,
-  };
-}
-
-/** Ids already seized from island `code` in earlier short raids (profile bookkeeping). */
-export function takenOn(list: readonly { code: string; ids: number[] }[] | undefined, code: string): number[] {
-  return list?.filter((e) => e.code === code).flatMap((e) => e.ids) ?? [];
-}
-
-/** Merges newly seized parcel ids for island `code` into the profile's short-raid book. */
-export function withTaken(
-  list: readonly { code: string; ids: number[] }[] | undefined,
-  code: string,
-  ids: readonly number[],
-): { code: string; ids: number[] }[] {
-  if (!ids.length) return list ? [...list] : [];
-  const out = [...(list ?? [])];
-  const i = out.findIndex((e) => e.code === code);
-  if (i < 0) return [...out, { code, ids: [...ids] }];
-  const set = new Set([...out[i]!.ids, ...ids]);
-  out[i] = { code, ids: [...set] };
-  return out;
 }

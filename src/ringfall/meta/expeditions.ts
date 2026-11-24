@@ -34,13 +34,13 @@ export interface Outgoing {
   units: number;
   state: ExpeditionState;
   /**
-   * X2 player-led short raid notice (§5.8): stays `coming` until settle; does not busy the
-   * target node or auto-resolve via `aiOutcome` (the player raids the subset themselves).
+   * 他島への短いレイド（Short Raid）の出撃エントリ。
+   * 工場のNPC遠征と区別し、自動解決ではなくプレイヤー自身がレイドで制圧する。
    */
   x2?: true;
-  /** X2 result awaiting `reportAssault` confirmation on the defender's island. */
+  /** 短いレイドの結果が防衛側サーバーへの報告（reportAssault）完了待ちであるフラグ。 */
   x2Pending?: true;
-  /** Trophy gain from a pending X2 win — rolled back if the server rejects the report. */
+  /** 短いレイド勝利による獲得トロフィー（サーバーで拒否された場合はロールバックされる）。 */
   tropGain?: number;
 }
 
@@ -265,7 +265,7 @@ export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]
     return [{ id: e.id, by, target: e.target as NodeId, kinds: e.kinds as EnemyKind[], state: e.state as LentIn["state"] }];
   });
   const shut = Array.isArray(raw.shut) ? NODES.filter((n) => (raw.shut as unknown[]).includes(n.id)).map((n) => n.id) : [];
-  // X2 short-raid targets for 固める (no robot squads lent).
+  // 短いレイド（Short Raid）の迎撃対象ノード（ロボット部隊の貸出はなし）
   const noticed = Array.isArray(raw.noticed) ? NODES.filter((n) => (raw.noticed as unknown[]).includes(n.id)).map((n) => n.id) : [];
   return { until: raw.until, expeditions, shut, noticed };
 }
@@ -345,8 +345,11 @@ export const LOG_WORD: Record<IslandLogEntry["t"], string> = { noticed: "遠征"
 /** Whether an entry is someone's attack on this island, answered by sending one back (仕返し). */
 export const answerable = (e: IslandLogEntry): boolean => (e.t === "noticed" || e.t === "landed" || e.t === "taken") && isIslandCode(e.by.code);
 
-/** Expeditions sent and still out (not gone, not called home). */
-export const alive = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state !== "gone" && e.state !== "recalling");
+/**
+ * Expeditions that still take a factory squad slot: not `gone`, and not `recalling`
+ * (a recall has already returned its squad to the factory).
+ */
+export const expeditionsOut = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state !== "gone" && e.state !== "recalling");
 
 /**
  * The expeditions with those out called home (引き上げ): each the server has numbered is `recalling`
@@ -363,13 +366,13 @@ export function recallAll(list: Outgoing[], only?: (o: Outgoing) => boolean): Ou
 export const answerRecall = (list: Outgoing[], done: Pick<Outgoing, "code" | "id">): Outgoing[] => list.filter((o) => !(o.state === "recalling" && o.code === done.code && o.id === done.id));
 
 /** The squads the expeditions out take from the factory: one each. */
-export const squadsAway = (p: { expeditions: readonly Outgoing[] }) => alive(p).length;
+export const squadsAway = (p: { expeditions: readonly Outgoing[] }) => expeditionsOut(p).length;
 
 /** The squads the factory keeps out at once on its own island: its level's and the nodes' (`factoryMax()` in sim/battle.ts), before the expeditions take theirs. */
 export const factorySquads = (p: { factory: number; poiState: Island }) => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, p.factory))].max + unlocked(p).squad;
 
-/** The squads left for the island's own battle once the expeditions out take theirs, never below 0. */
-export const homeSquads = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => Math.max(0, factorySquads(p) - squadsAway(p));
+/** Factory squad slots left for this island's own battle after expeditions take theirs, never below 0. */
+export const squadsRemaining = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => Math.max(0, factorySquads(p) - squadsAway(p));
 
 /** Whether the factory has a squad to send: an expedition takes one of the squads it keeps out. */
 export const canSend = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => squadsAway(p) < factorySquads(p);
@@ -457,7 +460,7 @@ export function parseOutgoing(raw: unknown): Outgoing[] {
       }),
     );
   let over = all.length - KEPT;
-  // Keep pending X2 results until the server confirms — do not trim them as ordinary gone.
+  // 相手サーバーの確認待ちである未報告の短いレイド結果は、通常の gone のように削除せず保持する
   const kept = over > 0 ? all.filter((o) => !((o.state === "gone" && !o.x2Pending) && over-- > 0)) : all;
   return kept.slice(-KEPT);
 }

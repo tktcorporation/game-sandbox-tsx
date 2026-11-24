@@ -38,18 +38,18 @@ import { callLeft, cellOf, decodeSeen, encodeSeen, starterKit, idleInput, newRun
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
-import { haulValue } from "../src/ringfall/sim/results";
+import { haulAndSentWorth } from "../src/ringfall/sim/results";
 import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, toolIn, useTarget } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, bestFitValuables, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { squadsAway } from "../src/ringfall/meta/expeditions";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, FINALE, FORTIFY, MOMENTUM, NIGHT, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { finaleOpen, frontIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, nightTargets, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { finaleOpen, heldIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, nightTargets, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { activePacks } from "../src/ringfall/sim/island";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
@@ -772,7 +772,7 @@ function checkBagSwap(): string | null {
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
-  if (!p.haul.includes("core") || bagUsed(p.haul) > BAG.slots || haulValue(s) !== 1000 + (BAG.slots - 3) * 100) return `bag scenario: after the swap ${p.haul.join(",")}`;
+  if (!p.haul.includes("core") || bagUsed(p.haul) > BAG.slots || haulAndSentWorth(s) !== 1000 + (BAG.slots - 3) * 100) return `bag scenario: after the swap ${p.haul.join(",")}`;
   return null;
 }
 /** A swap throws out the cheapest set that makes room, not just the cheapest items for their size. */
@@ -1523,7 +1523,7 @@ function checkSettle(): string | null {
   s.outcome = "dead";
   const lost = settle(taken.profile, s);
   if (lost.home.map((i) => (i.t === "valuable" ? i.kind : i.t)).join() !== "board") return `settle scenario: a wipe kept ${JSON.stringify(lost.home)}, not the board`;
-  if (pouch(["parts", "parts", "board"]).join() !== "board" || pouch(["parts", "core", "parts"]).join() !== "parts,parts") return "pouch scenario: the pouch did not keep the most valuable fit";
+  if (bestFitValuables(["parts", "parts", "board"]).join() !== "board" || bestFitValuables(["parts", "core", "parts"]).join() !== "parts,parts") return "pouch scenario: the pouch did not keep the most valuable fit";
   // No weapon picked: the starter weapons go and stay in the stash; getting off brings home every heal left, the issued ones too.
   const free = takeKit(p, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
   if (!free.kit.weapons.every((w) => w.starter) || free.kit.weapons.map((w) => w.kind).join() !== "pike,talon" || free.profile.stash.length !== start) return `starter scenario: the starter kit came out as ${JSON.stringify(free.kit)}, leaving ${free.profile.stash.length} things in the stash`;
@@ -1630,10 +1630,10 @@ function checkDepots(): string | null {
   s.depots[PADD] = true;
   stand(s);
   s.player.haul = ["core", "board", "parts"];
-  const worth = haulValue(s);
+  const worth = haulAndSentWorth(s);
   step(s, press, false);
   const sentEv = s.events.find((e): e is Extract<GameEvent, { t: "deposit" }> => e.t === "deposit");
-  if (s.player.haul.length || s.sent.join() !== "core,board,parts" || haulValue(s) !== worth || sentEv?.n !== 3 || sentEv.value !== worth || s.leaving) return `depot scenario: sending the bag left haul ${s.player.haul.join()}, sent ${s.sent.join()}, worth ${haulValue(s)} of ${worth}`;
+  if (s.player.haul.length || s.sent.join() !== "core,board,parts" || haulAndSentWorth(s) !== worth || sentEv?.n !== 3 || sentEv.value !== worth || s.leaving) return `depot scenario: sending the bag left haul ${s.player.haul.join()}, sent ${s.sent.join()}, worth ${haulAndSentWorth(s)} of ${worth}`;
   // ...and it comes home after a wipe, with the depot and the explored map kept for later raids.
   s.outcome = "dead";
   const old = { ...newProfile(), depots: ["supply" as const] };
@@ -1894,7 +1894,7 @@ function checkHideout(): string | null {
   const stocked: Profile = { ...sick, stash: [{ t: "weapon", kind: "pike", rarity: 0 }, ...Array.from({ length: HEALS.cell.max }, (): Item => ({ t: "heal", kind: "cell" }))] };
   for (const weapons of [[], [0]]) {
     const load = { weapons, armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] };
-    const room = healRoom(stocked, load, "cell");
+    const room = healRoom(stocked, "cell");
     const kit = takeKit(stocked, { ...load, heals: { ...load.heals, cell: room } }).kit;
     const issued = issuedHeals(stocked).cell;
     if (kit.heals.cell - issued !== room || kit.heals.cell > HEALS.cell.max || room !== HEALS.cell.max - issued)
@@ -2036,7 +2036,7 @@ function checkIsland(): string | null {
   if (p.day !== 1 || POIS.some((o) => p.poiState[o.id].state !== "held")) return `island scenario: a new profile is on day ${p.day} with ${JSON.stringify(p.poiState)}`;
   // A wipe after capturing is a day too, and the node it took stays the player's.
   const wiped = settle(p, raid(11, { alive: false, cleared: [SUPPLY], visited: [SUPPLY] }));
-  if (wiped.profile.day !== 2 || wiped.day !== 1 || wiped.freed.join() !== "supply" || wiped.front.gained.join() !== "supply" || wiped.profile.poiState.supply.state !== "freed") return `island scenario: a wipe after capturing the supply depot left ${JSON.stringify({ day: wiped.profile.day, freed: wiped.freed, supply: wiped.profile.poiState.supply })}`;
+  if (wiped.profile.day !== 2 || wiped.day !== 1 || wiped.gained.join() !== "supply" || wiped.front.gained.join() !== "supply" || wiped.profile.poiState.supply.state !== "freed") return `island scenario: a wipe after capturing the supply depot left ${JSON.stringify({ day: wiped.profile.day, gained: wiped.gained, supply: wiped.profile.poiState.supply })}`;
   // Clearing a POI of its robots without capturing its core takes nothing.
   const unclaimed = raid(11, { alive: true, visited: [SUPPLY] });
   unclaimed.stats.cleared = [SUPPLY];
@@ -2044,7 +2044,7 @@ function checkIsland(): string | null {
   // Getting off after clearing the supply depot and the titan's pad takes the depot only.
   const won = settle(p, raid(11, { alive: true, cleared: [SUPPLY, PADD], visited: [SUPPLY, PADD] }));
   p = won.profile;
-  if (won.freed.join() !== "supply" || p.poiState.supply.state !== "freed" || p.poiState.pad.state !== "held" || !p.depots.includes("supply")) return `island scenario: clearing the supply depot and the pad and getting off took ${won.freed.join()} with depots ${p.depots.join()}`;
+  if (won.gained.join() !== "supply" || p.poiState.supply.state !== "freed" || p.poiState.pad.state !== "held" || !p.depots.includes("supply")) return `island scenario: clearing the supply depot and the pad and getting off took ${won.gained.join()} with depots ${p.depots.join()}`;
   // Days pass without a visit: the depot stays the player's.
   let q = p;
   for (let d = 1; d <= 6; d++) q = settle(q, raid(20 + d, { alive: true, visited: [QUARRY] }, q.poiState)).profile;
@@ -2285,7 +2285,7 @@ function checkContracts(): string | null {
   for (const e of pr.enemies.filter((o) => o.squad === slot.squad)) kill(pr, e, false);
   pr.outcome = "extracted";
   if (!settle(taking(party), pr).contract?.done) return "contract scenario: destroying one of the reservoir's hunting parties did not count";
-  if (contractDone(party, { freed: [], home: [], wiped: ["party:harbor"] })) return "contract scenario: the harbor's party counted for the reservoir's";
+  if (contractDone(party, { gained: [], home: [], wiped: ["party:harbor"] })) return "contract scenario: the harbor's party counted for the reservoir's";
 
   // Story: only the record under way lies on the island, on its spot; home, it moves the story on.
   if (newRun(41).loot.some((l) => l.kind === "record")) return "story scenario: a raid with no record given has one";
@@ -4156,12 +4156,12 @@ function checkFront(): string | null {
   if (ob().kind !== "done") return "front: getting off did not finish the objective";
   // Overnight: the node is the player's whether the raid got off or was wiped; each node pays its income.
   const alive = settle(fresh, s);
-  if (alive.freed.join() !== "supply" || alive.front.gained.join() !== "supply" || alive.income !== FRONT.income || alive.profile.cash !== fresh.cash + FRONT.income) return `front: the night after the capture ${JSON.stringify({ freed: alive.freed, front: alive.front, income: alive.income })}`;
+  if (alive.gained.join() !== "supply" || alive.front.gained.join() !== "supply" || alive.income !== FRONT.income || alive.profile.cash !== fresh.cash + FRONT.income) return `front: the night after the capture ${JSON.stringify({ gained: alive.gained, front: alive.front, income: alive.income })}`;
   s.outcome = "dead";
   const dead = settle(fresh, s);
-  if (dead.freed.join() !== "supply" || dead.profile.poiState.supply.state !== "freed" || dead.income !== FRONT.income) return `front: a wiped capture left ${dead.profile.poiState.supply.state}`;
+  if (dead.gained.join() !== "supply" || dead.profile.poiState.supply.state !== "freed" || dead.income !== FRONT.income) return `front: a wiped capture left ${dead.profile.poiState.supply.state}`;
   const three: Profile = { ...fresh, poiState: { ...fresh.poiState, ...Object.fromEntries((["supply", "quarry", "relay"] as const).map((id) => [id, { state: "freed" as const }])) } };
-  if (frontIncome(three) !== 3 * FRONT.income) return `front: the income of three nodes is ${frontIncome(three)}`;
+  if (heldIncome(three) !== 3 * FRONT.income) return `front: the income of three nodes is ${heldIncome(three)}`;
   if (frontIds(holdsOf(three)) !== "smelter,station,waterworks,lodge,carpark,control".split(",").sort((a, b) => nodeIndex(a) - nodeIndex(b)).join()) return `front: with the reservoir's three nodes the front is ${frontIds(holdsOf(three))}`;
   // An outpost is no node: its guards stand and it takes no core.
   const r = newRun(9, starterKit(), "reservoir", { island: holds(three) });

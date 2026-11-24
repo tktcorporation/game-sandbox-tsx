@@ -1,7 +1,7 @@
 /*
  * The island API's requests (docs/ringfall/multiplayer.md, 島の番号と遠征の API): claiming this
  * player's island, the owner's report and log, any island's public view, and sending an expedition.
- * Browser only, beside net.ts: the sim and the scripts never import it. Every answer comes back as
+ * Browser only, beside post-raid-summary.ts: the sim and the scripts never import it. Every answer comes back as
  * data, a failure as its error code (meta/island-errors.ts), and nothing throws or logs, so play is
  * the same with no server. Under a browser driver (the shots gate) nothing is sent and every request
  * answers `no-island-server`: the browser logs a refused request's status as a console error.
@@ -237,8 +237,8 @@ export async function sendExpedition(code: string, node: string, units: number, 
 }
 
 /**
- * X2 assault notice on a real neighbour (`POST …/expeditions` with `x2: true`): same 来る遠征
- * window as a factory expedition; the short raid reports via `reportAssault` after it.
+ * 実プレイヤーのお隣の島へ短いレイド出撃の予告を登録する（`POST …/expeditions`、`x2: true`）。
+ * 相手島では工場のNPC遠征と同じ枠組みで受け付けられ、結果はレイド終了後に `reportAssault` で報告される。
  */
 export async function sendAssault(code: string, node: string, units: number, timeout = SEND_TIMEOUT_MS): Promise<Answer<{ id: number; arriveAt: number }>> {
   const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
@@ -261,7 +261,7 @@ export async function sendAssault(code: string, node: string, units: number, tim
     : failed("bad-response");
 }
 
-/** X2 short-raid result (`POST …/assault`): server takes or wipes the notice; both sides sync holds/trophies from it. */
+/** 短いレイド結果の報告（`POST …/assault`）: 相手サーバーが勝敗を確定し、双方が拠点占有・トロフィーを同期する。 */
 export async function reportAssault(code: string, id: number, won: boolean, timeout = SEND_TIMEOUT_MS): Promise<Answer<unknown>> {
   if (aiSource && aiByCode(aiSalt(), code, serverSlots())) return { ok: true, body: { ok: true } };
   const who = loadIdentity();
@@ -273,12 +273,12 @@ export async function reportAssault(code: string, id: number, won: boolean, time
   );
 }
 
-/** Server answers that mean a pending X2 win cannot land — roll back local holding / trophies. */
+/** 相手サーバーから短いレイド勝利が受理されなかった場合のエラー群（ローカルの占有・獲得トロフィーを巻き戻す）。 */
 const ASSAULT_WIN_REJECT: ReadonlySet<string> = new Set(["day-limit", "fortified", "node-not-open", "not-assault", "no-expedition", "already-resolved", "protected", "closed-node"]);
 
 /**
- * Sends each pending X2 result (`Outgoing.x2Pending`) to the defender's island. Retries network
- * failures later; on an explicit win rejection, drops the local hold and reverses `tropGain`.
+ * 保留中の短いレイド結果（`Outgoing.x2Pending`）を防衛側サーバーへ報告する。
+ * ネットワークエラー時は次回同期で再試行。明示的な勝利拒否時はローカルの保持を取り消し獲得トロフィーを巻き戻す。
  */
 export async function flushAssaultReports(get: () => Profile, put: (p: Profile) => void): Promise<void> {
   for (const o of get().expeditions.filter((e) => e.x2 && e.x2Pending && e.id > 0)) {
