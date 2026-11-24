@@ -1253,7 +1253,8 @@ export class Hub {
     map.contract = null;
     map.neighbours = neighboursOnMap(this.profile);
     map.bindNav();
-    map.draw(islandScene(this.profile));
+    // 来る遠征の予告 UI は削除済み: Profile.incoming を地図に載せない
+    map.draw(islandScene({ ...this.profile, incoming: [] }));
   }
 
   /** The map table's radio report on the next raid, as a slot, or "" without a radio. */

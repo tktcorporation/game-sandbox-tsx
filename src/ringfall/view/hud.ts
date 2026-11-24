@@ -1383,7 +1383,8 @@ export class Hud {
     // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
-    const end = islandScene(settled.profile);
+    // 来る遠征の予告 UI は削除済み: Profile.incoming を地図に載せない
+    const end = islandScene({ ...settled.profile, incoming: [] });
     // The player's nodes after each beat, from the day's end back.
     const after = (ids: Set<string>, c: { gained: readonly string[]; lost: readonly string[] }, back: boolean) => {
       const out = new Set(ids);

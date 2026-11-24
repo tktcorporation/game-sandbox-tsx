@@ -852,7 +852,9 @@ function start(go: Launch, from?: State) {
       ? { incursion: { code: shortRaid.code, owner: shortRaid.owner, target: shortRaid.target, parcels: shortRaid.parcels } }
       : {}),
   });
+  // Short raid: capture the target node. Home raid: clear any leftover short-raid task.
   if (shortRaid) hud.setCaptureTask(nodeIndex(shortRaid.target));
+  else hud.setContract();
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
     if (lent) leaseReq = null;
