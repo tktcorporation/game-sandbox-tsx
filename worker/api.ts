@@ -1,5 +1,6 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
+import { TROPHY } from "../src/ringfall/meta/trophies";
 import { parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
@@ -56,7 +57,7 @@ const OUTCOMES = ["extracted", "dead"] as const;
 /** What /api/island records: the player, their island after a settled raid, and the raid. */
 export interface IslandPost {
   player: { id: string; name: string };
-  island: { day: number; held: number; enemy: number; rival: number; factory: number; strength: number };
+  island: { day: number; held: number; enemy: number; rival: number; factory: number; strength: number; trophies: number };
   raid?: { day: number; outcome: (typeof OUTCOMES)[number]; captured: number };
 }
 
@@ -89,9 +90,12 @@ export function parseIslandPost(raw: unknown): IslandPost | null {
   const i = raw.island;
   if (!int(i.day, 0, DAY_MAX) || !int(i.held, 0, NODES_MAX) || !int(i.enemy, 0, NODES_MAX) || !int(i.rival, 0, NODES_MAX)) return null;
   if (!int(i.factory, 0, LEVEL_MAX) || !int(i.strength, 0, LEVEL_MAX)) return null;
+  // trophies optional for older clients; missing → TROPHY.start.
+  const trophies = i.trophies === undefined ? TROPHY.start : int(i.trophies, TROPHY.min, TROPHY.max) ? (i.trophies as number) : null;
+  if (trophies === null) return null;
   const post: IslandPost = {
     player: { id, name: trimmed },
-    island: { day: i.day, held: i.held, enemy: i.enemy, rival: i.rival, factory: i.factory, strength: i.strength },
+    island: { day: i.day, held: i.held, enemy: i.enemy, rival: i.rival, factory: i.factory, strength: i.strength, trophies },
   };
   if (raw.raid !== undefined) {
     const r = raw.raid;
@@ -141,10 +145,10 @@ async function record(db: Db, post: IslandPost, now: number) {
       .bind(player.id, player.name, now),
     db
       .prepare(
-        "INSERT INTO island_summaries (player_id, day, held, enemy, rival, factory, strength, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) " +
-          "ON CONFLICT(player_id) DO UPDATE SET day = excluded.day, held = excluded.held, enemy = excluded.enemy, rival = excluded.rival, factory = excluded.factory, strength = excluded.strength, updated_at = excluded.updated_at",
+        "INSERT INTO island_summaries (player_id, day, held, enemy, rival, factory, strength, updated_at, trophies) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) " +
+          "ON CONFLICT(player_id) DO UPDATE SET day = excluded.day, held = excluded.held, enemy = excluded.enemy, rival = excluded.rival, factory = excluded.factory, strength = excluded.strength, updated_at = excluded.updated_at, trophies = excluded.trophies",
       )
-      .bind(player.id, island.day, island.held, island.enemy, island.rival, island.factory, island.strength, now),
+      .bind(player.id, island.day, island.held, island.enemy, island.rival, island.factory, island.strength, now, island.trophies),
   ];
   if (raid) statements.push(db.prepare("INSERT INTO raids (player_id, day, outcome, captured, at) VALUES (?1, ?2, ?3, ?4, ?5)").bind(player.id, raid.day, raid.outcome, raid.captured, now));
   await db.batch(statements);
@@ -236,6 +240,39 @@ async function isNeighbourRouteShut(env: ApiEnv, player: string, code: string, h
 /** How many neighbours an island is offered, and how long a set of them lasts before it is drawn again. */
 export const NEIGHBOURS = { count: 4, pool: 24, weekMs: 7 * 24 * 3600 * 1000, activeMs: 14 * 24 * 3600 * 1000 } as const;
 
+/**
+ * After a contested coastal hub flips on `aCode`, mirror ownership onto the neighbour `bCode`'s
+ * shore that faces `aCode` this week, and record the shared owner in contested_holds.
+ */
+async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string, bCode: string, aShore: string, ownerCode: string, now: number) {
+  const db = env.DB;
+  if (db) {
+    try {
+      await db
+        .prepare(
+          "INSERT INTO contested_holds (a_code, b_code, shore, owner_code, taken_at) VALUES (?1, ?2, ?3, ?4, ?5) " +
+            "ON CONFLICT(a_code, b_code, shore) DO UPDATE SET owner_code = excluded.owner_code, taken_at = excluded.taken_at",
+        )
+        .bind(aCode, bCode, aShore, ownerCode, now)
+        .run();
+    } catch {
+      /* table may be mid-migration; report already landed */
+    }
+  }
+  const week = Math.floor(now / NEIGHBOURS.weekMs);
+  const row = (
+    await db
+      ?.prepare(
+        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
+          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
+      )
+      .bind(bCode, week, aCode)
+      .all<{ slot: number }>()
+  )?.results[0];
+  const theirShore = row && NEIGHBOUR_SLOTS[row.slot] ? NEIGHBOUR_SLOTS[row.slot].shore : aShore;
+  await ask(ns, bCode, { t: "contestedMirror", shore: theirShore, owner: ownerCode, at: now }, now);
+}
+
 /** A neighbour as the owner's camp shows it: whose island, its code, how far its owner has come, and what they did last. */
 export interface Neighbour {
   code: string;
@@ -260,34 +297,39 @@ const mix32 = (s: string) => {
 
 /**
  * The owner's neighbours (`GET /api/neighbours`, the owner's id in the header): islands whose owners
- * played in the last two weeks, nearest in nodes held to the owner's, a few of the nearest drawn by
- * a hash of the owner, the island and the week. The draw is kept for the week, each pick in its slot
- * at sea (`neighbour_picks`), so nodes changing hands in the week neither swap a neighbour nor move
- * one onto another sea route; what is shown of each (nodes held, its last raid) is read live.
+ * played in the last two weeks, nearest in trophies to the owner's (方向 A / TKT-195), a few of the
+ * nearest drawn by a hash of the owner, the island and the week. The draw is kept for the week, each
+ * pick in its slot at sea (`neighbour_picks`), so trophies moving in the week neither swap a neighbour
+ * nor move one onto another sea route; what is shown of each (nodes held, its last raid) is read live.
  */
 async function neighbours(env: ApiEnv, player: string, now: number): Promise<Response> {
   const db = env.DB;
   if (!db) return unbound("no-database");
   try {
-    const mine = (await db.prepare("SELECT i.code AS code, s.held AS held FROM islands i LEFT JOIN island_summaries s ON s.player_id = i.player_id WHERE i.player_id = ?1").bind(player).all<{ code: string; held: number | null }>()).results[0];
+    const mine = (
+      await db
+        .prepare("SELECT i.code AS code, s.trophies AS trophies FROM islands i LEFT JOIN island_summaries s ON s.player_id = i.player_id WHERE i.player_id = ?1")
+        .bind(player)
+        .all<{ code: string; trophies: number | null }>()
+    ).results[0];
     if (!mine) return json(200, { ok: true, neighbours: [] });
     const week = Math.floor(now / NEIGHBOURS.weekMs);
     const kept = async () => (await db.prepare("SELECT slot, code FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 ORDER BY slot").bind(player, week).all<{ slot: number; code: string }>()).results;
     let picks = await kept();
     if (!picks.length) {
-      // The week's draw: nearness in nodes held first; the week's hash shuffles only islands within a couple of nodes of each other.
-      const held = mine.held ?? 0;
+      // The week's draw: nearness in trophies first; the week's hash shuffles only islands within a couple of trophy bands of each other.
+      const trop = mine.trophies ?? TROPHY.start;
       const rows = (
         await db
           .prepare(
-            "SELECT i.code AS code, s.held AS held FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
-              "WHERE i.player_id != ?1 AND s.updated_at > ?2 ORDER BY abs(s.held - ?3), s.updated_at DESC LIMIT ?4",
+            "SELECT i.code AS code, COALESCE(s.trophies, ?5) AS trophies FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
+              "WHERE i.player_id != ?1 AND s.updated_at > ?2 ORDER BY abs(COALESCE(s.trophies, ?5) - ?3), s.updated_at DESC LIMIT ?4",
           )
-          .bind(player, now - NEIGHBOURS.activeMs, held, NEIGHBOURS.pool)
-          .all<{ code: string; held: number }>()
+          .bind(player, now - NEIGHBOURS.activeMs, trop, NEIGHBOURS.pool, TROPHY.start)
+          .all<{ code: string; trophies: number }>()
       ).results;
       const drawn = rows
-        .map((r) => ({ r, key: Math.abs(r.held - held) + ((mix32(`${mine.code}:${r.code}:${week}`) % 1000) / 1000) * 2 }))
+        .map((r) => ({ r, key: Math.abs(r.trophies - trop) / 50 + ((mix32(`${mine.code}:${r.code}:${week}`) % 1000) / 1000) * 2 }))
         .sort((a, b) => a.key - b.key)
         .slice(0, NEIGHBOURS.count);
       // Kept for the week (a draw that raced another keeps the first), and last weeks' let go.
@@ -383,7 +425,18 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const takenParcels = parseTakenParcels(raw.takenParcels);
     if (!player || !holds || !retaken || !lent || !parcels || !takenParcels || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
     const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, parcels, takenParcels }, now);
-    if (r.status === 200) await ownCode(env, code, player.id, now);
+    if (r.status === 200) {
+      await ownCode(env, code, player.id, now);
+      // Contested pair sync (方向 A): retaken coastal hubs flip the neighbour's facing shore too.
+      try {
+        const body = (await r.clone().json()) as { contestedRetaken?: { shore: string; from: string }[] };
+        for (const c of body.contestedRetaken ?? []) {
+          await syncContestedPair(env, ns, code, c.from, c.shore, code, now);
+        }
+      } catch {
+        /* mirror best-effort; report already succeeded */
+      }
+    }
     return r;
   }
   // Aid or an expedition: the sender proves their own island with their id.
@@ -407,7 +460,16 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
   if (sub === "assault") {
     if (!int(raw.id, 1, 1e9) || typeof raw.won !== "boolean") return fail(400, "bad-request");
-    return ask(ns, code, { t: "assault", from: fromCode, id: raw.id, won: raw.won }, now);
+    const ar = await ask(ns, code, { t: "assault", from: fromCode, id: raw.id, won: raw.won }, now);
+    if (ar.status === 200 && raw.won) {
+      try {
+        const body = (await ar.clone().json()) as { contested?: { shore: string; owner: string } };
+        if (body.contested) await syncContestedPair(env, ns, code, fromCode, body.contested.shore, fromCode, now);
+      } catch {
+        /* best-effort */
+      }
+    }
+    return ar;
   }
   if (typeof raw.target !== "string" || !int(raw.units, 1, 64)) return fail(400, "bad-request");
   // A neighbour of the sender's this week is reached only by its sea route (the sender holds the node

@@ -3,6 +3,7 @@ import { reckonApart, standing, type Guard, type NodeMeter, type ReckonSquad, ty
 import { parseHold, rivalHold, rivalOf, type PoiHold } from "../src/ringfall/sim/holds";
 import { ISLAND_TABLE } from "../src/ringfall/meta/island-table";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
+import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 
 /*
  * One island on the server (docs/ringfall/multiplayer.md, 戦いの解き方): its owner, the nodes' holds
@@ -27,8 +28,15 @@ export function migrateIslandState(s: IslandState): IslandState {
   }
   // Fortify (核 · 固める) removed 2026-11-24: drop any leftover shut times from older islands.
   if ("fort" in s) delete (s as { fort?: number[] }).fort;
+  // Contested same-day shield (方向 A): older islands have none.
+  if (!s.shielded) s.shielded = { day: 0, nodes: [] };
   return s;
 }
+
+/** Coastal hubs contested with a neighbour (観測所・浄水場・ロボット工場・追跡レーダー). */
+export const CONTESTED_SHORES: readonly string[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
+
+export const isContestedShore = (id: string): boolean => CONTESTED_SHORES.includes(id);
 
 /** The rules of expeditions and the server's pace. */
 export const EXPEDITION = {
@@ -161,6 +169,11 @@ export interface IslandState {
   /** Nodes taken from the island by expeditions on UTC day `day`: the day's limit counts these, not the log, which drops old entries. */
   taken: { day: number; n: number };
   /**
+   * Contested hubs taken on UTC day `day` (方向 A / TKT-195): those node indices cannot change hands
+   * again until the next UTC day. Optional on older islands (migrate fills empty).
+   */
+  shielded?: { day: number; nodes: number[] };
+  /**
    * The owner's raid has the expeditions `ids` until `until`: the island leaves them as they are
    * meanwhile, and the raid's report says what became of them. Left out or null, none. (Optional:
    * islands stored before leases have none.)
@@ -210,6 +223,8 @@ export type IslandOp =
   | { t: "whois"; player: string }
   | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[]; x2?: true }
   | { t: "assault"; from: string; id: number; won: boolean }
+  /** Mirror contested ownership onto this island's shore (方向 A): set hold to rival:owner or own. */
+  | { t: "contestedMirror"; shore: string; owner: string; at: number }
   | { t: "ping"; player: string; name: string; x: number; z: number }
   | { t: "aid"; from: Attacker; poi: string; kind: string };
 
@@ -259,8 +274,24 @@ const utcDay = (t: number) => Math.floor(t / DAY_MS);
 /** Nodes taken from the island by expeditions on the UTC day of `t`. */
 const takenOn = (s: IslandState, t: number) => (s.taken.day === utcDay(t) ? s.taken.n : 0);
 
+/** Whether contested node `i` is shielded for the UTC day of `t` (just taken today). */
+export function isShielded(s: IslandState, i: number, t: number): boolean {
+  const sh = s.shielded;
+  if (!sh || sh.day !== utcDay(t)) return false;
+  return sh.nodes.includes(i);
+}
+
+/** Mark contested node `i` shielded for the UTC day of `at`. */
+export function shieldNode(s: IslandState, i: number, at: number) {
+  if (!isContestedShore(NODE_IDS[i])) return;
+  const day = utcDay(at);
+  if (!s.shielded || s.shielded.day !== day) s.shielded = { day, nodes: [i] };
+  else if (!s.shielded.nodes.includes(i)) s.shielded.nodes.push(i);
+}
+
 function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, by: Attacker) {
   if (t === "taken") s.taken = { day: utcDay(at), n: takenOn(s, at) + 1 };
+  if (t === "taken" || t === "retaken") shieldNode(s, node, at);
   s.log.push({ seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by } });
   if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);
 }
@@ -419,7 +450,8 @@ function tick(s: IslandState, t: number) {
     if (ef.side === 3) {
       // Captures landing on one tick are counted one by one: past the day's limit the node stays as it
       // was and the meter starts over, so the island never loses more than `perDay` nodes in a day.
-      if (takenOn(s, t) >= EXPEDITION.perDay) {
+      // Contested hubs just taken today stay shielded (方向 A).
+      if (takenOn(s, t) >= EXPEDITION.perDay || isShielded(s, ef.node, t)) {
         holds[ef.node] = s.holds[ef.node];
         meter[ef.node] = null;
         continue;
@@ -430,6 +462,11 @@ function tick(s: IslandState, t: number) {
         appendLog(s, t, "taken", ef.node, e.by);
       }
     } else if (ef.side === 0) {
+      if (isShielded(s, ef.node, t)) {
+        holds[ef.node] = s.holds[ef.node];
+        meter[ef.node] = null;
+        continue;
+      }
       for (const e of fightingExpeditions.filter((x) => x.target === ef.node)) e.holding = false;
       appendLog(s, t, "retaken", ef.node, { code: s.owner.code, name: s.owner.name });
     }
@@ -547,6 +584,7 @@ function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState 
     log: [],
     seq: 0,
     taken: { day: utcDay(now), n: 0 },
+    shielded: { day: 0, nodes: [] },
   };
 }
 
@@ -558,18 +596,30 @@ function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState 
  * the capture. The owner cannot give a node to another player. The fights start
  * again from the island as reported: a raid stands every garrison whole.
  */
-function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: number) {
+/**
+ * Owner's report. Returns contested shores just retaken (for neighbour mirror sync) and any that
+ * were refused for same-day shield.
+ */
+function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: number): { contestedRetaken: { shore: string; from: string }[]; shielded: string[] } {
   s.owner.name = op.player.name;
   s.factory = op.factory;
   s.day = op.day;
+  const contestedRetaken: { shore: string; from: string }[] = [];
+  const shielded: string[] = [];
   op.holds.forEach((h, i) => {
     const cur = s.holds[i];
     if (rivalOf(cur) !== null) {
       if (h !== "own" || !op.retaken.includes(NODE_IDS[i])) return;
+      if (isShielded(s, i, now)) {
+        shielded.push(NODE_IDS[i]);
+        return;
+      }
+      const from = rivalOf(cur)!;
       s.holds[i] = "own";
       const gone = s.expeditions.filter((e) => e.target === i);
       s.expeditions = s.expeditions.filter((e) => e.target !== i);
-      appendLog(s, now, "retaken", i, gone[0]?.by ?? { code: rivalOf(cur)!, name: "" });
+      appendLog(s, now, "retaken", i, gone[0]?.by ?? { code: from, name: "" });
+      if (isContestedShore(NODE_IDS[i])) contestedRetaken.push({ shore: NODE_IDS[i], from });
     } else if (h === "foe" || h === "own") s.holds[i] = h;
   });
   // What the raid made of the expeditions it took in, while its lease stands; a report after it ran out says nothing of them.
@@ -630,6 +680,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
     // One held back as the report lands starts its node's fight when it may attack (`tick()`).
     else if (e.arrived && !e.holding) e.waiting = true;
   }
+  return { contestedRetaken, shielded };
 }
 
 /**
@@ -674,13 +725,46 @@ function assault(s: IslandState, from: string, id: number, won: boolean, now: nu
   }
   if (s.holds[e.target] !== "own") return { status: 409, body: fail("node-not-open") };
   if (takenOn(s, now) >= EXPEDITION.perDay) return { status: 409, body: fail("day-limit") };
+  if (isShielded(s, e.target, now)) return { status: 409, body: fail("shielded") };
   e.holding = true;
   delete e.waiting;
   s.holds[e.target] = rivalHold(from);
   const poi = NODE_IDS[e.target];
   if (s.parcels?.length) s.parcels = s.parcels.filter((p) => p.poi !== poi);
   appendLog(s, now, "taken", e.target, e.by);
-  return { status: 200, body: { ok: true, id, won: true, hold: s.holds[e.target] } };
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      id,
+      won: true,
+      hold: s.holds[e.target],
+      ...(isContestedShore(poi) ? { contested: { shore: poi, owner: from } } : {}),
+    },
+  };
+}
+
+/**
+ * Mirror a contested hub onto this island: if `owner` is this island's code, shore becomes own;
+ * otherwise rival:owner. Applies same-day shield. Refuses when already shielded today.
+ */
+function contestedMirror(s: IslandState, shore: string, owner: string, at: number): { status: number; body: unknown } {
+  const i = NODE_IDS.indexOf(shore);
+  if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
+  const next: PoiHold = owner === s.owner.code ? "own" : rivalHold(owner);
+  if (s.holds[i] === next) {
+    shieldNode(s, i, at);
+    return { status: 200, body: { ok: true, hold: s.holds[i], idempotent: true } };
+  }
+  if (isShielded(s, i, at)) return { status: 409, body: fail("shielded") };
+  s.holds[i] = next;
+  // Drop expeditions aiming at this shore when ownership flips.
+  s.expeditions = s.expeditions.filter((e) => e.target !== i);
+  // Shield without counting as an expedition day-take (appendLog "taken" would bump perDay).
+  shieldNode(s, i, at);
+  s.log.push({ seq: ++s.seq, at, t: owner === s.owner.code ? "retaken" : "taken", node: shore, by: { code: owner, name: "" } });
+  if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);
+  return { status: 200, body: { ok: true, hold: s.holds[i] } };
 }
 
 /**
@@ -709,8 +793,12 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (op.t === "report") {
     if (s.owner.id !== op.player.id) return done(403, fail("not-owner"));
     op.holds = op.holds.map(normalizeHold);
-    report(s, op, now);
-    return done(200, { ok: true, holds: s.holds }, true);
+    const r = report(s, op, now);
+    return done(200, { ok: true, holds: s.holds, contestedRetaken: r.contestedRetaken, shielded: r.shielded }, true);
+  }
+  if (op.t === "contestedMirror") {
+    const r = contestedMirror(s, op.shore, op.owner, op.at);
+    return done(r.status, r.body, r.status === 200);
   }
   if (op.t === "lease") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));

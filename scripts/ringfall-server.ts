@@ -85,9 +85,9 @@ const BASE = "https://ringfall.test";
 const ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const post = (body: unknown, method = "POST", path = "/api/island") =>
   new Request(BASE + path, method === "GET" || method === "HEAD" ? { method } : { method, headers: { "content-type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body) });
-const valid = (name: string, day: number) => ({
+const valid = (name: string, day: number, trophies = 1000) => ({
   player: { id: ID, name },
-  island: { day, held: 5, enemy: 14, rival: 2, factory: 1, strength: 1 },
+  island: { day, held: 5, enemy: 14, rival: 2, factory: 1, strength: 1, trophies },
   raid: { day: day - 1, outcome: "extracted", captured: 1 },
 });
 
@@ -269,15 +269,22 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(before === after, "refused: a refused post wrote rows");
 }
 
-// --- neighbours: islands whose owners played lately, nearest in nodes held, the same all week
+// --- neighbours: islands whose owners played lately, nearest in trophies, the same all week
 {
   const DAY = 24 * 3600 * 1000;
   const T = 1_800_000_000_000;
   const ids = Array.from({ length: 9 }, (_, k) => `0f8fad5b-d9cb-469f-a165-${String(700000000000 + k).padStart(12, "0")}`);
-  const held = [5, 4, 6, 5, 9, 1, 5, 5, 6];
+  // Owner (k=0) at 1000. Near trophies: 980, 1020, 1000, 1010… Far: 1600, 400. Stale: k=8.
+  // held is scrambled so trophy distance — not node count — decides the pool.
+  const trop = [1000, 980, 1020, 1000, 1600, 400, 1010, 990, 1000];
+  const held = [5, 18, 2, 12, 5, 5, 3, 9, 5];
   for (const [k, id] of ids.entries()) {
     const at = k === 8 ? T - 20 * DAY : T - DAY;
-    const r = await answer(env, post({ player: { id, name: `島${k}` }, island: { day: 3, held: held[k], enemy: 21 - held[k], rival: 0, factory: 1, strength: 1 } }), at);
+    const r = await answer(
+      env,
+      post({ player: { id, name: `島${k}` }, island: { day: 3, held: held[k], enemy: 21 - held[k], rival: 0, factory: 1, strength: 1, trophies: trop[k] } }),
+      at,
+    );
     check(r.status === 200, `neighbours: the summary of island ${k} was not taken`);
     sqlite.prepare("INSERT INTO islands (code, player_id, created_at) VALUES (?1, ?2, ?3)").run(`AB${String(k).padStart(4, "0")}`, id, at);
   }
@@ -290,7 +297,7 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(a.status === 200 && list.length === 4, `neighbours: the owner was offered ${list.length}, not 4`);
   check(!list.some((n) => n.code === "AB0000"), "neighbours: the owner's own island was offered");
   check(!list.some((n) => n.code === "AB0008"), "neighbours: an island not played for 20 days was offered");
-  check(!list.some((n) => n.code === "AB0004" || n.code === "AB0005"), "neighbours: an island far from the owner's in nodes held was offered over nearer ones");
+  check(!list.some((n) => n.code === "AB0004" || n.code === "AB0005"), "neighbours: an island far from the owner's in trophies was offered over nearer ones");
   check(list.every((n) => n.total === 21), "neighbours: an island's node count is not its summary's");
   check(parseNeighbours(a.body)?.length === 4, "neighbours: the browser does not read the server's answer back");
   // Each neighbour carries what its owner did last: the island summaries were posted without a raid, so none yet.
@@ -304,14 +311,14 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   const again = await ask(ids[0], T + DAY);
   check(JSON.stringify(again.body) === JSON.stringify(a.body), "neighbours: the list changed within the week");
   check(list.every((n, k) => (n as { slot?: number }).slot === k), "neighbours: the picks do not carry their slots at sea in order");
-  // A picked neighbour takes many nodes mid-week: the week's picks and their slots stay as drawn.
+  // A picked neighbour's trophies jump mid-week: the week's picks and their slots stay as drawn.
   const moved = list[1].code;
   const owner = ids[Number(moved.slice(2))];
-  await answer(env, post({ player: { id: owner, name: "島" }, island: { day: 4, held: 18, enemy: 3, rival: 0, factory: 1, strength: 2 } }), T + DAY);
+  await answer(env, post({ player: { id: owner, name: "島" }, island: { day: 4, held: 18, enemy: 3, rival: 0, factory: 1, strength: 2, trophies: 2000 } }), T + DAY);
   const later = await ask(ids[0], T + 2 * DAY);
   const slots = (b: unknown) => ((b as { neighbours?: { code: string; slot: number }[] }).neighbours ?? []).map((n) => `${n.slot}:${n.code}`).join();
-  console.log(`neighbours: after ${moved} took nodes: ${slots(later.body)}`);
-  check(slots(later.body) === slots(a.body), "neighbours: a neighbour taking nodes mid-week changed the week's picks or their slots");
+  console.log(`neighbours: after ${moved} trophies moved: ${slots(later.body)}`);
+  check(slots(later.body) === slots(a.body), "neighbours: a neighbour's trophies mid-week changed the week's picks or their slots");
   check(((later.body as { neighbours?: { code: string; held: number }[] }).neighbours ?? []).find((n) => n.code === moved)?.held === 18, "neighbours: a kept neighbour's nodes are not read live");
   const none = await ask("0f8fad5b-d9cb-469f-a165-999999999999");
   check(none.status === 200 && ((none.body as { neighbours?: unknown[] }).neighbours ?? [1]).length === 0, "neighbours: a player with no island was offered some");
