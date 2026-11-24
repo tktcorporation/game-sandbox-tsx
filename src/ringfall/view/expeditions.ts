@@ -6,7 +6,7 @@
 import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
-import { expeditionsOut, numbered, dropStale, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { expeditionsOut, numbered, dropStale, recallAll, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
@@ -80,8 +80,9 @@ export class ExpeditionPanel {
     const ask = ++this.ask;
     // A send whose answer never came (a tab closed while it was out) gives its squad back.
     const p0 = refreshAi(this.get());
-    const kept = dropStale(p0.expeditions, Date.now());
-    if (kept !== p0.expeditions || p0 !== this.get()) this.put({ ...p0, expeditions: kept });
+    // Codex / PR6: 出ている遠征 UI 削除後もセーブやセッションに残る遠征は引き上げ → flushRecalls が DELETE。
+    const retired = recallAll(dropStale(p0.expeditions, Date.now()).filter((e) => e.state !== "sending" && e.id > 0));
+    if (retired !== p0.expeditions || p0 !== this.get()) this.put({ ...p0, expeditions: retired });
     // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
     this.neighbours = neighboursFor(this.get());
     if (this.conn.t !== "ok") this.conn = { t: "wait" };

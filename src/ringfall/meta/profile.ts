@@ -966,8 +966,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
     // PR6 / Codex: 出ている遠征 UI を消したあと、セーブに残った遠征はすべて引き上げ（工場スロットを空け、flushRecalls が DELETE）。
-    // `sending`（未着の送信）は島に届いていないので落とす。
-    expeditions: recallAll((v27 ? parseOutgoing(o.expeditions) : []).filter((e) => e.state !== "sending")),
+    // `sending` や id 未採番は島に届いていないので落とす（短いレイドの未完了含む）。
+    expeditions: recallAll((v27 ? parseOutgoing(o.expeditions) : []).filter((e) => e.state !== "sending" && e.id > 0)),
     logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
     retaken: v27 ? parseRetaken(o.retaken) : [],
     incoming: typeof o.v === "number" && o.v >= 29 ? parseIncoming(o.incoming) : [],
