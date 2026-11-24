@@ -963,12 +963,23 @@ function finish() {
   hud.show(false);
   const next = settlement ? hub.nextHand() : "";
   const expLines = hub.expeditionNews();
-  // お隣を攻めた勝ち負けも島の知らせの控えへ（リザルトと同じ文）。
+  // お隣を攻めた勝ち負けも島の知らせの控えへ（リザルトと同じ文）。短いレイド／普段の取り合い制圧。
   if (settlement?.incursion) {
     const inc = settlement.incursion;
     hub.recordNews([
       newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settlement.trophies?.gained : undefined),
     ]);
+  } else if (settlement?.takenRival?.length) {
+    const tropPer = settlement.trophies?.gained
+      ? Math.max(1, Math.round(settlement.trophies.gained / settlement.takenRival.length))
+      : undefined;
+    const nameOf = (owner: string) => {
+      const n = neighboursFor(hub.profile).find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
+      return n ? (n.ai ? `${n.name}(AI)` : n.name) : owner;
+    };
+    hub.recordNews(
+      settlement.takenRival.map((t) => newsIncursion(nameOf(t.owner), NODES[nodeIndex(t.id)]?.name ?? t.id, true, tropPer)),
+    );
   }
   // 遠征の知らせ closes on the return screen (my help mattered) — same heading as the signal station.
   hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, expLines);

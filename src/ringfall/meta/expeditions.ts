@@ -334,8 +334,8 @@ export function logLine(e: IslandLogEntry): string {
     case "landed":
       return `${who}の遠征隊が${at}に来た`;
     case "taken":
-      // CoC defence result: losing the node also costs that 中継ボックス's 島の守り.
-      return `${who}に${at}を取られた · 島の守りが削られた`;
+      // CoC defence result: 島の守り went to the attacker's warehouse (方向 A).
+      return `${who}に${at}を取られた · 島の守りが${who}の倉庫へ`;
     case "wiped":
       return newsWipedEnemy(at, who);
     case "retaken":

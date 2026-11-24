@@ -173,9 +173,17 @@ export const PLAN_GOAL = "目的";
 /** 信号所に残す島の知らせの件数（2026-11-24 決定）。 */
 export const NEWS_KEEP = 10;
 
-/** お隣を攻めた勝ち負けの一行（リザルト／信号所）。 */
+/**
+ * お隣の拠点を取った／攻めきれなかった一行（リザルト／信号所）。
+ * 【元】{お隣}の{拠点}を取った · トロフィー +n
+ * 【案】… · トロフィー +n · 倉庫へ届く
+ * 【理由】島の守りが倉庫へ届くことを一行に（方向 A）
+ */
 export function newsIncursion(owner: string, node: string, won: boolean, trop?: number): string {
-  if (won) return trop != null && trop > 0 ? `${owner}の${node}を取った · ${TERM.trophy} +${trop}` : `${owner}の${node}を取った`;
+  if (won) {
+    const tropBit = trop != null && trop > 0 ? ` · ${TERM.trophy} +${trop}` : "";
+    return `${owner}の${node}を取った${tropBit} · 倉庫へ届く`;
+  }
   return `${owner}の${node}を攻めきれなかった`;
 }
 
@@ -254,9 +262,14 @@ export function newsRetaken(at: string): string {
   return `${at}を制圧した · 倉庫へ届く`;
 }
 
-/** 島の知らせ: 相手の遠征隊を撃退した行（旧・全滅させた）。 */
+/**
+ * 島の知らせ: 相手の攻めを守りきった行。
+ * 【元】{拠点}で{誰}の遠征隊を撃退した
+ * 【案】{誰}が{拠点}を攻めた · 守りきった
+ * 【理由】相手の普段のレイドで攻められる。育てた守りが効いたことを言う（方向 A）
+ */
 export function newsWipedEnemy(at: string, who: string): string {
-  return `${at}で${who}の遠征隊を撃退した`;
+  return `${who}が${at}を${TERM.attack} · 守りきった`;
 }
 
 /** 自分の遠征の結果を一文に（信号所の title・控え）。 */

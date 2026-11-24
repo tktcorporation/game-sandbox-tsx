@@ -1600,12 +1600,22 @@ export class Hud {
       nextEl.classList.remove("defence-beat");
     }
     // Outgoing expeditions + お隣を攻めた勝ち負け + 同期の知らせ.
-    // incursion 行も newsKeep に入れ、後から setNews されても消えないようにする。
+    // incursion / 取り合う拠点の制圧行も newsKeep に入れ、後から setNews されても消えないようにする。
     const inc = settled?.incursion;
+    const nameOf = (owner: string) => {
+      const n = neighboursNowOnMap().find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
+      return n ? (n.ai ? `${n.name}(AI)` : n.name) : owner;
+    };
+    const tropPer = settled?.takenRival?.length && settled.trophies?.gained
+      ? Math.max(1, Math.round(settled.trophies.gained / settled.takenRival.length))
+      : settled?.trophies?.gained;
+    const takeLines = !inc && settled?.takenRival?.length
+      ? settled.takenRival.map((t) => newsIncursion(nameOf(t.owner), NODES[nodeIndex(t.id)]?.name ?? t.id, true, tropPer))
+      : [];
     const incLine = inc
       ? newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settled?.trophies?.gained : undefined)
       : null;
-    this.newsKeep = [...expNews, ...(incLine ? [incLine] : [])];
+    this.newsKeep = [...expNews, ...(incLine ? [incLine] : []), ...takeLines];
     const allNews = [...this.newsKeep, ...news];
     const tropLine = settled?.trophies
       ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost)}</p>`
@@ -1613,9 +1623,10 @@ export class Hud {
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
     const dayHead = settled ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews)}</div>${tropLine}` : "";
+    // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =
-      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated
-        ? `<p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
+      settled?.income || settled?.spoils || settled?.liberated
+        ? `<p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}</p>`
         : "";
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =

@@ -10,16 +10,16 @@ assert.equal(awaySheetParts(["a"], ["a"]), null);
 
 {
   const trop = trophyLine(1000, 970, 0, 30);
-  const parts = awaySheetParts([], ["ツバキに補給所を取られた · 島の守りが削られた", trop]);
+  const parts = awaySheetParts([], ["ツバキに補給所を取られた · 島の守りがツバキの倉庫へ", trop]);
   assert.ok(parts);
-  assert.deepEqual(parts!.lines, ["ツバキに補給所を取られた · 島の守りが削られた"]);
+  assert.deepEqual(parts!.lines, ["ツバキに補給所を取られた · 島の守りがツバキの倉庫へ"]);
   assert.equal(parts!.trop, trop);
 }
 
 {
-  const parts = awaySheetParts(["古い"], ["古い", "浄水場でツバキの遠征隊を撃退した"]);
+  const parts = awaySheetParts(["古い"], ["古い", "ツバキが浄水場を攻めた · 守りきった"]);
   assert.ok(parts);
-  assert.deepEqual(parts!.lines, ["浄水場でツバキの遠征隊を撃退した"]);
+  assert.deepEqual(parts!.lines, ["ツバキが浄水場を攻めた · 守りきった"]);
   assert.equal(parts!.trop, null);
 }
 
@@ -34,7 +34,7 @@ assert.equal(awaySheetParts(["a"], ["a"]), null);
 
 // Same wording twice: the second occurrence is still fresh (count, not Set).
 {
-  const line = "ツバキに補給所を取られた · 島の守りが削られた";
+  const line = "ツバキに補給所を取られた · 島の守りがツバキの倉庫へ";
   const parts = awaySheetParts([line], [line, line]);
   assert.ok(parts);
   assert.deepEqual(parts!.lines, [line]);

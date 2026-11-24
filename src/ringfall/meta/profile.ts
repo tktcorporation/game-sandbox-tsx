@@ -1,5 +1,5 @@
 import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, FINALE, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
-import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
@@ -529,20 +529,26 @@ export interface Settlement {
   rivals?: DayChange["rivals"];
   raid: FrontChange;
   after: FrontChange;
-  /** Credits the nodes the player holds paid at this settle (`heldIncome()`). */
+  /**
+   * Credits the nodes the player holds paid at this settle (`heldIncome()`), plus any still held
+   * away on other islands (`awayIncome()` folded in — 方向 A: 拠点の収入に一本化).
+   */
   income: number;
   /** The raid won the decisive battle (`FINALE`): the days the round took, and the rounds now behind the player; left out, it did not. */
   liberated?: { days: number; cycle: number };
   /** Credits for the nodes the raid took after its first, got off alive (`MOMENTUM.spoils`); left out, none. */
   spoils?: number;
-  /** Credits the nodes this island's expeditions hold on other islands paid at this settle (`awayIncome()`); left out, none. */
-  awayIncome?: number;
   /** The 強度 the raid was played at. */
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
   /** Trophy T1 change this settle (`gained` / `lost` counts); left out when none moved. */
   trophies?: { before: number; after: number; gained: number; lost: number };
+  /**
+   * Rival / contested hubs taken this settle (home raid): owner id at raid start, for 島の知らせ
+   * 「{誰}の{拠点}を取った · トロフィー +n · 倉庫へ届く」. Left out when none.
+   */
+  takenRival?: { id: NodeId; owner: string }[];
   /**
    * CoC-style raid loot from 制圧 that actually entered the stash this settle (not sold for room).
    * View-only: 「倉庫へ届いた」 must not claim overflow that 「倉庫に入らなかった」 already lists.
@@ -712,7 +718,7 @@ export function settle(p: Profile, s: State): Settlement {
     if (expeditions !== night.expeditions) Object.assign(night, { expeditions });
   }
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
-  // (same line as 「取られた · 島の守りが削られた」).
+  // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).
   let nightParcels = night.parcels ?? parcels;
   for (const n of NODES) {
     const before = p.poiState[n.id]?.state;
@@ -721,7 +727,7 @@ export function settle(p: Profile, s: State): Settlement {
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   // The nodes the player holds once the night is over pay their day's credits.
-  const income = heldIncome(night);
+  const homePay = heldIncome(night);
   // The decisive battle won (`FINALE`): the titan fell with its pad open. The round's days are kept, and the
   // island and the factory start over for the next round; the income above is the freed island's last.
   const liberated = !!s.finale && day.titan ? { days: p.day - p.cycleDay + 1, cycle: p.cycle + 1 } : null;
@@ -730,17 +736,21 @@ export function settle(p: Profile, s: State): Settlement {
   if (liberated) Object.assign(night, { poiState: { ...newIsland(), ...Object.fromEntries(Object.entries(night.poiState).filter(([, v]) => rivalOf(v.state) !== null)) }, factory: 0, cycle: liberated.cycle, cycleDay: night.day, liberations: [...p.liberations, liberated.days].slice(-50), expeditions: recallAll(night.expeditions) });
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
-  // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped
-  // （ただし相手サーバーの報告待ちである x2Pending エントリは残す）
+  // 方向 A: 遠征で持つ拠点の収入も拠点の収入に合算（リザルトの別行は出さない）。
   const away = awayIncome(night);
+  const income = homePay + away;
   const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone" || e.x2Pending);
-  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils + away, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
+  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
   // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
   const fresh = { ...next, stash: withStarters(next.stash) };
   // Lead-incursion captures are on the copy — never pending retakes on the home island.
   fresh.retaken = s.incursion ? [...p.retaken] : addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
   const incursionWon = incursionWonEarly;
+  const takenRival = trop.taken.flatMap((id) => {
+    const owner = rivalOf(beforeHolds[nodeIndex(id)] ?? "foe");
+    return owner ? [{ id, owner }] : [];
+  });
   return {
     profile: fresh,
     home,
@@ -753,12 +763,12 @@ export function settle(p: Profile, s: State): Settlement {
     income,
     ...(liberated && { liberated }),
     ...(spoils > 0 && { spoils }),
-    ...(away > 0 && { awayIncome: away }),
     threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
     ...(trop.gained || trop.lost
       ? { trophies: { before: p.trophies ?? TROPHY.start, after: trop.next, gained: trop.gained, lost: trop.lost } }
       : {}),
+    ...(takenRival.length ? { takenRival } : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),
     ...(s.incursion
       ? { incursion: { code: s.incursion.code, owner: s.incursion.owner, target: s.incursion.target, ids: seized.ids, won: incursionWon } }

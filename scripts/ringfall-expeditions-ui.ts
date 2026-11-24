@@ -431,9 +431,10 @@ function island(freed: string[], rival: string[] = []): Profile {
   s2.outcome = "extracted";
   const plain = settle(base, s1);
   const away = settle({ ...base, expeditions: exps }, s2);
-  console.log(`income: plain ${plain.profile.cash} (${JSON.stringify(plain.awayIncome)}), with a node held away ${away.profile.cash} (+${away.awayIncome}); expeditions kept ${away.profile.expeditions.map((e) => e.state).join()}`);
+  console.log(`income: plain ${plain.profile.cash} (income ${plain.income}), with a node held away ${away.profile.cash} (income ${away.income}); expeditions kept ${away.profile.expeditions.map((e) => e.state).join()}`);
   check(awayIncome({ expeditions: exps }) === FRONT.income, "income: the nodes held away do not pay FRONT.income each");
-  check(away.profile.cash - plain.profile.cash === FRONT.income && away.awayIncome === FRONT.income && plain.awayIncome === undefined, "income: the settle does not pay the nodes held away");
+  // 方向 A: awayIncome folds into Settlement.income (no separate awayIncome field / 遠征の拠点の収入 row).
+  check(away.profile.cash - plain.profile.cash === FRONT.income && away.income - plain.income === FRONT.income, "income: settle folds away pay into 拠点の収入");
   check(away.profile.expeditions.map((e) => e.state).join() === "holding,coming", "income: the settle did not drop the expeditions gone");
 }
 
