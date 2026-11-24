@@ -259,6 +259,22 @@ kbd {
   background: var(--plate);
   pointer-events: none;
   transition: opacity 0.35s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.lib-line {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#day-result .lib-delta {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 800;
 }
 #island-row:empty {
   display: none;
@@ -2923,6 +2939,12 @@ body:not(.playing) #banner {
 #camp-hint {
   font-size: 13px;
   font-weight: 800;
+}
+#camp-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 #camp-row:empty {
   display: none;

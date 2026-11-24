@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { PHRASE, TERM, moduleRaiseReady, relayOf } from "./copy";
+import { PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, relayOf } from "./copy";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -11,7 +11,7 @@ import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { islandHolds } from "../meta/island";
+import { islandHolds, liberationStatus, liberationStatusOf } from "../meta/island";
 import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
@@ -571,7 +571,8 @@ export class Hud {
     }
     const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
     // The raid's momentum beside the bar: a mark for each node taken after the first.
-    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "");
+    const lib = `<span class="lib-line">${liberationLine(liberationStatusOf(s.nodes))}</span>`;
+    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "") + lib;
     const el = $("island-row");
     if (el.dataset.html !== row) {
       el.dataset.html = row;
@@ -1548,11 +1549,18 @@ export class Hud {
     };
     // A record of a raid kept from before ways in were learned has walked to none.
     const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
+    // 解放までの一行（前日との差）を ○日目の直後に。島の収入・トロフィーはその下。
+    const libLine =
+      settled && before
+        ? `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(settled.profile))}</p>`
+        : settled
+          ? `<p class="lib-delta">${liberationLine(liberationStatus(settled.profile))}</p>`
+          : "";
     // The day's income from the nodes the player holds.
     // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
     const island =
-      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated || settled?.trophies
-        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}${settled.trophies ? `<span>${TERM.trophy}<b>${settled.trophies.before} → ${settled.trophies.after}</b></span>` : ""}</p>`
+      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated || settled?.trophies || libLine
+        ? `<h3 class="day-end">${settled?.day ?? ""} 日目</h3>${libLine}<p>${settled?.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled?.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled?.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled?.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}${settled?.trophies ? `<span>${TERM.trophy}<b>${settled.trophies.before} → ${settled.trophies.after}</b></span>` : ""}</p>`
         : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);

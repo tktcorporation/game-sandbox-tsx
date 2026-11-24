@@ -14,7 +14,7 @@ import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UN
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
-import { departDepots, finaleOpen, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
+import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
 import { ExpeditionPanel } from "./expeditions";
 import { LOG_WORD, logLine, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
@@ -22,7 +22,7 @@ import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { EXP_OUT_WORD, PLAN_GOAL, PHRASE, TERM, assaultUnavailable, expOutLine, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
+import { EXP_OUT_WORD, PLAN_GOAL, PHRASE, TERM, assaultUnavailable, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -1243,17 +1243,20 @@ export class Hub {
    */
   departure(): { rows: [string, string][]; warn: string[] } {
     this.fixStart();
+    const p = this.profile;
     const front = this.frontPick();
-    const teach = teachFrontCapture(this.profile) && front;
-    // 目的は選択中の出撃先に追従: お隣の前線（○○の前線）を優先表示
+    const teach = teachFrontCapture(p) && front;
+    // 今日の作戦と同じ優先: 決戦 → お隣／前線。決戦が開いている日に前線だけ出すのはバグだった（2026-11-24）。
     const neighbourFront = this.neighbourAim;
-    const goal = neighbourFront
-      ? `${flagIcon(SIDE.rival)}${esc(neighbourFront.name)}を${TERM.attack}`
-      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+    const goal = finaleOpen(p)
+      ? esc(`${liberationLine({ kind: "finale" })}`)
+      : neighbourFront
+        ? `${flagIcon(SIDE.rival)}${esc(neighbourFront.name)}を${TERM.attack}`
+        : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
-      ["目的", goal],
+      [PLAN_GOAL, goal],
     ];
     return { rows, warn: [] };
   }
@@ -1309,7 +1312,9 @@ export class Hub {
           ],
       ["装備", this.kitMarks()],
     ];
-    return { head, row: nodeRow(islandHolds(p)), plan };
+    // 帯の横に解放までの一行（初日から。お隣に取られた拠点は N に数えない）。
+    const lib = `<span class="lib-line">${esc(liberationLine(liberationStatus(p)))}</span>`;
+    return { head, row: nodeRow(islandHolds(p)) + lib, plan };
   }
 
   render() {
