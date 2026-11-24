@@ -126,6 +126,31 @@ export const finaleOpen = (p: Pick<IslandDay, "poiState">): boolean => {
   return mine.length >= FINALE.nodes && LANDING_NODES.pad.some((id) => mine.includes(id));
 };
 
+/**
+ * 島の解放までの進み（2026-11-24）: 自分の拠点だけを数える（お隣に取られた拠点は N に入れない）。
+ * `nodes` = あと何拠点で 16／`landing` = 16 以上だが発着場の隣が無い／`finale` = 決戦が開いている。
+ */
+export type LiberationStatus = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
+
+/** 発着場に隣接する拠点の表示名（採掘場・中継塔）。 */
+export const padNeighbourNames = (): string[] => LANDING_NODES.pad.map((id) => NODES.find((n) => n.id === id)?.name ?? id);
+
+/** From a profile / island day. */
+export function liberationStatus(p: Pick<IslandDay, "poiState">): LiberationStatus {
+  const mine = playerNodes(p);
+  if (mine.length >= FINALE.nodes && LANDING_NODES.pad.some((id) => mine.includes(id))) return { kind: "finale" };
+  if (mine.length >= FINALE.nodes) return { kind: "landing", need: padNeighbourNames() };
+  return { kind: "nodes", left: FINALE.nodes - mine.length };
+}
+
+/** From a raid's node holds (`State.nodes` / `NodeHold[]`). */
+export function liberationStatusOf(holds: readonly NodeHold[]): LiberationStatus {
+  const mine = NODES.filter((_, i) => holds[i] === "own").map((n) => n.id);
+  if (mine.length >= FINALE.nodes && LANDING_NODES.pad.some((id) => mine.includes(id))) return { kind: "finale" };
+  if (mine.length >= FINALE.nodes) return { kind: "landing", need: padNeighbourNames() };
+  return { kind: "nodes", left: FINALE.nodes - mine.length };
+}
+
 /** What the nodes the player holds open together (`UNLOCKS`): the best of each, the squads summed. */
 export function unlocked(p: Pick<IslandDay, "poiState">): Required<Pick<NodeUnlock, "shop" | "squad" | "scout" | "shore">> & { depart: NodeId[]; heals: HealKind[]; turret: number } {
   const mine = playerNodes(p).map((id) => ({ id, u: UNLOCKS[id] }));

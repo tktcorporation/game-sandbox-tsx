@@ -14,15 +14,15 @@ import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UN
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
-import { departDepots, finaleOpen, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
+import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
 import { ExpeditionPanel } from "./expeditions";
-import { LOG_WORD, logLine, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
+import { logLine, newsVisible, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { PHRASE, TERM, assaultUnavailable, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, assaultUnavailable, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, nextShortRaid, pushNews, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -94,9 +94,9 @@ export function nextHandFor(p: Profile): string {
     return pick ? nextFrontCapture(pick.name) : PHRASE.nextGate;
   }
   if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
-  // 倉庫 capacity is raised at the shelves; tip there when that level is ready.
+  // 倉庫 capacity is raised only at the shelves (作業場には倉庫カードを置かない).
   if (canBuild(p, "storage")) return PHRASE.nextStashRaise;
-  if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
+  if (MODULES.some((m) => m !== "storage" && canBuild(p, m))) return PHRASE.nextWorkshopRaise;
   const pick = frontPickFor(p);
   return pick ? nextFront(pick.name) : PHRASE.nextGate;
 }
@@ -285,7 +285,7 @@ interface ExpNews {
 /** That as a sentence, for its title. */
 export function expLine(n: ExpNews): string {
   const at = NODES[nodeIndex(n.node)]?.name ?? n.node;
-  return n.t === "held" ? `${n.name}の島の${at}を遠征隊が取った` : n.t === "wiped" ? `${n.name}の島の${at}で遠征隊が全滅した` : `${n.name}の島の${at}を取り返された`;
+  return expOutLine({ t: n.t, name: n.name, node: at });
 }
 
 const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
@@ -460,21 +460,20 @@ export class Hub {
     if (station === "signal") this.exped.open();
   }
 
-  /**
-   * A log entry as marks: whose, what happened in a word, where.
-   * E4: no 遠征に出す answer button — attack is on the map.
-   */
-  private newsMarks(n: IslandLogEntry): string {
-    const who = n.by.name || n.by.code;
-    const node = NODES[nodeIndex(n.node)]?.name ?? n.node;
-    const mine = n.t === "wiped" || n.t === "retaken";
-    return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}</li>`;
+  /** 島の知らせの控えを Profile に足して保存する（リザルトと同じ文・最新 NEWS_KEEP 件）。`set` は呼ばない（上書きで消えないように）。 */
+  recordNews(lines: readonly string[]) {
+    const news = pushNews(this.profile.news ?? [], lines);
+    if (news.join("\0") === (this.profile.news ?? []).join("\0")) return;
+    this.profile = { ...this.profile, news };
+    saveProfile(this.profile);
   }
 
   /** Takes the island's news from the server (its log's new entries): the signal station lists them and its mark tells of them until it is opened. */
   takeNews(entries: readonly IslandLogEntry[]) {
-    if (!entries.length) return;
-    this.news = [...entries, ...this.news].slice(0, 8);
+    const visible = entries.filter(newsVisible);
+    if (!visible.length) return;
+    this.news = [...visible, ...this.news].slice(0, NEWS_KEEP);
+    this.recordNews(visible.map(logLine));
     this.newsSeen = this.station === "signal";
     // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
@@ -487,7 +486,8 @@ export class Hub {
    * taken back). One called home, or one never sent, says nothing. The signal station's mark tells
    * of them until it is opened.
    */
-  private noteOutgoing(prev: readonly Outgoing[], next: readonly Outgoing[]) {
+  /** 遠征の結果行。呼び出し側が `p.news` にマージする（代入前に record すると上書きで消える）。 */
+  private noteOutgoing(prev: readonly Outgoing[], next: readonly Outgoing[]): string[] {
     const names = new Map(neighboursFor(this.profile).map((n) => [n.code, n.name]));
     const fresh: ExpNews[] = [];
     for (const o of next) {
@@ -496,11 +496,12 @@ export class Hub {
       const t = o.state === "holding" ? "held" : o.state === "gone" && was.state === "holding" ? "lost" : o.state === "gone" && (was.state === "attacking" || was.state === "coming" || was.state === "waiting") ? "wiped" : null;
       if (t) fresh.push({ t, code: o.code, name: names.get(o.code) ?? o.code, node: o.node });
     }
-    if (!fresh.length) return;
-    this.expNews = [...fresh, ...this.expNews].slice(0, 6);
+    if (!fresh.length) return [];
+    this.expNews = [...fresh, ...this.expNews].slice(0, NEWS_KEEP);
     this.newsSeen = this.station === "signal";
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
     if (el) el.innerHTML = this.signalNews();
+    return fresh.map((n) => expLine(n));
   }
 
   /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
@@ -525,17 +526,18 @@ export class Hub {
   }
 
   private set(p: Profile) {
-    this.noteOutgoing(this.profile.expeditions, p.expeditions);
-    this.profile = p;
-    saveProfile(p);
+    const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
+    this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
+    saveProfile(this.profile);
     this.load = this.fit(this.load);
   }
 
   /** Takes a profile settled after a raid: the last loadout picked again from the stash, the start kept where the profile allows it. */
   reload(p: Profile) {
-    this.noteOutgoing(this.profile.expeditions, p.expeditions);
-    this.profile = p;
-    this.load = recallLoadout(p);
+    const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
+    this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
+    if (extra.length) saveProfile(this.profile);
+    this.load = recallLoadout(this.profile);
     this.fixStart();
   }
 
@@ -930,10 +932,12 @@ export class Hub {
   /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report on the shelves. */
   marks(): Record<StationId, string> {
     const p = this.profile;
-    const buildable = MODULES.filter((m) => canBuild(p, m)).length;
+    // 倉庫は倉庫の棚だけの入口: 作業場の ▲ に数えない.
+    const buildable = MODULES.filter((m) => m !== "storage" && canBuild(p, m)).length;
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
+    // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
     const unread = this.news.length + this.expNews.length + aid;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
     // Shelves: warehouse growth, and the radio's report (moved here from the removed map table).
@@ -1016,7 +1020,7 @@ export class Hub {
     // What the nodes held add: their squads' flags and the gun's colour (the trader's shelf), under the node's core.
     const nodes = `<div class="from-nodes"><small>拠点から</small>${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max"><b>MAX</b></div>`;
-    const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} を建てる</button>`) : "";
+    const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : "";
     const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? "レベルの一覧を閉じる" : "全部のレベルを見る"}</button>`;
     return (
       `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}${TERM.factory}</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
@@ -1034,24 +1038,19 @@ export class Hub {
     return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
   }
 
-  /** One 島の知らせ on the signal station (outgoing + incoming + 島の守り), nothing with none. */
+  /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）と島の守り。 */
   private signalNews(): string {
-    const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
-    const out = this.expNews.map(
-      (n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`,
-    );
+    const archive = (this.profile.news ?? []).map((line) => `<li>${esc(line)}</li>`);
     const aid = namedAid(this.profile).slice(0, 4).map(
       (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
     );
-    const incoming = this.news.map((n) => this.newsMarks(n));
-    const items = [...out, ...aid, ...incoming];
+    const items = [...archive, ...aid];
     return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
-  /** Lines of 島の知らせ for the results screen (outgoing expeditions, same words as the signal station). */
+  /** Lines of 島の知らせ for the results screen (outgoing expeditions, same sentences as the signal station). */
   expeditionNews(): string[] {
-    const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
-    return this.expNews.map((n) => `${n.name} ${word[n.t]} ${NODES[nodeIndex(n.node)]?.name ?? n.node}`);
+    return this.expNews.map((n) => expLine(n));
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -1131,7 +1130,9 @@ export class Hub {
     const open = this.module === m || (this.station === "stash" && m === "storage");
     const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
-    const body = open ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1}</button>`) : ""}</div>` : "";
+    const body = open
+      ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : ""}</div>`
+      : "";
     return (
       `<div class="mod up-card${open ? " open" : ""}" data-mod="${m}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
       `<strong>${MODULE_ICON[m]()}${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
@@ -1242,17 +1243,20 @@ export class Hub {
    */
   departure(): { rows: [string, string][]; warn: string[] } {
     this.fixStart();
+    const p = this.profile;
     const front = this.frontPick();
-    const teach = teachFrontCapture(this.profile) && front;
-    // 目的は選択中の出撃先に追従: お隣の前線（○○の前線）を優先表示
+    const teach = teachFrontCapture(p) && front;
+    // 出撃地図で選んだお隣の前線が最優先（決戦が開いていても短いレイドに出る）。未選択時は決戦 → 前線／探索。
     const neighbourFront = this.neighbourAim;
     const goal = neighbourFront
       ? `${flagIcon(SIDE.rival)}${esc(neighbourFront.name)}を${TERM.attack}`
-      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+      : finaleOpen(p)
+        ? esc(`${liberationLine({ kind: "finale" })}`)
+        : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
-      ["目的", goal],
+      [PLAN_GOAL, goal],
     ];
     return { rows, warn: [] };
   }
@@ -1295,7 +1299,7 @@ export class Hub {
       final
         ? ["決戦", esc(POIS.find((o) => o.boss)!.name)]
         : [
-            "攻める拠点",
+            PLAN_GOAL,
             rival
               ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を${TERM.attack}`
               : neighbourFront
@@ -1308,7 +1312,9 @@ export class Hub {
           ],
       ["装備", this.kitMarks()],
     ];
-    return { head, row: nodeRow(islandHolds(p)), plan };
+    // 帯の横に解放までの一行（初日から。お隣に取られた拠点は N に数えない）。
+    const lib = `<span class="lib-line">${esc(liberationLine(liberationStatus(p)))}</span>`;
+    return { head, row: nodeRow(islandHolds(p)) + lib, plan };
   }
 
   render() {
@@ -1358,8 +1364,11 @@ export class Hub {
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
+      // 倉庫のレベルは倉庫の棚だけ: 作業場の一覧から外す.
       $("hub-side").innerHTML =
-        MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
+        MODULES.filter((m) => m !== "storage")
+          .map((m) => this.moduleCard(m))
+          .join("") + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);

@@ -22,7 +22,7 @@ import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultRep
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
-import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
+import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import type { IncursionPlan } from "./meta/incursion";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -36,7 +36,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { PHRASE, TERM } from "./view/copy";
+import { awaySheetParts, newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -287,8 +287,9 @@ function onEvent(e: GameEvent, s: State) {
       if (!raidAi.scouted && raidAi.lent.some((l) => l.state === "coming")) markScouted();
       raidAi = null;
       if (news.length) {
+        const shown = news.filter(newsVisible);
         hub.takeNews(news);
-        aiNews = news.map(logLine);
+        aiNews = shown.map(logLine);
         islandNews = [...aiNews];
       }
     }
@@ -370,8 +371,9 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     // The sync read the neighbours again: the horizon shows them as they now stand.
     world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
     if (!news.length) return;
+    const shown = news.filter(newsVisible);
     hub.takeNews(news);
-    islandNews = [...aiNews, ...news.map(logLine)];
+    islandNews = [...aiNews, ...shown.map(logLine)];
     if (!$("results").hidden) hud.setNews(islandNews);
   });
 }
@@ -578,7 +580,14 @@ let departing: { walk: boolean; back: { x: number; y: number; z: number; yaw: nu
 let inside: { x: number; y: number; z: number; yaw: number } | null = null;
 
 /** The camp stands still while a station's panel, the departure's check or a start fade is up. */
-const campFrozen = () => hub.station !== null || departing !== null || fading;
+/**
+ * 起動時の一枚を出しているあいだ true。野営地に戻るで閉じ、同じ同期の結果を二度出さない。
+ * セッション中いちど同期したら awayBooted が立ち、レイド帰営の openCamp では再同期しない。
+ */
+let awaySheetOpen = false;
+let awayBooted = false;
+
+const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen;
 
 /** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
 function fade(on: boolean, now = false) {
@@ -618,7 +627,19 @@ function readyRaid() {
 
 /** Wakes the player in the camp, the teammate beside them: from the title, after the results. */
 function openCamp() {
+  // 起動時の一枚を閉じる（同じ結果を二度出さない）。
+  if (awaySheetOpen) {
+    awaySheetOpen = false;
+    hud.endResults();
+    $("results").hidden = true;
+    paused = false;
+    $("pause").hidden = true;
+    lock();
+    return;
+  }
   // The expeditions on the game's own islands stand as their clock has them, so the settle pays the nodes they hold.
+  const beforeNews = [...(hub.profile.news ?? [])];
+  const beforeSnap: Profile = { ...hub.profile, news: beforeNews, poiState: { ...hub.profile.poiState } };
   const fresh = refreshAi(hub.profile);
   if (fresh !== hub.profile) hub.update(fresh);
   departing = inside = null;
@@ -651,6 +672,48 @@ function openCamp() {
   fade(true, true);
   requestAnimationFrame(() => fade(false));
   lock();
+  // タイトルから野営に立ったときだけ、留守中の対人を一度同期して一枚で出す。
+  if (!awayBooted) {
+    awayBooted = true;
+    void deliverAwayNews(beforeSnap);
+  }
+}
+
+/**
+ * 野営起動時: 島を同期し、留守中に届いた対人の結果があればリザルトと同じ文の一枚を出す。
+ * 控えは takeSync / hub.update ですでに Profile.news へ入る。一枚はセッションで一度だけ。
+ */
+function deliverAwayNews(before: Profile) {
+  void syncOwn(before, false).then((r) => {
+    void flushRecalls(
+      () => hub.profile,
+      (q) => hub.update(q),
+    );
+    void flushAssaultReports(
+      () => hub.profile,
+      (q) => {
+        hub.update(q);
+        saveProfile(hub.profile);
+      },
+    );
+    if (!r.ok || !camping || running || awaySheetOpen || !$("results").hidden) return;
+    const { profile, news, notes } = takeSync(hub.profile, r.body);
+    if (profile !== hub.profile) hub.update(profile);
+    world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
+    if (news.length) hub.takeNews(news);
+    saveProfile(hub.profile);
+    // 同期で届いた行＋トロフィー行をそのまま一枚に（文の一致だけに頼らない）。
+    const shown = news.filter(newsVisible).map(logLine);
+    const fromSync = awaySheetParts([], [...shown, ...notes]);
+    const parts = fromSync ?? awaySheetParts(before.news ?? [], hub.profile.news ?? []);
+    if (!parts) return;
+    // 同期のあいだに出撃やリザルトが開いていたら重ねない。
+    if (!camping || running || departing || !$("results").hidden || hub.station !== null) return;
+    awaySheetOpen = true;
+    hud.awayResults(before, hub.profile, parts.lines, parts.trop, hub.nextHand());
+    $("results").hidden = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+  });
 }
 
 /** Opens a station's panel: the camp stands still and the pointer is let go. */
@@ -892,8 +955,16 @@ function finish() {
   $("banner").className = "";
   hud.show(false);
   const next = settlement ? hub.nextHand() : "";
+  const expLines = hub.expeditionNews();
+  // お隣を攻めた勝ち負けも島の知らせの控えへ（リザルトと同じ文）。
+  if (settlement?.incursion) {
+    const inc = settlement.incursion;
+    hub.recordNews([
+      newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settlement.trophies?.gained : undefined),
+    ]);
+  }
   // 遠征の知らせ closes on the return screen (my help mattered) — same heading as the signal station.
-  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, hub.expeditionNews());
+  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, expLines);
   if (state.outcome === "extracted") {
     // One SE for 生還: finish owns it (soundscape skips victory on `done` to avoid a double).
     sfx.extracted();
@@ -929,6 +1000,8 @@ document.addEventListener("pointerlockerror", () => (noLock = true));
 document.addEventListener("pointerlockchange", () => {
   // The raid map unlocks the pointer so wheel/drag work; do not treat that as a pause.
   if ($("hud").classList.contains("map-open")) return;
+  // 起動時の一枚: ポインタを外しても pause にしない（campFrozen にも awaySheetOpen を含めている）。
+  if (awaySheetOpen) return;
   if (document.pointerLockElement !== stage && ((running && state.phase !== "done") || camping)) setPaused(true);
 });
 // Closing the map takes the look lock again (hud.toggleMap releases it on open).

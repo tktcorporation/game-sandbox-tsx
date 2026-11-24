@@ -96,7 +96,11 @@ export const TERM = {
   islandNews: "島の知らせ",
   wares: "売り物",
   loadout: "持っていく物",
-  seaIslands: "海の向こうの島",
+  /**
+   * 信号所の側見出し。カード見出し「お隣の島」と同じ語に揃える。
+   * 【元】海の向こうの島 【案】お隣の島 【理由】同じパネルで別名をやめる
+   */
+  seaIslands: "お隣の島",
   island: "島",
   /** Ranking T1 — signal station / results. */
   trophy: "トロフィー",
@@ -139,6 +143,130 @@ export function expeditionSentTo(place: string): string {
   return `${place}へ遠征に出した`;
 }
 
+/**
+ * 島の知らせ（来た遠征）の一語印。自分の遠征の印（EXP_OUT_WORD）と「全滅」を共有しない。
+ * wiped = 相手の隊を撃退した／retaken = 核 · 制圧で戻した。
+ */
+export const LOG_WORD = {
+  noticed: TERM.expedition,
+  landed: "上陸",
+  taken: "奪取",
+  wiped: "撃退",
+  retaken: "制圧",
+  released: "手放し",
+  recalled: "撤収",
+} as const;
+
+/**
+ * 島の知らせ（自分の遠征の結果）の一語印。
+ * wiped = 自分の隊が攻めきれなかった（相手を撃退した「撃退」と別語）。
+ */
+export const EXP_OUT_WORD = {
+  held: "取った",
+  wiped: "攻めきれず",
+  lost: "失った",
+} as const;
+
+/** 今日の作戦・出撃の行名（同じ一手は同じ行名）。 */
+export const PLAN_GOAL = "目的";
+
+/** 信号所に残す島の知らせの件数（2026-11-24 決定）。 */
+export const NEWS_KEEP = 10;
+
+/** お隣を攻めた勝ち負けの一行（リザルト／信号所）。 */
+export function newsIncursion(owner: string, node: string, won: boolean, trop?: number): string {
+  if (won) return trop != null && trop > 0 ? `${owner}の${node}を取った · ${TERM.trophy} +${trop}` : `${owner}の${node}を取った`;
+  return `${owner}の${node}を攻めきれなかった`;
+}
+
+/** トロフィーの前後と内訳（リザルト／信号所）。増減が無い側は出さない。 */
+export function trophyLine(before: number, after: number, gained = 0, lost = 0): string {
+  const parts: string[] = [];
+  if (gained > 0) parts.push(`取った +${gained}`);
+  if (lost > 0) parts.push(`取られた −${lost}`);
+  const mid = parts.length ? `（${parts.join(" · ")}）` : "";
+  return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;
+}
+
+/** 短いレイドの勝ちが相手サーバーに拒否されたときの一行。 */
+export function newsAssaultReversed(node: string, trop: number): string {
+  return trop > 0 ? `${node}の勝ちが取り消された · ${TERM.trophy} −${trop}` : `${node}の勝ちが取り消された`;
+}
+
+/** 島の知らせの控え: 新しい行を先頭に足し、最新 NEWS_KEEP 件だけ残す。 */
+export function pushNews(prev: readonly string[], lines: readonly string[]): string[] {
+  const fresh = lines.map((s) => s.trim()).filter(Boolean);
+  if (!fresh.length) return prev.length ? [...prev] : [];
+  return [...fresh, ...prev].slice(0, NEWS_KEEP);
+}
+
+/**
+ * 起動時の一枚（留守中の対人）: 控えに増えた行のうち、トロフィー行は別枠、残りは島の知らせ。
+ * 同じ文が二度入っても件数で差を取る（Set だと二度目が落ちる）。どちらも空なら null。
+ */
+export function awaySheetParts(
+  beforeNews: readonly string[],
+  afterNews: readonly string[],
+): { lines: string[]; trop: string | null } | null {
+  const left = new Map<string, number>();
+  for (const l of beforeNews) {
+    if (!l.trim()) continue;
+    left.set(l, (left.get(l) ?? 0) + 1);
+  }
+  const fresh: string[] = [];
+  for (const l of afterNews) {
+    if (!l.trim()) continue;
+    const n = left.get(l) ?? 0;
+    if (n > 0) left.set(l, n - 1);
+    else fresh.push(l);
+  }
+  if (!fresh.length) return null;
+  const trop = fresh.find((l) => l.startsWith(TERM.trophy)) ?? null;
+  const lines = trop ? fresh.filter((l) => l !== trop) : fresh;
+  if (!lines.length && !trop) return null;
+  return { lines, trop };
+}
+
+/** 島の解放までの一行（野営・レイド中・リザルト）。材料はプレイヤー向けの語だけ。 */
+export type LiberationCopy = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
+
+export function liberationLine(s: LiberationCopy): string {
+  if (s.kind === "finale") return "決戦 · 発着場";
+  if (s.kind === "landing") return `島の解放まで · ${s.need.join("か")}`;
+  return `島の解放まで · 拠点 あと ${s.left}`;
+}
+
+/**
+ * リザルト用: 前日との差。拠点の残りが変わったときだけ `あと a → b`。
+ * 種類が違う（決戦が開いた等）ときは「前の一行 → 後の一行」。
+ */
+export function liberationDelta(before: LiberationCopy, after: LiberationCopy): string {
+  if (before.kind === "nodes" && after.kind === "nodes") {
+    if (before.left === after.left) return liberationLine(after);
+    return `島の解放まで · 拠点 あと ${before.left} → ${after.left}`;
+  }
+  if (before.kind === after.kind && liberationLine(before) === liberationLine(after)) return liberationLine(after);
+  return `${liberationLine(before)} → ${liberationLine(after)}`;
+}
+
+/** 島の知らせ: 核 · 制圧で拠点を戻した行（旧・取り返した）。 */
+export function newsRetaken(at: string): string {
+  return `${at}を制圧した · 倉庫へ届く`;
+}
+
+/** 島の知らせ: 相手の遠征隊を撃退した行（旧・全滅させた）。 */
+export function newsWipedEnemy(at: string, who: string): string {
+  return `${at}で${who}の遠征隊を撃退した`;
+}
+
+/** 自分の遠征の結果を一文に（信号所の title・控え）。 */
+export function expOutLine(n: { t: keyof typeof EXP_OUT_WORD; name: string; node: string }): string {
+  const at = n.node;
+  if (n.t === "held") return `${n.name}の島の${at}を遠征隊が取った`;
+  if (n.t === "wiped") return `${n.name}の島の${at}で遠征隊が攻めきれなかった`;
+  return `${n.name}の島の${at}を失った`;
+}
+
 export function nextFront(name: string): string {
   return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${TERM.front}：${name}`;
 }
@@ -161,9 +289,12 @@ export function assaultUnavailable(name: string): string {
   return `${name}へは今攻められない`;
 }
 
-/** 次の一手: 短いレイド出撃が可能になったときの表示。 */
+/**
+ * 次の一手: 短いレイドへ出られるときも、入口は門からの出撃に揃える。
+ * 【元】次：門から短いレイド · …を攻める 【案】次：門から出撃 · …を攻める 【理由】登録の有無で同じ一手の文が変わっていた
+ */
 export function nextShortRaid(name: string): string {
-  return `${TERM.nextHand}${TERM.gate}から${TERM.shortRaid} · ${name}を${TERM.attack}`;
+  return nextAttack(name);
 }
 
 export function moduleRaiseReady(moduleName: string): string {

@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { PHRASE, TERM, moduleRaiseReady, relayOf } from "./copy";
+import { PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -11,7 +11,7 @@ import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { islandHolds } from "../meta/island";
+import { islandHolds, liberationStatus, liberationStatusOf } from "../meta/island";
 import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
@@ -571,7 +571,13 @@ export class Hud {
     }
     const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
     // The raid's momentum beside the bar: a mark for each node taken after the first.
-    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "");
+    // お隣攻め中は自島の解放進度ではない。決戦はこのレイドの Start.finale に従う（途中で 16 拠点になっても「決戦」とは出さない）。
+    const libStatus = s.incursion ? null : s.finale ? ({ kind: "finale" } as const) : (() => {
+      const st = liberationStatusOf(s.nodes);
+      return st.kind === "finale" ? ({ kind: "nodes", left: 0 } as const) : st;
+    })();
+    const lib = libStatus ? `<span class="lib-line">${liberationLine(libStatus)}</span>` : "";
+    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "") + lib;
     const el = $("island-row");
     if (el.dataset.html !== row) {
       el.dataset.html = row;
@@ -1491,11 +1497,42 @@ export class Hud {
   }
 
   /**
+   * 起動時の一枚: 留守中の対人結果（リザルトと同じ文・並び）。
+   * 回収・戦闘の記録は出さない。見たら信号所の控えに残っている。
+   */
+  awayResults(before: Profile, after: Profile, lines: readonly string[], trop: string | null, next = "") {
+    this.newsKeep = [];
+    this.clearDayTimers();
+    this.daySkip = null;
+    $("result-title").textContent = TERM.islandNews;
+    $("day-result").innerHTML = "";
+    $("day-result").onclick = null;
+    const canvas = document.getElementById("day-map") as HTMLCanvasElement | null;
+    if (canvas) canvas.hidden = true;
+    $("haul-line").innerHTML = "";
+    const statsBox = document.getElementById("stats-box");
+    if (statsBox) (statsBox as HTMLElement).hidden = true;
+    $("stats").innerHTML = "";
+    const lib = `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(after))}</p>`;
+    const tropLine = trop ? `<p class="trop-line">${trop}</p>` : "";
+    $("home").innerHTML = lib + `<div id="island-news">${newsBlock(lines)}</div>` + tropLine;
+    const tip = next || nextHandFor(after);
+    const nextEl = $("next-hand");
+    if (nextEl) {
+      nextEl.hidden = !tip;
+      nextEl.textContent = tip;
+      nextEl.classList.remove("defence-beat");
+    }
+  }
+
+  /**
    * Results after a raid. `before` is the profile just before settle — used only to show how the
    * haul fed the base (wanted / buildable). `next` is the one-line hand into the next sortie.
    */
   results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "", expNews: readonly string[] = []) {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
+    const statsBox = document.getElementById("stats-box");
+    if (statsBox) (statsBox as HTMLElement).hidden = false;
     $("day-result").innerHTML = this.dayResult(s, settled);
     // Tap the day's map to skip the beat wait (Round 10); 野営地に戻る still leaves as before.
     $("day-result").onclick = () => this.skipDayBeat();
@@ -1548,14 +1585,13 @@ export class Hud {
     };
     // A record of a raid kept from before ways in were learned has walked to none.
     const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
-    // The day's income from the nodes the player holds.
-    // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
-    const island =
-      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated || settled?.trophies
-        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}${settled.trophies ? `<span>${TERM.trophy}<b>${settled.trophies.before} → ${settled.trophies.after}</b></span>` : ""}</p>`
-        : "";
-    const growth = settled && before ? this.baseGrowth(before, settled) : "";
-    const defence = this.defenceLines(s, settled);
+    // 答え合わせの並び: 解放までの残り → 島の知らせ → トロフィー →（次の一手は #next-hand）→ その他.
+    const libLine =
+      settled && before
+        ? `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(settled.profile))}</p>`
+        : settled
+          ? `<p class="lib-delta">${liberationLine(liberationStatus(settled.profile))}</p>`
+          : "";
     const tip = next || (settled ? nextHandFor(settled.profile) : "");
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1563,15 +1599,30 @@ export class Hud {
       nextEl.textContent = tip;
       nextEl.classList.remove("defence-beat");
     }
-    // Outgoing expeditions close into 島の知らせ; keep them if late sync updates news.
-    this.newsKeep = [...expNews];
+    // Outgoing expeditions + お隣を攻めた勝ち負け + 同期の知らせ.
+    // incursion 行も newsKeep に入れ、後から setNews されても消えないようにする。
+    const inc = settled?.incursion;
+    const incLine = inc
+      ? newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settled?.trophies?.gained : undefined)
+      : null;
+    this.newsKeep = [...expNews, ...(incLine ? [incLine] : [])];
     const allNews = [...this.newsKeep, ...news];
+    const tropLine = settled?.trophies
+      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost)}</p>`
+      : "";
+    const growth = settled && before ? this.baseGrowth(before, settled) : "";
+    const defence = this.defenceLines(s, settled);
+    const dayHead = settled ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews)}</div>${tropLine}` : "";
+    const islandExtra =
+      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated
+        ? `<p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
+        : "";
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
-      island +
+      dayHead +
+      islandExtra +
       growth +
       defence +
-      `<div id="island-news">${newsBlock(allNews)}</div>` +
       (settled
         ? (sent.length ? `<h3 class="mark">${depotIcon()}${TERM.relayBox}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.

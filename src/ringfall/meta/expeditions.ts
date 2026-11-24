@@ -9,6 +9,7 @@ import { ENEMIES, FACTORY, FACTORY_TOP, FRONT, type EnemyKind } from "../sim/con
 import type { Battle, RivalExpedition } from "../sim/battle";
 import { isAiOwner, parseHold, rivalOf, type PoiHold } from "../sim/holds";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
+import { LOG_WORD as COPY_LOG_WORD, newsRetaken, newsWipedEnemy, trophyLine } from "../view/copy";
 import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
@@ -202,7 +203,10 @@ export interface Synced {
  * report landed for leave the pending list; the holds are merged around those still pending. The
  * profile itself when nothing changes.
  */
-export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
+export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number }>(
+  p: P,
+  s: Synced,
+): { profile: P; news: IslandLogEntry[]; notes: string[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
   const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
@@ -211,13 +215,19 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   const parcels = s.parcels ? [...s.parcels] : p.parcels;
   // T1: ownership that changed while away (mergeHolds) moves trophies once here — settle will not
   // see the same own→rival transition again because `p.poiState` already matches.
+  // トロフィーは必ず知らせの一行と一緒に動かす（notes）。
   let trophies = p.trophies;
+  const notes: string[] = [];
   if (poiState !== p.poiState && typeof p.trophies === "number") {
-    const next = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState)).next;
-    if (next !== p.trophies) trophies = next;
+    const d = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState));
+    if (d.next !== p.trophies) {
+      trophies = d.next;
+      notes.push(trophyLine(p.trophies, d.next, d.gained, d.lost));
+    }
   }
-  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies) return { profile: p, news };
-  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels, ...(trophies !== p.trophies ? { trophies } : {}) }, news };
+  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies)
+    return { profile: p, news, notes };
+  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels, ...(trophies !== p.trophies ? { trophies } : {}) }, news, notes };
 }
 
 /** The other players' expeditions on an island's view that hold nothing yet, at nodes the game knows: what its owner is warned of. */
@@ -309,6 +319,11 @@ export function lentResults(lent: readonly LentIn[], battle: Pick<Battle, "squad
 /** A node's name for the lines below, or its id for one the game does not know. */
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
 
+/**
+ * 島の知らせに出す記録か。予告（noticed）は出さない（事前の警告は見せない決定）。
+ */
+export const newsVisible = (e: IslandLogEntry): boolean => e.t !== "noticed";
+
 /** A log entry as a line of news, naming whoever came. */
 export function logLine(e: IslandLogEntry): string {
   const at = nodeName(e.node);
@@ -322,9 +337,9 @@ export function logLine(e: IslandLogEntry): string {
       // CoC defence result: losing the node also costs that 中継ボックス's 島の守り.
       return `${who}に${at}を取られた · 島の守りが削られた`;
     case "wiped":
-      return `${at}で${who}の遠征隊を全滅させた`;
+      return newsWipedEnemy(at, who);
     case "retaken":
-      return `${at}を取り返した · 倉庫へ届く`;
+      return newsRetaken(at);
     case "released":
       return `${who}が${at}を手放し、敵の拠点に戻った`;
     case "recalled":
@@ -333,7 +348,7 @@ export function logLine(e: IslandLogEntry): string {
 }
 
 /** What happened in a log entry, in a word, for the signal station's marks. */
-export const LOG_WORD: Record<IslandLogEntry["t"], string> = { noticed: "遠征", landed: "上陸", taken: "奪取", wiped: "全滅", retaken: "奪還", released: "手放し", recalled: "撤収" };
+export const LOG_WORD: Record<IslandLogEntry["t"], string> = { ...COPY_LOG_WORD };
 
 /** Whether an entry is someone's attack on this island, answered by sending one back (仕返し). */
 export const answerable = (e: IslandLogEntry): boolean => (e.t === "noticed" || e.t === "landed" || e.t === "taken") && isIslandCode(e.by.code);
