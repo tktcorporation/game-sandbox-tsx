@@ -697,12 +697,15 @@ function deliverAwayNews(before: Profile) {
       },
     );
     if (!r.ok || !camping || running || awaySheetOpen || !$("results").hidden) return;
-    const { profile, news } = takeSync(hub.profile, r.body);
+    const { profile, news, notes } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
     world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
     if (news.length) hub.takeNews(news);
     saveProfile(hub.profile);
-    const parts = awaySheetParts(before.news ?? [], hub.profile.news ?? []);
+    // 同期で届いた行＋トロフィー行をそのまま一枚に（文の一致だけに頼らない）。
+    const shown = news.filter(newsVisible).map(logLine);
+    const fromSync = awaySheetParts([], [...shown, ...notes]);
+    const parts = fromSync ?? awaySheetParts(before.news ?? [], hub.profile.news ?? []);
     if (!parts) return;
     // 同期のあいだに出撃やリザルトが開いていたら重ねない。
     if (!camping || running || departing || !$("results").hidden || hub.station !== null) return;
@@ -997,6 +1000,8 @@ document.addEventListener("pointerlockerror", () => (noLock = true));
 document.addEventListener("pointerlockchange", () => {
   // The raid map unlocks the pointer so wheel/drag work; do not treat that as a pause.
   if ($("hud").classList.contains("map-open")) return;
+  // 起動時の一枚: ポインタを外しても pause にしない（campFrozen にも awaySheetOpen を含めている）。
+  if (awaySheetOpen) return;
   if (document.pointerLockElement !== stage && ((running && state.phase !== "done") || camping)) setPaused(true);
 });
 // Closing the map takes the look lock again (hud.toggleMap releases it on open).
