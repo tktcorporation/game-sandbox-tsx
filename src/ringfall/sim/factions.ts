@@ -3,7 +3,7 @@ import { dist2d, los, lookAngles, wrapAngle } from "./geom";
 import { EXTRACTS, GATES, MOBILES, RING_GAPS, regionHere, type Mobile, type RegionId } from "./map";
 import { onMainGround, walkLine } from "./hunt";
 import { worldKey } from "./routes";
-import { mix, sightScale, type Enemy, type Point, type SquadState, type State } from "./state";
+import { mix, type Enemy, type Point, type SquadState, type State } from "./state";
 import { alertSquad, headOf, standable } from "./awareness";
 import { bodyCenter, fall } from "./combat";
 import { robotSide } from "./battle";
@@ -218,7 +218,7 @@ export function stepFactions(s: State) {
   }
   if (sides < 2) return;
   const b = buckets(list);
-  const scale = sightScale(s) * FACTION.sight;
+  const scale = FACTION.sight;
   const bySquad = new Map<number, Enemy[]>();
   for (const e of list) {
     const l = bySquad.get(e.squad);

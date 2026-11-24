@@ -4,7 +4,7 @@ import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { PHRASE, TERM, moduleRaiseReady, relayOf } from "./copy";
-import { contractMarks, itemColor, itemName, namedAid, nextHandFor, overnightDefence, rewardList } from "./hub";
+import { itemColor, itemName, namedAid, nextHandFor, overnightDefence } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -13,24 +13,19 @@ import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
 import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
-import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
+import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
-import { callLeft, debrisBin, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulAndSentWorth } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
 import { IslandMap, islandScene, shieldedBy } from "./map";
 import { sfx } from "./sfx";
 import { nodeRow } from "./row";
-import { CONTRACT_NAME, contractMark, contractTask, contractText, type Contract } from "../meta/contracts";
-import { questBoardOn } from "../meta/features";
 import { currentStep, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
-import { storyOf } from "../meta/story";
-import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
-import { eventRow, raidEventLine } from "./events";
-import { CREW, FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
+import { FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon, nightIcon } from "./icons";
@@ -210,45 +205,34 @@ export class Hud {
     if (!on) this.bag.reset();
   }
 
-  /** The contract taken for this raid (null for none) and the story record lying on the island (null for none). */
-  private contract: Contract | null = null;
-  private record: RecordId | null = null;
-  /** What the raid is out to do (the contract, or the story record when it was taken from the board), for the objective's steps; and those steps as last drawn. */
+  /** What the raid is out to do (a capture task, or null for the day's front), for the objective's steps; and those steps as last drawn. */
   private task: Task | null = null;
   private obj: Objective | null = null;
   /** The objective and step last shown, so moving to the next step is told with a toast. */
   private lastStep = "";
 
   /**
-   * `story`: the story record was taken from the board as the raid's objective. Without it and
-   * without a contract, the objective is the day's front (`objectiveSteps()`), and the record has
-   * a line of its own.
+   * Clears any raid task so the objective follows the day's front (`objectiveSteps()`).
+   * Capture objectives use `setCaptureTask`. Kept for callers that once passed a contract.
    */
-  setContract(c: Contract | null, record: RecordId | null, story = false) {
-    this.contract = c;
-    this.record = record;
-    this.task = c ? contractTask(c) : record && story ? { t: "record", id: record } : null;
+  setContract() {
+    this.task = null;
     this.lastStep = "";
-    this.map.contract = c && contractMark(c);
+    this.map.contract = null;
     // A new raid restarts `s.time`, so a landing marked in the last raid would show again.
     this.scout = null;
   }
 
   /** 短いレイド（Short Raid）の目標: この拠点を「核 · 制圧」する。 */
   setCaptureTask(node: number) {
-    this.contract = null;
-    this.record = null;
     this.task = { t: "capture", node };
     this.lastStep = "";
     this.map.contract = null;
     this.scout = null;
   }
 
-  /** Settled raids before this one: the secondary story line stays quiet on the first raid. */
-  private raidsDone = 0;
-  setRaidsDone(n: number) {
-    this.raidsDone = n;
-  }
+  /** Settled raids before this one (callers that once gated the story line still set it). */
+  setRaidsDone(_n: number) {}
 
   /**
    * A short local ping where the player looks (P): view-only mark on the compass and map for a
@@ -284,12 +268,11 @@ export class Hud {
    * colour inside the pouch's outlined slots, then the rest in their rarities' colours.
    */
   private bagCells(p: State["player"]): string {
-    const kept = pouchKeep(p.haul, p.tools, this.pouch, p.records);
+    const kept = pouchKeep(p.haul, p.tools, this.pouch);
     const keptAt = new Set(kept.at);
     const keptTools = [...kept.tools];
     const fill: string[] = [];
     const rest: string[] = [];
-    for (let n = 0; n < kept.records.length; n++) fill.push("k");
     for (const k of kept.tools) for (let n = 0; n < TOOLS[k].size; n++) fill.push("k");
     p.haul.forEach((k, i) => {
       for (let n = 0; n < VALUABLES[k].size; n++) (keptAt.has(i) ? fill : rest).push(keptAt.has(i) ? "k" : RARITY_CSS[VALUABLES[k].rarity]);
@@ -299,7 +282,6 @@ export class Hud {
       if (at >= 0) keptTools.splice(at, 1);
       else for (let n = 0; n < TOOLS[k].size; n++) rest.push(RARITY_CSS[3]);
     }
-    for (let n = kept.records.length; n < p.records.length; n++) rest.push(RARITY_CSS[3]);
     // The rest starts past the pouch's slots while it fits there, so the pouch's slots show what it keeps.
     const start = Math.max(fill.length, this.pouch + rest.length <= BAG.slots ? this.pouch : fill.length);
     const cells: string[] = Array.from({ length: BAG.slots }, () => "");
@@ -424,7 +406,7 @@ export class Hud {
       case "pickup":
         // Bag card (view/bag.ts) carries the detail; a short toast confirms the grab (Round 4 juice).
         if (e.kind === "shard") break;
-        if (["valuable", "tool", "record", "key", "mod"].includes(e.kind)) {
+        if (["valuable", "tool", "key", "mod"].includes(e.kind)) {
           this.toast(esc(e.label), e.rarity ?? 0, 1600);
           break;
         }
@@ -574,10 +556,6 @@ export class Hud {
       case "timeUp":
         this.banner("時間切れ");
         break;
-      case "crewOut":
-        // Heard over the radio wherever the player is: the crew has the bag now.
-        this.toast(`${CREW.name}${crossIcon()}${bagIcon()}${e.n}`, 0, 4000);
-        break;
       case "ultReady":
         this.toast(isTouch() ? "離脱ジャンプ" : "<kbd>Z</kbd> 離脱ジャンプ", 3);
         break;
@@ -623,10 +601,8 @@ export class Hud {
     }
     if (this.mapOpen) {
       if (s.phase === "done") this.toggleMap(false);
-      // The debris crate is marked; a salvage crew only while the player can see one of it.
       else {
-        const crate = debrisBin(s);
-        this.map.draw({ ...s, debris: crate && { x: crate.x, z: crate.z, open: crate.open }, crews: crewsInSight(s) });
+        this.map.draw({ ...s });
         // The key names another player only while one holds a node or has a squad on the island.
         const rivals = s.nodes.some((h) => rivalOf(h) !== null) || !!s.battle?.squads.some((q) => q.side === 3);
         document.querySelectorAll<HTMLElement>("#map .map-rival").forEach((el) => {
@@ -637,9 +613,6 @@ export class Hud {
 
     // Objective card: the objective's current step, large, what finishes it and how far it has
     // gone under it, and the step's place in the list (sim/objective.ts).
-    const here = poiAt(s);
-    const poi = POIS[here];
-    const active = here >= 0;
     const obj = objectiveSteps(s, this.task);
     this.obj = obj;
     const step = currentStep(obj);
@@ -660,35 +633,6 @@ export class Hud {
     // The use key's focused target: one ring in the world, matching the prompt.
     view.setUseMark(s.phase === "play" ? useFocusMark(s) : null);
     this.compassMark(s, step?.at ?? null);
-    // The POI the player is in, after its core's mark: the side that holds it, padlocked while it is
-    // not on the front; a tick once its garrison is cleared, and the capture's seconds while it runs.
-    const oc = $("obj-contract");
-    oc.hidden = !poi || s.phase !== "play";
-    if (poi) {
-      const node = nodeIndex(poi.id);
-      const own = node >= 0 && s.nodes[node] === "own";
-      const taking = node >= 0 && s.capture?.node === node;
-      const mark = node < 0 ? "" : own ? coreIcon(SIDE.own) : coreIcon(foeSide(s.nodes[node]), !taking && !capturable(s, node));
-      // Not ticked for another player's POI: it starts cleared, standing no garrison.
-      const cleared = s.cleared[here] && !own && rivalOf(s.hold[here]) === null ? checkIcon() : "";
-      setHtml(oc, `${mark}${esc(poi.name)}${cleared}${taking && s.capture ? `<b>${Math.floor(s.capture.t)}/${FRONT.capture}</b>` : ""}`);
-      oc.classList.toggle("met", own);
-    }
-    // The story record has a line of its own unless it is the objective. On the first raid it stays
-    // hidden until the player has taken that record (or made it the objective), so the card says
-    // one next step (ux-design I5). Off with the 依頼板.
-    const os = $("obj-story");
-    const heldRecord = !!this.record && (p.records.includes(this.record) || s.sentRecords.includes(this.record));
-    const recordLine = questBoardOn() && !!this.record && this.task?.t !== "record" && (this.raidsDone > 0 || heldRecord);
-    os.hidden = !recordLine;
-    if (this.record && recordLine) {
-      const r = recordSpot(this.record);
-      setHtml(os, `<span class="lead">記録</span>${esc(r.name)}${heldRecord ? checkIcon() : `<span class="at">${esc(r.place)}</span>`}`);
-      os.classList.toggle("met", heldRecord);
-    }
-    const oe = $("obj-event");
-    oe.hidden = !s.event;
-    if (s.event) setHtml(oe, raidEventLine(s));
     const bagCells = this.bagCells(p);
     this.bag.frame(s, dt, bagCells);
     // Worth only once something is carried: an empty "回収 0" is noise on a fresh spawn.
@@ -1274,12 +1218,11 @@ export class Hud {
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
       if (homeReady(s) && depotBlocked(s)) return `${TERM.camp}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
-      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
+      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.mod) return `${esc(MODS[left.mod].name)} ${checkIcon()}`;
       const full = `${bagIcon()}<b>${bagLoad(p)}/${BAG.slots}</b>`;
       if (left?.valuable) return `${esc(VALUABLES[left.valuable].label)} ${full}`;
       if (left?.tool) return `${esc(TOOLS[left.tool].label)} ${full}`;
-      if (left?.record) return `${esc(recordSpot(left.record).name)} ${full}`;
       // Before a closed route's obstacle: its name, a padlock and the tool that opens it (ticked when carried).
       const r = routeBefore(p.pos, s.routes);
       if (!r) return "";
@@ -1314,16 +1257,16 @@ export class Hud {
     }
     if (t.kind === "swap") {
       const v = t.loot.valuable!;
-      const out = (makeRoom(p.haul, v, p.tools, p.records.length) ?? []).map((i) => VALUABLES[p.haul[i]].label);
+      const out = (makeRoom(p.haul, v, p.tools) ?? []).map((i) => VALUABLES[p.haul[i]].label);
       return tip(`${key("E")}${esc(VALUABLES[v].label)}${struck(out)}`);
     }
     if (t.kind === "care") return tip(`${key("E")}補給ポッド`);
     if (t.kind === "depot") {
       // One place, one line: what it is + what happens (brief: 中継ボックス). No internal jargon.
-      if (!p.haul.length && !p.tools.length && !p.records.length) {
+      if (!p.haul.length && !p.tools.length) {
         return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.cutAndExtract} ${clockIcon()}${DEPOT.leave} 秒`);
       }
-      const n = p.haul.length + p.tools.length + p.records.length;
+      const n = p.haul.length + p.tools.length;
       const value = p.haul.reduce((v, k) => v + VALUABLES[k].value, 0);
       return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${n}点・${value}`);
     }
@@ -1430,7 +1373,8 @@ export class Hud {
     // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
-    const end = islandScene(settled.profile);
+    // 来る遠征の予告 UI は削除済み: Profile.incoming を地図に載せない
+    const end = islandScene({ ...settled.profile, incoming: [] });
     // The player's nodes after each beat, from the day's end back.
     const after = (ids: Set<string>, c: { gained: readonly string[]; lost: readonly string[] }, back: boolean) => {
       const out = new Set(ids);
@@ -1624,7 +1568,6 @@ export class Hud {
       for (const i of items) counted.set(itemName(i), { n: (counted.get(itemName(i))?.n ?? 0) + 1, c: itemColor(i) });
       return [...counted].map(([n, { n: c, c: col }]) => `<span class="chip" style="--c:${col}">${n}${c > 1 ? `<b>${c}</b>` : ""}</span>`).join("");
     };
-    const quests = settled?.quests ?? [];
     // A record of a raid kept from before ways in were learned has walked to none.
     const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
     // The day's income from the nodes the player holds.
@@ -1633,20 +1576,6 @@ export class Hud {
       settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated || settled?.trophies
         ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}${settled.trophies ? `<span>${TERM.trophy}<b>${settled.trophies.before} → ${settled.trophies.after}</b></span>` : ""}</p>`
         : "";
-    // The contract taken for the raid: done and paid, or not done (it goes with the day).
-    const c = settled?.contract;
-    const contract = c
-      ? `<h3>依頼${settled?.threat ? `（強度 ${settled.threat}）` : ""}</h3><p><span class="contract ${c.done ? "done" : "failed"}"><span><em class="ask-kind">${CONTRACT_NAME[c.c.t]}</em>${contractMarks(c.c)}</span><b>${c.done ? `${checkIcon()}${c.cash ?? c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : crossIcon()}</b></span></p>`
-      : "";
-    // The day's event and how it went: the salvage crews met.
-    const ev = settled?.event ?? s.event;
-    const outcome: string[] = [];
-    if (st.crewsIn)
-      outcome.push(
-        `<span class="contract${st.crewsOut ? " failed" : " done"}">${CREW.name} ${st.crewsIn}・箱 ${st.crewBins}<b>${[st.crewsDown ? `撃破 ${st.crewsDown}` : "", st.crewsOut ? `逃走 ${st.crewsOut}` : ""].filter(Boolean).join("・") || "—"}</b></span>`,
-      );
-    const events = ev || outcome.length ? `<h3>島の出来事</h3><p>${ev ? eventRow(ev) : ""}${outcome.join("")}</p>` : "";
-    const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット</b></span></p>` : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
     const overnight = overnightDefence(s, settled);
@@ -1667,10 +1596,6 @@ export class Hud {
       growth +
       defence +
       `<div id="island-news">${newsBlock(allNews)}</div>` +
-      events +
-      contract +
-      story +
-      (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}<b>${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}</b></span>`).join("")}</p>` : "") +
       (settled
         ? (sent.length ? `<h3 class="mark">${depotIcon()}${TERM.relayBox}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.

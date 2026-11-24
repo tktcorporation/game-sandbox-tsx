@@ -8,24 +8,18 @@
  *   - 本モジュール（assault.ts）: 短いレイド出撃枠の管理、勝敗確定（Won/Lost）、相手サーバーへの報告（POST .../assault）とトロフィー増減。
  *   - incursion.ts: 短いレイドのステージ構築（IncursionPlan）、対象拠点選定、防衛物資の切り出し。
  *
- * 主経路（CoC型: FEATURES.reactiveDefense = false）:
- *   事前の予告猶予時間はなく、出撃地図から即座に短いレイドへ出撃可能。
- *   レイドでの制圧成功（assaultWon）または失敗（assaultLost）を記録し、
- *   相手サーバーへの報告完了（assaultAcked）または拒否（assaultWinRejected）まで状態を追跡する。
- *
- * 休止機能（FEATURES.reactiveDefense = true）:
- *   出撃前に相手島へ事前予告を登録し、猶予時間（12時間など）が経過するまで出撃を待機させる。
+ * 出撃地図から即座に短いレイドへ出撃可能（事前予告の待ち時間なし）。
+ * レイドでの制圧成功（assaultWon）または失敗（assaultLost）を記録し、
+ * 相手サーバーへの報告完了（assaultAcked）または拒否（assaultWinRejected）まで状態を追跡する。
  *
  * 関連仕様: docs/ringfall/glossary.md, docs/ringfall/pvp-clarity.md
  * （※純粋関数群であり、クライアントバンドルから worker を import してはならない）
  */
-import { AI } from "./ai-islands";
 import { expeditionsOut, type Outgoing } from "./expeditions";
-import { reactiveDefenseOn } from "./features";
 import type { NodeId } from "../sim/map";
 
 /* =========================================================================
- * 主経路: 出撃エントリの取得・作成・勝敗更新・報告追跡
+ * 出撃エントリの取得・作成・勝敗更新・報告追跡
  * ========================================================================= */
 
 /**
@@ -117,28 +111,18 @@ export function assaultWinRejected(list: readonly Outgoing[], code: string): { l
 }
 
 /* =========================================================================
- * 休止機能: 反応型守り（FEATURES.reactiveDefense = true）用 事前予告タイマー
+ * 出撃可否（待ち時間なし: 常に即出撃）
  * ========================================================================= */
 
-/** 実プレイヤー島への襲撃予告時間（12時間 = 43,200秒）。worker/island.ts の EXPEDITION.notice と同期。 */
-export const ASSAULT_NOTICE = 12 * 3600;
+/** 短いレイド出撃までの事前猶予秒数。反応型守りの予告待ちは廃止済み: 常に 0。 */
+export const assaultNoticeSec = (_ai: boolean): number => 0;
 
-/**
- * 短いレイド出撃が可能になるまでの事前猶予秒数。
- * 主経路（既定: FEATURES.reactiveDefense = false）では 0秒（即座に出撃可能）。
- * 休止機能ON時: AI島なら数分（AI.coming * 60）、実プレイヤー島なら12時間。
- */
-export const assaultNoticeSec = (ai: boolean): number => {
-  if (!reactiveDefenseOn()) return 0;
-  return ai ? AI.coming * 60 : ASSAULT_NOTICE;
-};
-
-/** 事前予告猶予時間が経過し、短いレイドへ出撃可能になったかどうか。 */
-export function assaultReady(o: Pick<Outgoing, "sentAt">, ai: boolean, now = Date.now()): boolean {
-  return now >= o.sentAt + assaultNoticeSec(ai) * 1000;
+/** 短いレイドへ出撃可能か。待ち時間なしのため常に true。 */
+export function assaultReady(_o: Pick<Outgoing, "sentAt">, _ai: boolean, _now = Date.now()): boolean {
+  return true;
 }
 
-/** 短いレイド出撃が可能になるまでの残り待ち秒数（出撃可能なら 0）。 */
-export function assaultLeft(o: Pick<Outgoing, "sentAt">, ai: boolean, now = Date.now()): number {
-  return Math.max(0, Math.ceil((o.sentAt + assaultNoticeSec(ai) * 1000 - now) / 1000));
+/** 短いレイド出撃までの残り待ち秒数。待ち時間なしのため常に 0。 */
+export function assaultLeft(_o: Pick<Outgoing, "sentAt">, _ai: boolean, _now = Date.now()): number {
+  return 0;
 }

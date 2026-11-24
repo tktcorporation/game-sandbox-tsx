@@ -1,5 +1,4 @@
 import { CAMP, type CampSpot, type StationId } from "../sim/map";
-import { campSpotLive } from "../sim/camp";
 import { TERM } from "./copy";
 import { tipIsDefence } from "./hub";
 import { startIcon } from "./icons";
@@ -66,10 +65,6 @@ export class CampView {
     const shown: { el: HTMLElement; x: number; y: number; d: number }[] = [];
     for (const c of CAMP.spots) {
       const el = this.labels.get(c.id)!;
-      if (!campSpotLive(c.id)) {
-        el.style.display = "none";
-        continue;
-      }
       const d = Math.hypot(c.x - eye.x, c.z - eye.z);
       const at = world.project({ x: c.x, y: c.y + c.top, z: c.z }, w, h);
       const mark = c.id === "vehicle" ? "" : o.marks[c.id];

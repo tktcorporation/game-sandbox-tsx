@@ -92,10 +92,6 @@
   --r2-text-rgb: 201 147 255;
   --pouch: #e8b07a;
   --pouch-rgb: 232 176 122;
-  --debris: #e0a33a;
-  --debris-rgb: 224 163 58;
-  --crews: #c86f3a;
-  --crews-rgb: 200 111 58;
   --shut: #ff8a5c;
   --shut-rgb: 255 138 92;
 }
@@ -537,44 +533,6 @@ body.touch #obj-raid .why {
 }
 #obj-raid:empty {
   display: none;
-}
-
-/* The contract taken and the story record: gold like the loot, turning to the sky's blue once met. */
-#obj-contract,
-#obj-story {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--r3);
-}
-#obj-contract[hidden],
-#obj-story[hidden] {
-  display: none;
-}
-#obj-contract.met,
-#obj-story.met {
-  color: var(--sky);
-}
-
-/* The day's island event, under the place: the haze's grey, its icon in its own colour. */
-#obj-event {
-  grid-column: 1 / -1;
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--parch);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-#obj-event[hidden] {
-  display: none;
-}
-#obj-event .ev-icon {
-  vertical-align: -3px;
-  margin-right: 4px;
 }
 
 #obj-stealth {
@@ -2632,32 +2590,6 @@ body.touch .note a {
   display: inline-block;
   padding: 11px 0;
 }
-/*
- * On a phone the contract shares the second row with the bag and the clock, shortened to its
- * progress, so the card still ends above the vitals; the story record takes that place only
- * while no contract is taken.
- */
-body.touch #obj-contract,
-body.touch #obj-story {
-  order: 2;
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-body.touch #obj-contract .lead,
-body.touch #obj-story .lead {
-  display: none;
-}
-body.touch #obj-contract:not([hidden]) ~ #obj-story {
-  display: none;
-}
-body.touch #obj-event {
-  order: 3;
-  flex-basis: 100%;
-  font-size: 11px;
-}
 body.touch #obj-exits {
   order: 3;
   flex-basis: 100%;
@@ -3353,37 +3285,6 @@ body.touch #camp-prompt {
   font-size: 16px;
 }
 
-/* The island's events on the map table and the results: today's and tomorrow's, an icon and a line each. */
-.ev {
-  display: block;
-  font-size: 13px;
-  line-height: 1.35;
-}
-.ev .ev-icon {
-  vertical-align: -3px;
-  margin-right: 5px;
-}
-.ev b {
-  margin-right: 6px;
-}
-.ev.quiet {
-  color: var(--muted);
-}
-.hub-island ul.events li {
-  display: grid;
-  grid-template-columns: 2.6em 1fr;
-  align-items: baseline;
-  padding: 3px 0;
-}
-.hub-island ul.events li small {
-  color: var(--muted);
-  font-size: 12px;
-}
-#home .ev {
-  display: inline-block;
-  margin: 2px 8px 2px 0;
-}
-
 /* The camp's 今日の作戦: the node to go for, the contract or record taken, and the kit, under the head. */
 #camp-plan {
   position: absolute;
@@ -3977,22 +3878,6 @@ body.touch #obj-raid .short {
 }
 #obj-until b.paused {
   color: var(--amber);
-}
-#obj-contract b {
-  font-family: var(--num);
-  margin-left: 8px;
-}
-#obj-contract .ico.check,
-#obj-story .ico.check {
-  margin-left: 4px;
-}
-#obj-story .lead {
-  margin-right: 6px;
-  color: var(--muted);
-}
-#obj-story .at {
-  margin-left: 6px;
-  color: var(--muted);
 }
 #obj-raid {
   display: flex;
@@ -5584,13 +5469,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
 /*
  * The objective card says one thing: what to do now. Under it only what changes as the raid goes:
  * the bag, the clock, whether the robots know. The goal's own name is on the camp's card and the
- * departure, the record's line gives way to a contract's, and a way off shows when it is news (a
- * craft called, a flare in hand); every way off is on the map (docs/ringfall/ui.md, 1 画面 1 つ).
+ * departure, and a way off shows when it is news (a craft called, a flare in hand); every way off
+ * is on the map (docs/ringfall/ui.md, 1 画面 1 つ).
  */
 #obj-title {
-  display: none;
-}
-#obj-contract:not([hidden]) ~ #obj-story {
   display: none;
 }
 #obj-exits div:not(.live) {

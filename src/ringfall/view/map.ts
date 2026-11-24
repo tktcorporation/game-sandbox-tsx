@@ -5,15 +5,14 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, poiIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
-import type { IslandEvent, PoiHold } from "../sim/island";
+import { BOXES, CAMP, NODES, nodeIndex, poiIndex, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import type { PoiHold } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
-import type { ContractMark } from "../meta/contracts";
 import { neighbourFronts } from "../meta/neighbour-front";
 import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
@@ -313,8 +312,8 @@ export const TITAN_CSS = UI.titan;
 /** The outposts' mark: places to loot that nobody's colour claims. */
 const OUTPOST_CSS = UI.parchDim;
 /**
- * The rogues' (野良機) colour on maps: a violet, kept apart from the enemy's red, the ways off'
- * yellow diamonds and the contract's gold (on the island their armour stays amber).
+ * The rogues' (野良機) colour on maps: a violet, kept apart from the enemy's red and the ways off'
+ * yellow diamonds (on the island their armour stays amber).
  */
 export const ROGUE_CSS = UI.rogue;
 
@@ -325,10 +324,6 @@ export const ROGUE_CSS = UI.rogue;
 export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "routes" | "found"> & {
   player?: Pick<Player, "pos" | "yaw">;
   ally?: Pick<Ally, "active" | "pos" | "down">;
-  /** The debris crate of the day's debris fall, or null. */
-  debris?: { x: number; z: number; open: boolean } | null;
-  /** The salvage crews' members in the player's sight. */
-  crews?: readonly { x: number; z: number }[];
   /** The highest threat each POI was freed at (by POI index), shown by its mark when above 0. */
   best?: readonly number[];
   /** The squads the player has seen or heard out between the POIs, and the raid's clock they are timed by. */
@@ -402,10 +397,7 @@ type Rect = { x0: number; y0: number; x1: number; y1: number };
 export const SIDE_CSS: Record<Side, string> = { 0: UI.ownBright, 1: UI.alert, 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number; incoming?: readonly { node: NodeId }[] }): MapScene {
-  // Today's debris fall is marked on the map table where the piece will lie.
-  const ev = p.events?.[0];
-  const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number; incoming?: readonly { node: NodeId }[] }): MapScene {
   return {
     seen: decodeSeen(p.seen),
     cleared: POIS.map(() => false),
@@ -413,7 +405,6 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     depots: DEPOTS.map((d) => p.depots.includes(d.poi)),
     routes: [...p.routes],
     found: [],
-    debris: spot && { x: spot.x, z: spot.z, open: false },
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
     finale: finaleOpen(p),
@@ -518,8 +509,11 @@ export class IslandMap {
   known: EntryId[] | null = null;
   /** The region framed when the scene has no player on it (the camp's map table). */
   region: RegionId = HOME_REGION.id;
-  /** Where the contract taken for the raid points, marked in the loot's gold; null with none taken. */
-  contract: ContractMark | null = null;
+  /**
+   * Cleared by callers that once marked a taken contract; always null (quest board removed).
+   * Kept so hub/depart can still assign without a type error during the cutover.
+   */
+  contract: null = null;
   /** A short local look-ping (P): a pulse on the map until the HUD clears it. */
   ping: { x: number; z: number } | null = null;
   /** Async look-marks from the island DO (ux-design M6), drawn faint in rival green. */
@@ -759,49 +753,6 @@ export class IslandMap {
     const hw = (fit.x1 - fit.x0) / 2 / z;
     const hh = (fit.z1 - fit.z0) / 2 / z;
     return { x0: cx - hw, z0: cz - hh, x1: cx + hw, z1: cz + hh };
-  }
-
-  /**
-   * The taken contract's place, dashed in gold under the POI marks: a ring round its POI, a pack's
-   * loop, or the frame of the region a hunting party walks, each with 依頼 beside it.
-   */
-  private drawContract(g: CanvasRenderingContext2D, at: (x: number, z: number) => { x: number; y: number }, dpr: number, label: (text: string, x: number, y: number, color: string, size: number) => void) {
-    const c = this.contract;
-    if (!c) return;
-    const gold = UI.r3;
-    g.save();
-    g.strokeStyle = gold;
-    g.lineWidth = 2.5 * dpr;
-    g.setLineDash([5 * dpr, 4 * dpr]);
-    g.beginPath();
-    let tag: { x: number; y: number };
-    if (c.t === "poi") {
-      const p = at(c.x, c.z);
-      g.arc(p.x, p.y, 15 * dpr, 0, Math.PI * 2);
-      tag = { x: p.x + 30 * dpr, y: p.y + 2 * dpr };
-    } else if (c.t === "loop") {
-      c.points.forEach((q, n) => {
-        const p = at(q.x, q.z);
-        if (n) g.lineTo(p.x, p.y);
-        else g.moveTo(p.x, p.y);
-      });
-      g.closePath();
-      const first = at(c.points[0].x, c.points[0].z);
-      tag = { x: first.x, y: first.y - 12 * dpr };
-    } else {
-      const b = regionOf(c.region).bounds;
-      const a = at(b.x0, b.z0);
-      const z = at(b.x1, b.z1);
-      const inset = 6 * dpr;
-      g.rect(a.x + inset, a.y + inset, z.x - a.x - inset * 2, z.y - a.y - inset * 2);
-      const l = at(regionOf(c.region).label.x, regionOf(c.region).label.z);
-      tag = { x: l.x + 40 * dpr, y: l.y + 20 * dpr };
-    }
-    g.stroke();
-    g.restore();
-    g.strokeStyle = alpha(UI.night, 0.85);
-    g.lineWidth = 3 * dpr;
-    label("依頼", tag.x, tag.y, gold, 11);
   }
 
   /**
@@ -1349,7 +1300,6 @@ export class IslandMap {
       }
       g.textAlign = "center";
     }
-    this.drawContract(g, at, dpr, label);
     // Depots that are on: a teal square each, a place a later raid can start from.
     (plain ? [] : DEPOTS).forEach((d, i) => {
       if (!s.depots[i]) return;
@@ -1359,40 +1309,6 @@ export class IslandMap {
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
-    // The debris crate: a gold shard, grey once opened.
-    if (s.debris && !plain) {
-      const p = at(s.debris.x, s.debris.z);
-      const d = 7 * dpr;
-      g.save();
-      g.lineWidth = 2.5 * dpr;
-      g.strokeStyle = alpha(UI.night, 0.9);
-      g.fillStyle = s.debris.open ? UI.slateDim : UI.debris;
-      g.beginPath();
-      g.moveTo(p.x + d * 0.2, p.y - d);
-      g.lineTo(p.x + d * 0.8, p.y - d * 0.1);
-      g.lineTo(p.x - d * 0.1, p.y + d);
-      g.lineTo(p.x - d * 0.7, p.y + d * 0.05);
-      g.closePath();
-      g.fill();
-      g.stroke();
-      g.restore();
-      const text = "破片";
-      const spot = box(text, p.x, p.y + 14 * dpr, 9);
-      if (free(spot)) {
-        taken.push(spot);
-        label(text, p.x, p.y + 14 * dpr, s.debris.open ? UI.parchDim : UI.hotLight, 9);
-      }
-    }
-    // Salvage crew members in sight: small rust squares.
-    for (const c of plain ? [] : (s.crews ?? [])) {
-      const p = at(c.x, c.z);
-      const r = 3 * dpr;
-      g.fillStyle = UI.crews;
-      g.strokeStyle = alpha(UI.night, 0.9);
-      g.lineWidth = 1.5 * dpr;
-      g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
-      g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
-    }
     // The outposts: a small grey square, a place to loot that is no node of the front.
     for (const o of plain ? [] : OUTPOST_SITES) {
       const p = at(o.x, o.z);
@@ -1685,14 +1601,11 @@ export class IslandMap {
 
   /**
    * Chevrons at the canvas edge toward goals that sit off the framed view: the player (when
-   * panned away), the taken contract, night targets, a coming expedition, and a node under threat.
+   * panned away), night targets, a coming expedition, and a node under threat.
    */
   private drawEdgeArrows(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number) {
     const goals: { x: number; z: number; color: string }[] = [];
     if (s.player) goals.push({ x: s.player.pos.x, z: s.player.pos.z, color: UI.white });
-    const c = this.contract;
-    if (c?.t === "poi") goals.push({ x: c.x, z: c.z, color: UI.r3 });
-    else if (c?.t === "loop" && c.points[0]) goals.push({ x: c.points[0].x, z: c.points[0].z, color: UI.r3 });
     const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
     if (night) for (const i of night.targets) goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert });
     if (s.noticed) for (const i of s.noticed) goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.rival });

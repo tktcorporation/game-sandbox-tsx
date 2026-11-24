@@ -2,13 +2,13 @@ import { AWARE, BAG, DEG, ENEMIES, FLANK, INTERCEPT, NOISE, PATROL, PINCH, PURSU
 import { EXTRACTS, POIS, regionHere } from "./map";
 import { dist2d, los, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
-import { sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 import { modScale, threatOf } from "./mods";
 import { hypot2, hypot3 } from "./hypot";
 import { squadMembers } from "./members";
 
-/** How far a robot answers shots from afar (see RETURN): further at a higher threat, less in a storm. */
-const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range * sightScale(s);
+/** How far a robot answers shots from afar (see RETURN): further at a higher threat. */
+const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range;
 
 /** Scratch ends for `sense()`'s line of sight: rewritten each call, never retained. */
 const senseFrom: Vec3 = { x: 0, y: 0, z: 0 };
@@ -29,7 +29,7 @@ const answering = (s: State, e: Enemy) => (s.squads[e.squad]?.shotT ?? 0) > 0;
  * or further for a while after the player hit its squad from afar (see RETURN).
  */
 export function fireRange(s: State, e: Enemy): number {
-  const sight = SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
+  const sight = SIGHT[e.kind].range * AWARE.engagedRange;
   return answering(s, e) ? Math.max(sight, returnRange(s, e)) : sight;
 }
 
@@ -46,7 +46,7 @@ const sightTarget = (s: State): Vec3 => {
 export function shotFromAfar(s: State, e: Enemy): boolean {
   const eye = headOf(e);
   const t = sightTarget(s);
-  return hypot3(t.x - eye.x, t.y - eye.y, t.z - eye.z) > SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
+  return hypot3(t.x - eye.x, t.y - eye.y, t.z - eye.z) > SIGHT[e.kind].range * AWARE.engagedRange;
 }
 
 /** The player is a valid target for robots: on the ground and not knocked down. */
@@ -236,9 +236,7 @@ export function sense(s: State, e: Enemy): boolean {
     const dz = p.pos.z - e.pos.z;
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
-    // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
-    const scale = sightScale(s);
-    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1) * (sq?.mobile && !engaged && sq.sweep === undefined ? PATROL.sight : 1);
+    let range = (sq?.sight ?? sight.range) * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1) * (sq?.mobile && !engaged && sq.sweep === undefined ? PATROL.sight : 1);
     if (engaged && answering(s, e)) range = Math.max(range, returnRange(s, e));
     // Clearly past both the close sense and the range by the square of the distance (with room for
     // its rounding), the distance decides nothing below; the exact one is found only nearer.

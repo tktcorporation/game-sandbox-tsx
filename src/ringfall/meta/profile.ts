@@ -1,15 +1,9 @@
 import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, FINALE, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
-import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
+import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
-import { haulOrigins } from "../sim/world";
-import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, dayChange, departDepots, unlocked, type DayChange, type FrontChange, eventFor, firstEvents, heldIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
-import type { IslandEvent } from "../sim/island";
-import { questBoardOn } from "./features";
-import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, withFrontMigrated, type Quest, type QuestLog } from "./quests";
-import { currentStory, STORIES, type Story } from "./story";
+import { advanceDay, dayChange, departDepots, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
@@ -34,14 +28,13 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 33;
+  v: 35;
   cash: number;
   stash: Item[];
   raids: number;
   extracted: number;
   /** Seconds spent in raids, all told. */
   time: number;
-  quests: QuestLog;
   /** The region the last raid started in. */
   region: RegionId;
   /** The way in the last raid that did not start at a depot took: the base offers it first next time. */
@@ -63,19 +56,11 @@ export interface Profile {
   day: number;
   /** Who holds each POI (meta/island.ts). */
   poiState: Island;
-  /** The day's contract board (meta/contracts.ts), built when the day began. */
-  board: Board;
-  /** The id of the board's contract taken for the next raid, or null for none. */
-  taken: string | null;
-  /** The story records brought home (meta/story.ts): the story contract under way is the first not among them. */
-  records: RecordId[];
-  /** The island's events: today's (the next raid's) and tomorrow's, announced a day ahead (meta/island.ts). */
-  events: DayEvents;
   /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
   known: ModKind[];
   /**
-   * The 強度 chosen on the board for the contract taken, 0 to `THREAT.max` (`THREAT.levels`). It
-   * counts only while a contract is taken: a raid with none plays at 0 (`raidThreat()`).
+   * Kept for save compat / map (`freedAt`); round 強度 comes from `cycle` via `raidThreat()`.
+   * Not chosen on a contract board (removed).
    */
   threat: number;
   /** The highest 強度 each POI was freed at. */
@@ -173,38 +158,47 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 33, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [], trophies: TROPHY.start };
-  return { ...p, board: makeBoard(p) };
+  return {
+    v: 35,
+    cash: META.start.cash,
+    stash,
+    raids: 0,
+    extracted: 0,
+    time: 0,
+    region: HOME_REGION.id,
+    entry: FIRST_ENTRY,
+    entries: [FIRST_ENTRY],
+    hideout: emptyHideout(),
+    seed: seed & 0xffff,
+    depots: [],
+    depotSent: {},
+    seen: "",
+    routes: [],
+    day: 1,
+    poiState: newIsland(),
+    known: [...MOD_START],
+    threat: 0,
+    freedAt: {},
+    factory: 0,
+    cycle: 0,
+    cycleDay: 1,
+    liberations: [],
+    lastKit: null,
+    expeditions: [],
+    logSeq: 0,
+    retaken: [],
+    incoming: [],
+    parcels: [],
+    incursionTaken: [],
+    trophies: TROPHY.start,
+  };
 }
 
-/** What `Profile.taken` holds when the story record under way is taken from the board instead of a contract. */
-export const STORY_TAKEN = "story";
-
-/** The board's contract taken for the next raid, or null. Null while the 依頼板 is off. */
-export const takenContract = (p: Pick<Profile, "board" | "taken" | "day">): Contract | null => {
-  if (!questBoardOn()) return null;
-  return p.board.day === p.day ? (p.board.contracts.find((c) => c.id === p.taken) ?? null) : null;
-};
-
-/** Whether the board's story record is what the next raid is out for. False while the 依頼板 is off. */
-export const takenStory = (p: Pick<Profile, "taken" | "records">): boolean => questBoardOn() && p.taken === STORY_TAKEN && !!currentStory(p.records);
-
-/**
- * Takes a contract of the day's board for the next raid (null takes none, `STORY_TAKEN` the story
- * record under way); one not on the board takes none. A contract taken anew starts at 強度 0.
- * No-op while the 依頼板 is off (clears a leftover `taken`).
- */
-export const take = (p: Profile, id: string | null): Profile => {
-  if (!questBoardOn()) return { ...p, taken: null, threat: 0 };
-  const taken = p.board.contracts.some((c) => c.id === id) || (id === STORY_TAKEN && !!currentStory(p.records)) ? id : null;
-  return { ...p, taken, threat: taken === p.taken ? p.threat : 0 };
-};
-
-/** The 強度 every raid of the profile's round plays at before any contract's: `FINALE.threat` a round freed. */
+/** The 強度 every raid of the profile's round plays at: `FINALE.threat` a round freed. */
 export const roundThreat = (p: Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (p.cycle ?? 0) * FINALE.threat);
 
-/** The 強度 the next raid plays at: the round's, and on top of it the taken contract's (none with no contract taken). */
-export const raidThreat = (p: Pick<Profile, "board" | "taken" | "day" | "threat"> & Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (takenContract(p) ? p.threat : 0) + roundThreat(p));
+/** The 強度 the next raid plays at: the round's alone. */
+export const raidThreat = (p: Partial<Pick<Profile, "cycle">>) => roundThreat(p);
 
 /** The seed of the raid after one started from `seed`. */
 export const nextSeed = (seed: number) => ((Math.imul(seed + 1, 1103515245) + 12345) >>> 8) & 0xffff;
@@ -471,22 +465,21 @@ export function takeKit(p: Profile, given: Loadout, from: PoiId | null = null): 
 }
 
 /**
- * What comes home through the pouch on a wipe: the story records first (a slot each; nothing else
- * tells their story), then the tools, in the order taken, while they fit (they are what opens a
- * route), then the most valuable valuables in the slots left (`at`: their places in `haul`).
- * This is the wipe path; `bestFitValuables` is only the valuables knapsack used by pacing.
+ * What comes home through the pouch on a wipe: the tools, in the order taken, while they fit
+ * (they are what opens a route), then the most valuable valuables in the slots left (`at`: their
+ * places in `haul`). This is the wipe path; `bestFitValuables` is only the valuables knapsack
+ * used by pacing.
  */
-export function pouchKeep(haul: ValuableKind[], tools: ToolKind[], slots: number = META.pouch, records: RecordId[] = []): { haul: ValuableKind[]; tools: ToolKind[]; records: RecordId[]; at: number[] } {
-  const keptRecords = records.slice(0, slots);
+export function pouchKeep(haul: ValuableKind[], tools: ToolKind[], slots: number = META.pouch): { haul: ValuableKind[]; tools: ToolKind[]; at: number[] } {
   const kept: ToolKind[] = [];
-  let left = slots - keptRecords.length;
+  let left = slots;
   for (const k of tools)
     if (TOOLS[k].size <= left) {
       kept.push(k);
       left -= TOOLS[k].size;
     }
   const at = bestFitValuableSlots(haul, left);
-  return { haul: at.map((n) => haul[n]), tools: kept, records: keptRecords, at };
+  return { haul: at.map((n) => haul[n]), tools: kept, at };
 }
 
 /** The most valuable valuables that fit in `slots` bag slots (valuables only; wipe uses `pouchKeep`). */
@@ -509,9 +502,8 @@ function bestFitValuableSlots(haul: ValuableKind[], slots: number): number[] {
 }
 
 /**
- * What a raid brings home, the quests it finished, the routes its tools opened (the tools spent
- * on them are in `home` but not in the stash), the ways in it taught, and what the stash had no
- * room for (sold on the spot).
+ * What a raid brings home, the routes its tools opened (the tools spent on them are in `home`
+ * but not in the stash), the ways in it taught, and what the stash had no room for (sold on the spot).
  */
 export interface Settlement {
   profile: Profile;
@@ -519,7 +511,6 @@ export interface Settlement {
   opened: RouteId[];
   /** Ways in the raid walked to that the base did not offer before (only when the player got off alive). */
   learned: EntryId[];
-  quests: Quest[];
   sold: Item[];
   soldFor: number;
   /** The island's day the raid was played on (the profile is on the next). */
@@ -541,12 +532,6 @@ export interface Settlement {
   spoils?: number;
   /** Credits the nodes this island's expeditions hold on other islands paid at this settle (`awayIncome()`); left out, none. */
   awayIncome?: number;
-  /** The day's island event the raid was played on, or null. */
-  event: IslandEvent | null;
-  /** The contract taken for the raid, the credits it pays at the raid's threat, and whether the raid did it (its reward paid when it did). */
-  contract: { c: Contract; cash: number; done: boolean } | null;
-  /** The story contract whose record the raid brought home (its credits paid). */
-  story: Story | null;
   /** The 強度 the raid was played at. */
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
@@ -577,12 +562,6 @@ export function analyse(p: Profile, settled: Pick<Settlement, "analysable">, kin
   if (!settled.analysable.includes(kind) || p.known.includes(kind)) return null;
   return { ...p, known: knownMods([...p.known, kind]) };
 }
-
-/** A contract's credits `cash` as paid at 強度 `threat`: `THREAT.levels[].reward` times, to the credit. */
-export const threatPay = (cash: number, threat: number) => (threat > 0 ? Math.round(cash * THREAT.levels[threat].reward) : cash);
-
-/** Sets the 強度 of the contract taken, kept within 0 and `THREAT.max`. */
-export const setThreat = (p: Profile, threat: number): Profile => ({ ...p, threat: Math.max(0, Math.min(THREAT.max, Math.round(threat) || 0)) });
 
 /** Valuables the factory's levels not yet built still ask for, by kind. */
 export function factoryNeeded(p: Pick<Profile, "factory">): Record<ValuableKind, number> {
@@ -630,27 +609,17 @@ function store(p: Profile, items: Item[]): { profile: Profile; sold: Item[]; sol
   return { profile: { ...p, cash: p.cash + soldFor, stash: [...p.stash, ...keep.slice(0, room)] }, sold, soldFor };
 }
 
-/** Pays a finished quest's reward. */
-function pay(p: Profile, q: Quest): { profile: Profile; sold: Item[]; soldFor: number } {
-  return store({ ...p, cash: p.cash + q.reward.cash }, q.reward.items.map((i) => ({ ...i })));
-}
-
 /**
- * Puts what came off the island into the stash, and pays the quests the raid finished.
+ * Puts what came off the island into the stash.
  * What was sent home from a depot arrives however the raid ended; the depots switched on
  * and the map explored are kept too. The ways in walked to are learned only when the player got
  * off alive: a wipe forgets them.
  */
 export function settle(p: Profile, s: State): Settlement {
   const pl = s.player;
-  // A record of a raid kept from before tools were carried has none, nor records from before the story.
+  // A record of a raid kept from before tools were carried has none.
   const tools = pl.tools ?? [];
-  const carried = pl.records ?? [];
   const home: Item[] = [...s.sent.map((v): Item => ({ t: "valuable", kind: v })), ...(s.sentTools ?? []).map((k): Item => ({ t: "tool", kind: k }))];
-  // The valuables that came home with where each came from (for a fetch contract), and the story records.
-  const origins = haulOrigins(pl);
-  const fetched: Fetched[] = sentOrigins(s);
-  const records: RecordId[] = [...(s.sentRecords ?? [])];
   if (s.outcome === "extracted") {
     // The starter weapons never left the stash.
     for (const w of pl.weapons) if (w && !w.starter) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
@@ -660,14 +629,10 @@ export function settle(p: Profile, s: State): Settlement {
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
     for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
     for (const k of tools) home.push({ t: "tool", kind: k });
-    pl.haul.forEach((kind, n) => fetched.push({ kind, from: origins[n] }));
-    records.push(...carried);
   } else {
-    const kept = pouchKeep(pl.haul, tools, pouchSlots(p.hideout), carried);
+    const kept = pouchKeep(pl.haul, tools, pouchSlots(p.hideout));
     for (const v of kept.haul) home.push({ t: "valuable", kind: v });
     for (const k of kept.tools) home.push({ t: "tool", kind: k });
-    for (const n of kept.at) fetched.push({ kind: pl.haul[n], from: origins[n] });
-    records.push(...kept.records);
   }
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
@@ -688,20 +653,10 @@ export function settle(p: Profile, s: State): Settlement {
   }
   // Lead-incursion: the copy's captures must not rewrite the home island's nodes.
   const day = s.incursion ? { ...raidDay(s), captured: [] as NodeId[] } : raidDay(s);
-  // Overnight change first (contracts / freedAt) while today's island still holds the stash packing.
+  // Overnight change first (freedAt) while today's island still holds the stash packing.
   const change = dayChange(p, day);
-  const taken = takenContract(p);
-  const contract = taken && { c: taken, cash: threatPay(taken.reward.cash, s.threat ?? 0), done: contractDone(taken, { gained: change.gained, home: fetched, wiped: s.stats.wiped ?? [] }) };
-  const story = currentStory(p.records);
-  const told = story && records.includes(story.id) ? story : null;
-  // What came home and what the quests and the contract pay claim stash room together, in one `keepOrder()`.
-  const { log, finished } = creditRaid(p.quests, s);
-  // A contract done at a higher threat pays its credits `THREAT.levels[].reward` times.
   const threat = s.threat ?? 0;
-  const paid = contract?.done ? [{ ...contract.c.reward, cash: threatPay(contract.c.reward.cash, threat) }] : [];
-  const rewards = [...finished.map((q) => q.reward), ...paid].flatMap((r) => r.items.map((i): Item => ({ ...i })));
-  const cash = [...finished.map((q) => q.reward), ...paid].reduce((n, r) => n + r.cash, 0) + (told?.cash ?? 0);
-  const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
+  const { profile, sold, soldFor } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
   // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
   // 短いレイド: コピー島は非ステージ拠点を解放済み（敵なし）とするため、自島プロフィールのデポやsentViaには反映しない。
@@ -712,7 +667,6 @@ export function settle(p: Profile, s: State): Settlement {
   // A record of a raid kept from before ways in were learned has walked to none.
   const learned = s.outcome === "extracted" ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e)) : [];
   const entries = knownEntries([...p.entries, ...learned]);
-  const kept = STORIES.map((t) => t.id).filter((id) => p.records.includes(id) || told?.id === id);
   const freedAt = { ...p.freedAt };
   for (const id of change.gained) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
   // Aid parcels left / taken this raid (ux-design C2): keep local until the island server answers.
@@ -729,8 +683,8 @@ export function settle(p: Profile, s: State): Settlement {
   }
   let incursionTaken = p.incursionTaken ?? [];
   if (s.incursion && seized.ids.length) incursionTaken = withTaken(incursionTaken, s.incursion.code, seized.ids);
-  const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept, parcels, incursionTaken };
-  // Apply the same overnight pass once the raid's haul and quests are on today's island.
+  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), parcels, incursionTaken };
+  // Apply the same overnight pass once the raid's haul is on today's island.
   const { profile: night } = advanceDay(settled, day);
   // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
   // 短いレイド勝利によるトロフィー変動（自島ノードの占有書き換えは行わない）。
@@ -776,12 +730,9 @@ export function settle(p: Profile, s: State): Settlement {
   const away = awayIncome(night);
   const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone" || e.x2Pending);
   const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils + away, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
-  // Quests the raid opened may ask for a hideout level already built.
-  const claimed = claimBuilt(next);
-  // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
   // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
-  const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
+  const fresh = { ...next, stash: withStarters(next.stash) };
   // Lead-incursion captures are on the copy — never pending retakes on the home island.
   fresh.retaken = s.incursion ? [...p.retaken] : addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
   const incursionWon = incursionWonEarly;
@@ -790,18 +741,14 @@ export function settle(p: Profile, s: State): Settlement {
     home,
     opened,
     learned,
-    quests: [...finished, ...claimed.quests],
-    sold: [...sold, ...claimed.sold],
-    soldFor: soldFor + claimed.soldFor,
+    sold,
+    soldFor,
     day: p.day,
     ...change,
     income,
     ...(liberated && { liberated }),
     ...(spoils > 0 && { spoils }),
     ...(away > 0 && { awayIncome: away }),
-    event: s.event ?? null,
-    contract,
-    story: told,
     threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
     ...(trop.gained || trop.lost
@@ -911,21 +858,6 @@ function raidReserveKind(seed: number, poi: PoiId): ValuableKind {
   return pool[h]!;
 }
 
-/** Finishes and pays every offered build quest the hideout already meets, and those they open. */
-export function claimBuilt(p: Profile): { profile: Profile; quests: Quest[]; sold: Item[]; soldFor: number } {
-  const quests: Quest[] = [];
-  const sold: Item[] = [];
-  let soldFor = 0;
-  for (let q = offered(p.quests).find((o) => built(o.goal, p.hideout)); q; q = offered(p.quests).find((o) => built(o.goal, p.hideout))) {
-    const paid = pay({ ...p, quests: { ...p.quests, done: [...p.quests.done, q.id] } }, q);
-    p = paid.profile;
-    quests.push(q);
-    sold.push(...paid.sold);
-    soldFor += paid.soldFor;
-  }
-  return { profile: p, quests, sold, soldFor };
-}
-
 /** What stands between a module and its next level: items short (kind, have, need) and credits short. */
 export function shortfall(p: Profile, m: ModuleId): { items: [ValuableKind, number, number][]; cash: number } | null {
   const l = nextLevel(p.hideout, m);
@@ -973,25 +905,7 @@ export function build(p: Profile, m: ModuleId): Profile | null {
     });
   }
   const hideout = { ...p.hideout, [m]: p.hideout[m] + 1 };
-  return claimBuilt({ ...p, cash: p.cash - l.cash, stash: p.stash.filter((_, at) => !take.has(at)), hideout }).profile;
-}
-
-/** Stash entries (indices) a delivery quest would take, or null when the stash lacks them. */
-export function deliverable(p: Profile, q: Quest): number[] | null {
-  const g = q.goal;
-  if (g.t !== "deliver") return null;
-  const have: number[] = [];
-  p.stash.forEach((i, n) => i.t === "valuable" && i.kind === g.valuable && have.length < need(g) && have.push(n));
-  return have.length >= need(g) ? have : null;
-}
-
-/** Hands a delivery quest's items to the trader and pays its reward. */
-export function deliver(p: Profile, id: string): Profile {
-  const q = offered(p.quests).find((o) => o.id === id);
-  const take = q && deliverable(p, q);
-  if (!q || !take) return p;
-  const left = { ...p, stash: p.stash.filter((_, n) => !take.includes(n)), quests: { ...p.quests, done: [...p.quests.done, q.id] } };
-  return claimBuilt(pay(left, q).profile).profile;
+  return { ...p, cash: p.cash - l.cash, stash: p.stash.filter((_, at) => !take.has(at)), hideout };
 }
 
 /**
@@ -1001,55 +915,15 @@ export function deliver(p: Profile, id: string): Profile {
 const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
 
 /**
- * Accepts a stored profile only if it has the right shape. A v1 profile gains an empty
- * quest log; v1 and v2 keys name their POI by number and are moved to ids; profiles before
- * v4 drop into the reservoir; profiles before v5 start with an empty hideout; profiles before
- * v6 have no depot on and nothing explored. A v6 profile's explored map was drawn over the
- * world before its open ground and wider bounds, so it is dropped (its depots stay). Profiles
- * before v8 have sent nothing through their depots: each one on starts at level 0. Profiles
- * before v9 have every route closed. Before v10 a raid dropped from the air: such a profile
- * starts at its last region's first way in, and its explored map, drawn over the smaller
- * world, is dropped. Before v11 every way in was open from the start: such a profile knows
- * them all. Before v12 the world was narrower east to west, so its explored map, drawn row by
- * row over the old bounds, is dropped. Before v13 the island had no days: such a profile is on
- * the day after its raids so far, with every POI held. Before v14 the trader had a chain of 21
- * quests, most of them now done by the board: such a profile keeps the quests there still are
- * (credited nothing for the others, its stash as it was), no record of the story, and a fresh board.
- * Before v16 the island had no events: such a profile's day is quiet, and tomorrow's is drawn.
- * Before v17 there were no mod parts and no threat: such a profile knows the starting kinds
- * (`MOD_START`), plays at threat 0, and has freed no POI at any threat.
- * Before v19 there was no battle: such a profile has the factory the camp starts with (level 0).
- * Before v20 the shelves did not remember a loadout: such a profile has none (`lastKit` null).
- * Before v21 the hideout had a generator and an escape craft: such a profile keeps its other
- * modules' levels and loses those two, with what was spent on them, and the ending's record;
- * its intro quest to build the generator, if done, counts as the one to build the infirmary.
- * Before v22 the island had a network level, thin POIs, outposts on the front and the battle's
- * points: such a profile's POIs freed or thin are the player's and the others the enemy's
- * (`parseIsland()`), and the network, its pressure, the outposts and the battles on record are dropped.
- * Before v23 a raid with no stash weapon went out with weapons lent for it: such a profile's stash
- * gains the starter weapons (as every profile's does, `withStarters()`), and a last loadout of no
- * stash weapon picks them again (`recallLoadout()`).
- * Before v24 the world ended at x 600 and `cellOf()` cut it into fewer columns: such a profile's
- * explored map is dropped.
- * Before v25 the world began at x -600, and `cellOf()` counts its columns from there: such a
- * profile's explored map is dropped.
- * Before v26 no other player could hold a node: such a profile's POIs are the enemy's or the
- * player's, as saved (`parseIsland()` reads another player's standing only from v26).
- * Before v27 no expedition went out from the factory: such a profile has none out, has read none
- * of its island's log, and has no node taken back to report.
- * Before v29 no expedition was announced: such a profile knows of none coming.
- * Before v30 no parcel lay at a depot: such a profile holds none.
- * Before v31 the front intro quest did not exist: a save that already finished another intro
- * counts front done (unless front progress is under way).
- * Before v31 the front intro quest did not exist: such a profile that already finished another
- * intro counts front done (`withFrontMigrated()`). v31+ keeps front progress as saved.
- * Before v32 no trophies: such a profile starts at `TROPHY.start`.
- * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized to "own" | "foe" via parseIsland.
+ * Accepts a stored profile only if it has the right shape. Older versions migrate forward;
+ * v1–v33 fields `quests` / `board` / `taken` / `records` are ignored and dropped (v34).
+ * v1–v34 field `events` is ignored and dropped (v35).
+ * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1067,9 +941,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     if (x.t === "tool") return typeof x.kind === "string" && x.kind in TOOLS;
     return false;
   };
-  const q = (o.quests ?? {}) as Record<string, unknown>;
-  const progress: Record<string, number> = {};
-  if (q.progress && typeof q.progress === "object") for (const [k, n] of Object.entries(q.progress)) if (typeof n === "number" && QUEST_IDS.has(k)) progress[k] = n;
   const h = (o.hideout ?? {}) as Record<string, unknown>;
   const hideout = emptyHideout();
   for (const m of MODULES) if (Number.isInteger(h[m])) hideout[m] = Math.max(0, Math.min(HIDEOUT[m].levels.length, h[m] as number));
@@ -1082,8 +953,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
-  const recordIds = STORIES.map((t) => t.id);
-  const records = (typeof o.v === "number" && o.v >= 14) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
   const v17 = typeof o.v === "number" && o.v >= 17;
   const v19 = typeof o.v === "number" && o.v >= 19;
   const v20 = typeof o.v === "number" && o.v >= 20;
@@ -1097,20 +966,16 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
   const v27 = typeof o.v === "number" && o.v >= 27;
   const v28 = typeof o.v === "number" && o.v >= 28;
-  const doneRaw = Array.isArray(q.done) ? [...new Set(q.done.map((d) => (d === "power" ? "medbay" : d)))].filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : [];
-  // Before v31 the front intro did not exist: finish it for mid-game saves. v31+ keeps progress as saved.
-  const done = typeof o.v === "number" && o.v < 31 ? withFrontMigrated(doneRaw, progress) : doneRaw;
   const v32 = typeof o.v === "number" && o.v >= 32;
   const trophies = v32 && Number.isFinite(o.trophies) ? Math.max(TROPHY.min, Math.min(TROPHY.max, Math.floor(o.trophies as number))) : TROPHY.start;
-  const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 33,
+  // Old quests / board / taken / records / events are dropped without reading (save compat).
+  return {
+    v: 35,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
     extracted: num(o.extracted),
     time: num(o.time),
-    // The intro quest to build the generator, done, counts as the one to build the infirmary.
-    quests: { progress, done },
     region,
     entry,
     entries,
@@ -1135,19 +1000,10 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     cycle: v28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
     cycleDay: v28 && Number.isInteger(o.cycleDay) && (o.cycleDay as number) >= 1 ? Math.min(day, o.cycleDay as number) : 1,
     liberations: v28 && Array.isArray(o.liberations) ? o.liberations.filter((n): n is number => Number.isInteger(n) && n > 0).slice(-50) : [],
-    records,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
     freedAt,
   };
-  const events: DayEvents = (o.v === 16 || v17) && Array.isArray(o.events) && o.events.length === 2 ? [parseEvent(o.events[0]), parseEvent(o.events[1])] : [null, null];
-  if (o.v !== 16 && !v17) events[1] = eventFor(out.seed, day + 1);
-  const withEvents = { ...out, events };
-  // The day's board as saved, so it stands however the stash changed since; else the day's from now.
-  // A board saved before v22 may name a pack the enemy's strength does not fly, or a contract there no longer is: made anew.
-  const board = (typeof o.v === "number" && o.v >= 22 ? parseBoard(o.board, day) : null) ?? makeBoard(withEvents);
-  const taken = typeof o.taken === "string" && (board.contracts.some((c) => c.id === o.taken) || (o.taken === STORY_TAKEN && !!currentStory(records))) ? o.taken : null;
-  return { ...withEvents, board, taken };
 }
 
 /** A saved `lastKit`: well-formed picks only, at most two weapons and a key per POI; anything unreadable, none. */

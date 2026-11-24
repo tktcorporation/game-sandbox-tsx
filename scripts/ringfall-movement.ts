@@ -25,7 +25,6 @@ function emptyRun(x: number, z: number, yaw: number): State {
   s.reinforceT = 1e9;
   s.raiderT = 1e9;
   s.parties = [];
-  s.crewsDue = [];
   const p = s.player;
   p.pos = { x, y: groundAt(x, z, PLAYER.radius, terrainHeight(x, z) + 1), z };
   p.yaw = yaw;

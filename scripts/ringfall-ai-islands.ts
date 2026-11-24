@@ -93,7 +93,6 @@ if (aiIncoming(p, SALT, []).length !== 1) fail("the camp is not warned of the da
 const s = newRun(21, starterKit(), "reservoir", { island: holds(p), battle: { factory: 0, rivals: aiRivals(lent) } });
 s.reinforceT = s.raiderT = 1e9;
 s.parties = [];
-s.crewsDue = [];
 s.ally.active = false;
 const STATION = nodeIndex(shore);
 // The enemy's and the factory's squads leave the station to the expedition.

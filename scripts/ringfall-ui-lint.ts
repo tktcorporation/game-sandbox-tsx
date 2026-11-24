@@ -135,7 +135,7 @@ function lintOverrides() {
 /** An inline icon's class (`svg(body, "exit")`) must not be a class the stylesheet styles on its own: the icon would take that rule (a damage number's place, a card's box). */
 function lintIconClasses() {
   const css = readFileSync(CSS, "utf8");
-  for (const f of ["src/ringfall/view/icons.ts", "src/ringfall/view/events.ts"])
+  for (const f of ["src/ringfall/view/icons.ts"])
     readFileSync(f, "utf8")
       .split("\n")
       .forEach((l, i) => {

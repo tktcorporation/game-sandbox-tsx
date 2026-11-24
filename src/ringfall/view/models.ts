@@ -141,7 +141,7 @@ export const PAL = {
   coreShield: 0xff6a5a,
   /** A circuit board's solder-mask green. */
   board: 0x2f7a4a,
-  /** Safety orange: the breaching charge's case and the recorder's. */
+  /** Safety orange: the breaching charge's case. */
   hazard: 0xd8742c,
   /** The glow in the vents of a fallen piece of the ring. */
   ember: 0xff7a2a,
@@ -1546,9 +1546,9 @@ function lean(t: THREE.Group, g: THREE.Object3D): void {
  * medkit a white case with a red cross and a handle; each valuable its own object (a cartridge
  * fuse with blades, a gear on its block, a spool of copper, a board leant over, an upright drive,
  * a gimbal round a lit core, a lit column between two plates, a lit drum in a cage); the vault's key
- * a real key in its rarity's gold; the tools, the recorder, the mod part and the flares their own
- * shapes. The valuables, the armour, the key, the recorder and the mod part carry a part in their
- * rarity's colour, so the item itself says what the beam says. Parts of one material are merged.
+ * a real key in its rarity's gold; the tools, the mod part and the flares their own shapes. The
+ * valuables, the armour, the key and the mod part carry a part in their rarity's colour, so the
+ * item itself says what the beam says. Parts of one material are merged.
  */
 export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind, tool?: ToolKind): THREE.Group {
   const g = new THREE.Group();
@@ -1721,14 +1721,6 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     box(dark, 0.14, 0.1, 0.12, 0.05, 0.39, 0);
     put(new THREE.SphereGeometry(0.035, 6, 4), glow(PAL.healRed), 0.08, 0.46, 0);
     box(steel, 0.015, 0.22, 0.015, 0.0, 0.55, 0);
-  } else if (kind === "record") {
-    // A story record: an orange recorder case with dark bumpers at both ends, a carrying handle, a band of white tape and a lit read-out.
-    box(flat(PAL.hazard), 0.36, 0.24, 0.22, 0, 0.3, 0);
-    for (const x of [-0.195, 0.195]) box(dark, 0.045, 0.27, 0.25, x, 0.3, 0);
-    for (const x of [-0.1, 0.1]) box(dark, 0.04, 0.07, 0.04, x, 0.455, 0);
-    box(dark, 0.25, 0.04, 0.05, 0, 0.505, 0);
-    box(flat(PAL.paint), 0.36, 0.045, 0.225, 0, 0.23, 0);
-    box(lit, 0.16, 0.07, 0.02, 0, 0.34, -0.115);
   } else if (kind === "mod") {
     // A mod part: a hexagonal chip in a dark frame, its core lit in the rarity's colour, three steel clips,
     // stood up on edge so its face is seen from eye height, not only its rim.
@@ -1976,52 +1968,6 @@ export function buildDropship(): THREE.Group {
   }
   compact(g);
   return g;
-}
-
-/**
- * A piece of the ring come down (a debris fall's day): a few panels of the tether's pale composite
- * half buried and tilted in a scorched scar, their seams banded dark, their broken ends burnt, with
- * glowing cracks where it is still hot. Scenery only: nothing in it is solid (the sim knows only
- * the crate beside it), so the wreck never changes how the ground is walked. `vents` are where the
- * view lets smoke rise from, above the root.
- */
-export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] } {
-  const root = new THREE.Group();
-  // The scorched scar, in patches the view lays each on the ground under it (named "scar").
-  for (const [x, z, r] of [[0, 0, 5], [-4, 4, 4], [4, 3, 4], [-1, -5, 3.5], [5, -2, 3], [-6, -2, 3]] as const) {
-    const scar = mesh(new THREE.CircleGeometry(r, 9), flat(PAL.scorch), x, 0.06, z, false);
-    scar.rotation.x = -Math.PI / 2;
-    scar.receiveShadow = true;
-    scar.name = "scar";
-    root.add(scar);
-  }
-  const skin = flat(PAL.tether);
-  const rib = flat(PAL.tetherDark);
-  const burnt = flat(PAL.scorch);
-  const hot = glow(PAL.ember);
-  // [x, z, width, height, length, yaw, tilt]: one long panel buried at an angle, two shorter thrown beside it.
-  const panels: [number, number, number, number, number, number, number][] = [
-    [-1.5, -1, 4.6, 2.4, 13, 0.5, 0.42],
-    [4.6, 3, 3.2, 1.7, 6.4, -0.7, -0.28],
-    [-6, 4.4, 2.6, 1.4, 4.6, 1.4, 0.2],
-  ];
-  for (const [x, z, w, h, l, yaw, tilt] of panels) {
-    const g = new THREE.Group();
-    g.position.set(x, h * 0.45, z);
-    g.rotation.set(tilt, yaw, tilt * 0.6);
-    g.add(mesh(new THREE.BoxGeometry(w, h, l), skin));
-    for (let k = -1; k <= 1; k += 2) g.add(mesh(new THREE.BoxGeometry(w + 0.06, h + 0.06, 0.25), rib, 0, 0, (k * l) / 4));
-    // The broken end, burnt, with a hot seam across it.
-    g.add(mesh(new THREE.BoxGeometry(w * 1.02, h * 1.02, 0.4), burnt, 0, 0, l / 2));
-    g.add(mesh(new THREE.BoxGeometry(w * 0.7, 0.08, 0.06), hot, 0, h * 0.2, l / 2 + 0.21, false));
-    root.add(g);
-  }
-  // Clods thrown up round the scar.
-  for (let i = 0; i < 7; i++) {
-    const a = (i / 7) * Math.PI * 2 + 0.3;
-    root.add(mesh(new THREE.DodecahedronGeometry(0.45 + (i % 3) * 0.2, 0), burnt, Math.cos(a) * 10, 0.2, Math.sin(a) * 10));
-  }
-  return { root, vents: [new THREE.Vector3(1.2, 2.6, 5.5), new THREE.Vector3(5.8, 1.4, 5.8), new THREE.Vector3(-7.2, 1, 5.6), new THREE.Vector3(-2.5, 1.5, -4)] };
 }
 
 /**

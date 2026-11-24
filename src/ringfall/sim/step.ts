@@ -2,7 +2,7 @@ import { stepEnemies, stepFriends, stepOrbs, stepWaves } from "./enemies";
 import { finishBattle, stepBattle } from "./battle";
 import { stepPlayer, tickReveal } from "./player";
 import { stepAlly } from "./ally";
-import { stepCrews, stepDepots, stepEntries, stepExtract, stepHome, stepLoot, stepParties, stepPoi, stepReinforce } from "./world";
+import { stepDepots, stepEntries, stepExtract, stepHome, stepLoot, stepParties, stepPoi, stepReinforce } from "./world";
 import { TICK } from "./config";
 import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
@@ -14,7 +14,7 @@ const ended = (s: State) => s.phase === "done";
 
 /** The systems of a tick, in order, around the player's (first) and the loot's, which read the input. */
 const BEFORE_LOOT: ((s: State) => void)[] = [tickReveal, stepAlly, stepFactions, stepEnemies, stepFriends, stepOrbs, stepWaves];
-const AFTER_LOOT: ((s: State) => void)[] = [stepPoi, stepFront, stepBattle, stepReinforce, stepParties, stepMobiles, stepAmbush, stepSweep, stepCrews, stepExtract, stepDepots, stepHome, stepEntries, stepContacts];
+const AFTER_LOOT: ((s: State) => void)[] = [stepPoi, stepFront, stepBattle, stepReinforce, stepParties, stepMobiles, stepAmbush, stepSweep, stepExtract, stepDepots, stepHome, stepEntries, stepContacts];
 
 /** Advance the run by one fixed 1/60 s tick. Pure: no DOM, no clock, no Math.random. */
 export function step(s: State, input: Input, prevCrouch: boolean) {

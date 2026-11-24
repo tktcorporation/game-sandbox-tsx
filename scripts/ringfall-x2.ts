@@ -53,23 +53,24 @@ check(shortFreed, "plan: non-stage not cleared");
 const fullRival = NODES.filter((n) => held.includes(n.id)).every((n) => rivalOf(full!.island[n.id] ?? "foe") !== null);
 check(fullRival, "full plan still mirrors all owner nodes");
 
-// Notice: schedule then ready only after assaultNoticeSec (AI uses AI.coming minutes).
+// Notice: assaultNoticeSec is always 0 and assaultReady is always true (no wait window).
 {
   const now = 1_700_000_000_000;
   const { list, created } = scheduleAssault([], { code: a.code, node: target, units: 2, id: 1, now });
   check(!!created, "schedule: not created");
   check(created?.x2 === true, "schedule: not marked x2");
   check(assaultOf(list, a.code)?.state === "coming", "schedule: not coming");
-  check(!assaultReady(created!, true, now + 1000), "notice: ready too early");
-  check(assaultReady(created!, true, now + assaultNoticeSec(true) * 1000), "notice: not ready after window");
+  check(assaultNoticeSec(true) === 0 && assaultNoticeSec(false) === 0, "notice: assaultNoticeSec not 0");
+  check(assaultReady(created!, true, now), "notice: not ready immediately after schedule");
+  check(assaultReady(created!, false, now), "notice: not ready for real island immediately");
   // Own X2 notice must not close the target (Codex P1 busy).
-  const withNotice = aiView(a, salt, day, list, "", now + assaultNoticeSec(true) * 1000, []);
+  const withNotice = aiView(a, salt, day, list, "", now, []);
   const slot = withNotice.nodes.find((n) => n.id === target);
   check(!!slot?.open, "notice: target busy from own x2");
   check(!!planShortRaid(withNotice, target, { ai: true }), "notice: plan blocked by own x2");
 }
 
-// Real and AI neighbour fronts both count as X2 entrances; AI flag drives the notice clock.
+// Real and AI neighbour fronts both count as X2 entrances.
 {
   const real: NeighbourFront = { name: "となりの前線", x: 0, z: 0, shore: target, code: "ZZZZZZ" };
   const aiFront: NeighbourFront = { name: `${a.name}の前線`, x: 0, z: 0, shore: target, code: a.code, ai: true };
@@ -258,22 +259,24 @@ async function checkDepartAi() {
   check(!!mark, "depart: AI front mark missing");
   if (!mark) return;
   check(!!hub.choose("assault", mark.id), "depart: choose assault failed");
+  // No notice wait: first confirm schedules and returns ready with a plan.
   const first = await hub.departNeighbourFront(1_700_000_000_000);
-  check(first?.t === "scheduled", "depart: first confirm not scheduled");
+  check(first?.t === "ready", `depart: first confirm not ready (${first?.t})`);
+  if (first?.t === "ready") check(first.plan.stage.length > 0, "depart: first plan empty");
   const notice = assaultOf(hub.profile.expeditions, mark.id);
   check(!!notice?.node, "depart: notice missing node");
-  // Stale notice that stored a home shore must still become ready.
+  // Prior notice that stored a home shore must still become ready.
   const stale = scheduleAssault([], {
     code: mark.id,
     node: shores[0]!,
     units: 2,
     id: 9,
-    now: 1_700_000_000_000 - assaultNoticeSec(true) * 1000 - 1000,
+    now: 1_700_000_000_000,
   });
   const hub2 = new Hub({ ...p, expeditions: stale.list }, () => {});
   hub2.choose("assault", mark.id);
   const ready = await hub2.departNeighbourFront(1_700_000_000_000);
-  check(ready?.t === "ready", `depart: stale shore notice not ready (${ready?.t})`);
+  check(ready?.t === "ready", `depart: prior shore notice not ready (${ready?.t})`);
   if (ready?.t === "ready") check(ready.plan.stage.length > 0, "depart: ready plan empty");
   hub2.choose("entry", "beach");
   check((await hub2.departNeighbourFront()) === null, "depart: entry still departNeighbourFront");

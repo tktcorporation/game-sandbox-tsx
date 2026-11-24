@@ -1,5 +1,5 @@
 import { PLATE, STRENGTH, THREAT } from "./config";
-import { PACKS, POIS, REGIONS, regionHere, TIER, type DebrisId, type NodeId, type Squad } from "./map";
+import { PACKS, POIS, REGIONS, regionHere, TIER, type NodeId, type Squad } from "./map";
 import { mix } from "./state";
 
 /*
@@ -46,9 +46,3 @@ export const poiTier = (poi: number): number => TIER[POIS[poi]?.id as NodeId] ??
 
 /** Whether a grunt or heavy numbered `id` of a garrison of tier `tier` in a raid from `seed` wears that tier's plate (`PLATE.garrison`). */
 export const tierPlated = (seed: number, id: number, tier: number) => tier > 0 && (seeded(seed, 0x7b, id) % 10_000) / 10_000 < PLATE.garrison[tier];
-
-/** The day's island event (`EVENTS`), as a raid plays it: a piece of the ring down at a spot, a storm, or a salvage crew. */
-export type IslandEvent = { t: "debris"; spot: DebrisId } | { t: "storm" } | { t: "crews" };
-
-/** The salvage crews coming into the raid's starting region on a day with `event`. */
-export const crewsFor = (event: IslandEvent | null) => (event?.t === "crews" ? 1 : 0);

@@ -36,10 +36,10 @@ export function binMod(s: State, b: Bin): ModKind | null {
 
 /**
  * The mod part robot `e` drops as it falls this raid, of any kind, or null: the titan always, a
- * salvage crew's member or a raider (elite) with `MOD.elite`, any other with `MOD.robot`.
+ * raider (elite) with `MOD.elite`, any other with `MOD.robot`.
  */
 export function robotMod(s: State, e: Enemy): ModKind | null {
-  const base = e.kind === "titan" ? 1 : e.elite || s.squads[e.squad]?.crew ? MOD.elite : MOD.robot;
+  const base = e.kind === "titan" ? 1 : e.elite ? MOD.elite : MOD.robot;
   if (hashed(s.seed, 3, e.id) >= Math.min(1, chance(s, base))) return null;
   return pickKind(MOD_KINDS, hashed(s.seed, 4, e.id));
 }

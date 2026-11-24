@@ -1,7 +1,7 @@
 import { atRisk } from "../sim/battle";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { DUCK, ENEMIES, FRONT, PLAYER, STORM, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
+import { DUCK, ENEMIES, FRONT, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, GLOWS, NODES, ROUTES, ZIPS, type Box } from "../sim/map";
 import { zipUp } from "../sim/zips";
 import { frontNodes } from "../sim/front";
@@ -9,12 +9,12 @@ import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { LANDS, offshore, terrainHeight } from "../sim/terrain";
 import { groundColour, groundMat } from "./ground";
-import { bodyY, callLeft, debrisBin, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { bodyY, callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildFlareSmoke, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, still, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildFlareSmoke, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, still, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
 import { NeighbourIslands } from "./horizon";
@@ -81,10 +81,6 @@ const MATE_LIGHT = 0x6fd0cf;
 const PLATE_SPARK = 0xffc56a;
 /** Smoke from a robot below half its health and shield, and from a wreck. */
 const SMOKE = 0x3b3a3c;
-/** The ring's piece smokes paler than a wreck, so its column reads against the red rock from afar. */
-const DEBRIS_SMOKE = 0x77736e;
-const PUFF_LIFE = 5;
-const PUFF_GEO = new THREE.IcosahedronGeometry(1, 0);
 /** The shade baked into a chunk's merged statics (shade.ts). */
 const CHUNK_SHADE: ChunkShade = { cover: coverAt, floor: floorUnder, base: SHADE.wallBase, baseUp: SHADE.wallBaseUp };
 /** Where trim finds the floors, the cover and the ground its boxes stand on (trim.ts). */
@@ -232,10 +228,6 @@ export class World {
   private bins = new Map<number, ReturnType<typeof buildBin>>();
   /** The flare smoke over each bin that holds a flare, by bin id, until the bin is searched. */
   private flareSmoke = new Map<number, THREE.Mesh>();
-  /** The ring's piece on a debris fall's day, beside its crate, and the seconds to its next puff of smoke. */
-  private debris: (ReturnType<typeof buildRingDebris> & { smoke: number; puffs: { m: THREE.Mesh; t: number }[] }) | null = null;
-  /** The weather drawn: a storm brings the fog in and greys the light (`STORM`). */
-  private storm = false;
   private hemi = new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, LIGHT.sky);
   private orbPool: THREE.Group[] = [];
   private wavePool: THREE.Mesh[] = [];
@@ -977,25 +969,18 @@ export class World {
     this.shadowAt = -Infinity;
   }
 
-  /**
-   * The fog and the light for the weather drawn: the tier's on a clear day; in a storm the fog
-   * comes `STORM.fog` as near, greyed, and the sun is dimmed under the cloud while the sky's fill
-   * holds, so the day reads flat and grey. The view only: the robots' sight is the sim's.
-   */
+  /** The fog and the light for a clear day (the view only). */
   private applyWeather() {
     const fog = this.scene.fog as THREE.Fog;
-    const f = this.storm ? STORM.fog : 1;
-    // The storm's haze starts close: a fog far `STORM.fog` as near would leave mid-range ground clear.
-    fog.near = this.q.fogNear * (this.storm ? 0.15 : 1);
-    fog.far = this.q.fogFar * f;
-    fog.color.setHex(this.storm ? 0x9ea4a6 : LIGHT.haze);
-    this.sun.intensity = this.storm ? LIGHT.sun * 0.45 : LIGHT.sun;
-    this.hemi.color.setHex(this.storm ? 0xc3c8cc : 0xcfe9ff);
-    this.hemi.intensity = this.storm ? LIGHT.sky * 1.15 : LIGHT.sky;
-    // The clear sky gives way to the storm's cloud: the dome is hidden and the frame cleared to the fog's grey.
-    this.skyDome.visible = !this.storm;
-    this.scene.background = this.storm ? fog.color.clone() : null;
-    this.renderer.toneMappingExposure = this.storm ? LIGHT.exposure * 0.85 : LIGHT.exposure;
+    fog.near = this.q.fogNear;
+    fog.far = this.q.fogFar;
+    fog.color.setHex(LIGHT.haze);
+    this.sun.intensity = LIGHT.sun;
+    this.hemi.color.setHex(0xcfe9ff);
+    this.hemi.intensity = LIGHT.sky;
+    this.skyDome.visible = true;
+    this.scene.background = null;
+    this.renderer.toneMappingExposure = LIGHT.exposure;
   }
 
   /** Device pixels per CSS pixel the canvas is drawn at; the canvas keeps its size on the page. */
@@ -1378,10 +1363,6 @@ export class World {
     this.sun.target.position.set(fx, 0, fz);
 
     for (const c of this.clouds) c.visible = p.pos.y > 30;
-    if (s.storm !== this.storm) {
-      this.storm = s.storm;
-      this.applyWeather();
-    }
 
     this.cables.forEach((g, i) => (g.visible = zipUp(s, i)));
     this.syncRoutes();
@@ -1723,50 +1704,6 @@ export class World {
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
     }
     for (const m of this.entryMarks) near(m);
-    // The ring's piece lies beside the debris crate, smoking.
-    const crate = debrisBin(s);
-    if (crate && !this.debris) {
-      // A column of grey puffs over the wreck, each rising, swelling and thinning over `PUFF_LIFE` seconds.
-      const puffs = Array.from({ length: 14 }, () => {
-        const m = new THREE.Mesh(PUFF_GEO, new THREE.MeshLambertMaterial({ color: DEBRIS_SMOKE, transparent: true, opacity: 0, depthWrite: false, flatShading: true }));
-        m.visible = false;
-        return { m, t: PUFF_LIFE };
-      });
-      this.debris = { ...buildRingDebris(), smoke: 0, puffs };
-      for (const q of puffs) this.scene.add(q.m);
-      this.debris.root.position.set(crate.x - 9, crate.y, crate.z + 10);
-      this.debris.root.rotation.y = 0.4;
-      this.debris.root.updateMatrixWorld(true);
-      // Each scar patch lies on the ground under it, which slopes a little across the wreck.
-      for (const c of this.debris.root.children)
-        if (c.name === "scar") {
-          const w = c.getWorldPosition(new THREE.Vector3());
-          c.position.y = terrainHeight(w.x, w.z) - crate.y + 0.06;
-        }
-      this.scene.add(still(this.debris.root));
-    }
-    if (this.debris) {
-      const d = this.debris;
-      const seen = near(d.root);
-      if (seen && (d.smoke -= dt) <= 0) {
-        const q = d.puffs.find((o) => o.t >= PUFF_LIFE);
-        if (q) {
-          d.smoke = PUFF_LIFE / d.puffs.length;
-          q.t = 0;
-          q.m.position.copy(d.vents[Math.floor(Math.random() * d.vents.length)].clone().applyMatrix4(d.root.matrixWorld));
-          q.m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
-        }
-      }
-      for (const q of d.puffs) {
-        q.t = Math.min(PUFF_LIFE, q.t + dt);
-        const f = q.t / PUFF_LIFE;
-        q.m.visible = seen && f < 1;
-        q.m.position.y += dt * 1.6;
-        q.m.position.x += dt * 0.5;
-        q.m.scale.setScalar(0.8 + f * 2.6);
-        (q.m.material as THREE.MeshLambertMaterial).opacity = 0.55 * Math.min(1, f * 6) * (1 - f);
-      }
-    }
     this.depots.forEach((v, i) => {
       if (!near(v.root)) return;
       const on = !!s.depots[i];
@@ -2024,10 +1961,9 @@ export class World {
     extra.add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glow(PAL.orb, 0.35)));
     extra.add(new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), glow(PAL.orb)));
     extra.add(haloSprite(PAL.orb, 1, 0.5));
-    extra.add(new THREE.Mesh(PUFF_GEO, new THREE.MeshLambertMaterial({ color: DEBRIS_SMOKE, transparent: true, opacity: 0.5, depthWrite: false, flatShading: true })));
-    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "tool", "record", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse", "cutter"));
+    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "tool", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse", "cutter"));
     for (const heal of ["cell", "battery", "syringe", "medkit"] as const) extra.add(buildLootItem("heal", 1, undefined, heal));
-    extra.add(buildBin(false).root, buildBin(true).root, buildFlareSmoke(), buildRingDebris().root, buildCare(), buildDropship(), buildBoat());
+    extra.add(buildBin(false).root, buildBin(true).root, buildFlareSmoke(), buildCare(), buildDropship(), buildBoat());
     const guns = new THREE.Group();
     for (const kind of Object.keys(WEAPONS) as (keyof typeof WEAPONS)[]) guns.add(buildGun(kind, 1), buildHands(kind));
     const r = this.renderer;
@@ -2096,11 +2032,6 @@ export class World {
     this.bins.clear();
     for (const m of this.flareSmoke.values()) this.scene.remove(m);
     this.flareSmoke.clear();
-    if (this.debris) {
-      this.scene.remove(this.debris.root);
-      for (const q of this.debris.puffs) this.scene.remove(q.m);
-    }
-    this.debris = null;
     if (this.care) this.scene.remove(this.care);
     this.care = null;
     this.careBeam.visible = false;

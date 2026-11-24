@@ -18,7 +18,6 @@ const FINALE = {
   v: 28, cash: 9000, raids: 40, extracted: 30, time: 30000, region: "reservoir", entry: "beach", seed: 4242, day: 41, factory: 4,
   cycle: 1, cycleDay: 22, liberations: [21],
   stash: [], entries: ["beach", "checkpoint", "jetty"], depots: HELD, seen: "f".repeat(4000),
-  quests: { progress: {}, done: [] },
   poiState: Object.fromEntries(HELD.map((id) => [id, { state: "freed" }])),
 };
 
@@ -48,26 +47,6 @@ export async function finaleShots({ browser, port, out, errors }) {
   await pg.screenshot({ path: `${out}/141-finale-map.png` });
   await pg.keyboard.press("Escape");
   await pg.evaluate(() => window.advanceTime(200));
-  // Revival path: 依頼板 on — a contract taken starts at the round's 強度, and its row offers no 通常.
-  await pg.evaluate(() => {
-    window.ringfallFeatures.questBoard = true;
-  });
-  if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("quests")))) errors.push("finale: could not stand at the quest board");
-  await pg.evaluate(() => window.advanceTime(100));
-  await pg.keyboard.press("KeyE");
-  await pg.evaluate(() => window.advanceTime(400));
-  await pg.click('.contract button[data-act="take"]');
-  await pg.evaluate(() => window.advanceTime(200));
-  const row = await pg.evaluate(() => ({ tag: document.querySelector(".contract.taken .taken-tag")?.textContent ?? "", buttons: [...document.querySelectorAll(".contract.taken .strength .row button")].map((b) => b.textContent), on: document.querySelector(".contract.taken .strength .row button.on")?.textContent ?? "" }));
-  if (!/強度 1/.test(row.tag) || row.on !== "1" || row.buttons.join() !== "1,2,3,4,5") errors.push(`finale: the taken contract's 強度 reads ${JSON.stringify(row)}`);
-  await pg.screenshot({ path: `${out}/144-finale-board.png` });
-  await pg.click('.contract.taken button[data-act="take"]');
-  await pg.evaluate(() => window.advanceTime(200));
-  await pg.keyboard.press("Escape");
-  await pg.evaluate(() => window.advanceTime(200));
-  await pg.evaluate(() => {
-    window.ringfallFeatures.questBoard = false;
-  });
   // Out of the gate: the raid's objective is the titan.
   await pg.evaluate(() => window.ringfallCamp.toGate());
   await pg.keyboard.down("KeyW");
