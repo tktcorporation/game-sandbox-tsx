@@ -74,7 +74,7 @@ const entries: Entry[] = [
   // Every loot item buildLootItem draws: a dropped gun is the gun's model scaled, so it counts as a gun.
   ...WEAPONS.map((w): Entry => ({ id: `loot:${w}`, group: "gun", root: M.buildLootItem("weapon", 0, w) })),
   // The loot kinds with no table of their own (LootKind in sim/state.ts); a new one is added here.
-  ...(["armor", "key", "record", "mod", "flare", "shard"] as const).map((k): Entry => ({ id: `loot:${k}`, group: "loot", root: M.buildLootItem(k, 0) })),
+  ...(["armor", "key", "mod", "flare", "shard"] as const).map((k): Entry => ({ id: `loot:${k}`, group: "loot", root: M.buildLootItem(k, 0) })),
   ...keys(HEALS).map((h): Entry => ({ id: `loot:${h}`, group: "loot", root: M.buildLootItem("heal", 0, undefined, h) })),
   ...keys(VALUABLES).map((v): Entry => ({ id: `loot:${v}`, group: "loot", root: M.buildLootItem("valuable", 3, undefined, undefined, v) })),
   ...keys(TOOLS).map((t): Entry => ({ id: `loot:${t}`, group: "loot", root: M.buildLootItem("tool", 0, undefined, undefined, undefined, t) })),
@@ -608,7 +608,7 @@ const LOOT_SETS: Record<string, readonly string[]> = {
   heal: keys(HEALS).map((h) => `loot:${String(h)}`),
   valuable: keys(VALUABLES).map((v) => `loot:${String(v)}`),
   tool: keys(TOOLS).map((t) => `loot:${String(t)}`),
-  gear: ["loot:armor", "loot:key", "loot:record", "loot:mod", "loot:flare"],
+  gear: ["loot:armor", "loot:key", "loot:mod", "loot:flare"],
 };
 /** Where loot is mostly told apart from (the middle of models.md's "a few metres to 20 m"): outlines are compared on this distance's pixels. */
 const LOOT_DIST = 10;
@@ -623,7 +623,7 @@ const LOOT_APART = 0.3;
 /** Each loot kind (but the shield shard, a lone glint by design) has at least this many parts of READ_PX pixels or more at LOOT_FAR: a shape, not a block. */
 const LOOT_PARTS = 4;
 /** The kinds whose rarity the item itself shows (beside the beam): a part in the rarity's colour READ_PX pixels or more at LOOT_FAR. */
-const LOOT_RARITY: Record<string, number> = { "loot:armor": 0, "loot:key": 0, "loot:record": 0, "loot:mod": 0, ...Object.fromEntries(keys(VALUABLES).map((v) => [`loot:${String(v)}`, 3])) };
+const LOOT_RARITY: Record<string, number> = { "loot:armor": 0, "loot:key": 0, "loot:mod": 0, ...Object.fromEntries(keys(VALUABLES).map((v) => [`loot:${String(v)}`, 3])) };
 
 const lootPairs = Object.entries(LOOT_SETS).flatMap(([set, ids]) =>
   pairs(ids.map((id) => entries.find((e) => e.id === id)!), ["front", "side"], () => LOOT_DIST / PIXEL_PER_M, outline, outlinesApart).map((p) => ({ ...p, set })),
