@@ -28,7 +28,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 37;
+  v: 38;
   cash: number;
   stash: Item[];
   raids: number;
@@ -159,7 +159,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 37,
+    v: 38,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -917,13 +917,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * Accepts a stored profile only if it has the right shape. Older versions migrate forward;
  * v1–v33 fields `quests` / `board` / `taken` / `records` are ignored and dropped (v34).
  * v1–v34 field `events` is ignored and dropped (v35).
- * v1–v36 has nothing map-table-related on Profile to drop (the station was UI-only); accept saves and emit v37.
+ * v1–v36 has nothing map-table-related on Profile to drop (the station was UI-only); emit as current.
+ * v1–v37 has nothing vehicle-related on Profile to drop (camp vehicle was UI-only); accept saves and emit v38.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -970,8 +971,9 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const trophies = v32 && Number.isFinite(o.trophies) ? Math.max(TROPHY.min, Math.min(TROPHY.max, Math.floor(o.trophies as number))) : TROPHY.start;
   // Old quests / board / taken / records / events are dropped without reading (save compat).
   // v37: map table removed (no Profile fields to drop; stack consistency).
+  // v38: camp vehicle removed (no Profile fields to drop; stack consistency).
   return {
-    v: 37,
+    v: 38,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,

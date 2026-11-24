@@ -39,10 +39,8 @@ export async function finaleShots({ browser, port, out, errors }) {
   if (!/41 日目・2 周目/.test(head)) errors.push(`finale: the camp's day line reads "${head}"`);
   if (!/決戦/.test(card)) errors.push("finale: the camp's card does not name the decisive battle");
   await pg.screenshot({ path: `${out}/140-finale-camp.png` });
-  // The departure map: the pad ringed in gold (地図の机 deleted).
-  if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("vehicle")))) errors.push("finale: could not stand at the vehicle");
-  await pg.evaluate(() => window.advanceTime(100));
-  await pg.keyboard.press("KeyE");
+  // The departure map: the pad ringed in gold (地図の机・車両 deleted; open at the gate).
+  if (!(await pg.evaluate(() => window.ringfallCamp.openDepart()))) errors.push("finale: could not open the departure at the gate");
   await pg.evaluate(() => window.advanceTime(400));
   await pg.screenshot({ path: `${out}/141-finale-depart.png` });
   await pg.keyboard.press("Escape");

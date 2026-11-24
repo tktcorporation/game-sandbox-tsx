@@ -11,7 +11,8 @@ import { hypot2 } from "./hypot";
  * The camp between raids: the player and the teammate walk the yard (map.ts `CAMP`) with no
  * robots on the island, weapons lowered. Its state is a raid's (`newRun()`) emptied of robots,
  * loot and timers, so the view draws it as any other; it is never settled, and its clock stands.
- * A raid starts from it by walking out of the gate (`walkOut()`) or from the truck (a new raid).
+ * Walking out of the gate opens the departure map; confirming the south beach walks out
+ * (`walkOut()`), any other start fades in at that place.
  */
 
 /** The camp's state: the player waking in front of the tent with `kit` in hand, the teammate beside them. */
@@ -52,7 +53,7 @@ export function stepCamp(s: State, input: Input, prevCrouch: boolean) {
 export const outOfCamp = (s: State) => !inCamp(s.player.pos);
 
 /**
- * The station or truck the use key acts on where the player stands: among those in reach,
+ * The station the use key acts on where the player stands: among those in reach,
  * the one looked at more beats a closer one behind the back (same facing cut as `USE.face`).
  */
 export function campSpotAt(at: { x: number; z: number; yaw?: number }): CampSpot | null {

@@ -4,7 +4,7 @@
 
 関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[glossary.md](glossary.md)（プレイヤー向け用語の正本）、[multiplayer-experience.md](multiplayer-experience.md)（マルチ体験の一本化）、[game-design-review.md](game-design-review.md)（楽しさ・進行・動機の点検・実装前）、[simplify-candidates.md](simplify-candidates.md)（簡素化の候補と決定・依頼板／反応型守り／島の出来事／夜の襲撃削除）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[warehouse.md](warehouse.md)（倉庫のレベル）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
 
-**簡素化の決定（要約・2026-11-24）:** 外した機能はコードごと削除する（`FEATURES` フラグは使わない）。復活は Git 履歴（削除直前のコミット）から。依頼板（入門・今日の依頼・物語）、反応型の対人守り（来る遠征の予告→核で固めるの迎撃 UI）、島の出来事（破片の落下・嵐・回収部隊）、**夜の襲撃**（今夜の狙い・日をまたいでの拠点喪失）、**地図の机**は削除済み（PR1〜4）。来る遠征向けの固める（非同期の閉門）は残す。出撃・島眺めは **車両**、トロフィー・島の知らせ・島の守りは **信号所**。詳細は [simplify-candidates.md](simplify-candidates.md) §0／§0b／§0c／§0d／§0e、[pvp-clarity.md](pvp-clarity.md)。
+**簡素化の決定（要約・2026-11-24）:** 外した機能はコードごと削除する（`FEATURES` フラグは使わない）。復活は Git 履歴（削除直前のコミット）から。依頼板（入門・今日の依頼・物語）、反応型の対人守り（来る遠征の予告→核で固めるの迎撃 UI）、島の出来事（破片の落下・嵐・回収部隊）、**夜の襲撃**（今夜の狙い・日をまたいでの拠点喪失）、**地図の机**は削除済み（前スタック PR1〜4）。**出撃の入口は門だけ**（車両の出撃導線・設備は削除）。来る遠征向けの固める（非同期の閉門）は当面残す（続くスタックで削除予定）。出撃・島眺めは **門**、トロフィー・島の知らせ・島の守りは **信号所**。詳細は [simplify-candidates.md](simplify-candidates.md) §0／§0b／§0c／§0d／§0e／§0f、[pvp-clarity.md](pvp-clarity.md)。
 
 用語の約束: プレイヤーが画面で見ない内部名（depot / pad / parcel など）を、UI・PR・報告・この文書のプレイヤー向け説明に使わない。荷物を送る場所は brief どおり **中継ボックス**。画面に出す語は [`src/ringfall/view/copy.ts`](../src/ringfall/view/copy.ts) と [glossary.md](glossary.md) を正とする（`npm run lint:ringfall-copy`）。
 
@@ -124,7 +124,7 @@ RINGFALL は一人称の PvE レイドを持つが、長期の軸は「島の前
 | --- | --- |
 | 中継ボックスは「倉庫へ送る」か「切り上げて生還」のどちらか（バッグの状態で決まる） | 同じ箱で送る／援助／拾う／印を付けるを並べる |
 | 核は制圧（と、自分の拠点なら固める） | 核の周りにマルチ専用の別操作を足す |
-| 信号所は島の知らせ・お隣・トロフィー。攻めは地図。出撃は車両／門だけ | 信号所に「遠征に出す」「出撃」を並べて攻める入口を分裂させる |
+| 信号所は島の知らせ・お隣・トロフィー。攻めは地図。出撃は門だけ | 信号所に「遠征に出す」「出撃」を並べて攻める入口を分裂させる |
 | 場所ごとに「表示名／できること／結果」が言える | 「ここは便利なハブ」として機能を詰め込む |
 
 詳細な場所表は [ux-design.md](ux-design.md)。マルチの一本化は [multiplayer-experience.md](multiplayer-experience.md)（**案 A 採用**）。

@@ -103,7 +103,7 @@ Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
 emptied of robots, its clock standing) and its step (`stepCamp()`: walking only, weapons lowered).
 Its stations (shelves, stall, workshop, factory, and the signal station, 信号所, where everything to do with the other islands is — trophies, island news, island defence) open the panels of `view/hub.ts` by
-the use key. The quest board (依頼板: intro / day contracts / story) was **removed** (code deleted 2026-11-24; revive from Git history, not a feature flag). Walking out of the gate and the use key at the truck by it both open the departure
+the use key. The quest board (依頼板: intro / day contracts / story) was **removed** (code deleted 2026-11-24; revive from Git history, not a feature flag). Walking out of the gate opens the departure
 (`view/depart.ts`, `#depart`): the island drawn whole with every start on it (`Hub.startPoints()`:
 known ways in as solid rings, ways in not known yet dashed and shut, depots switched on as teal
 squares with their allowance as small boxes, red past it, a padlock on a region no raid may start
@@ -139,7 +139,7 @@ The quest board (入門／今日の依頼／物語の依頼, `meta/quests.ts` / 
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 37), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 38), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -149,13 +149,13 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`; a save from before v35 drops `events`; a save from before v36 has nothing night-related on Profile to drop — night was ephemeral; a save from before v37 has nothing map-table-related on Profile — the station was UI-only — and is accepted as v37 for stack consistency) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`; a save from before v35 drops `events`; a save from before v36 has nothing night-related on Profile to drop — night was ephemeral; a save from before v37 has nothing map-table-related on Profile — the station was UI-only; a save from before v38 has nothing vehicle-related on Profile — the camp vehicle was UI-only — and is accepted as v38 for stack consistency) and moves its
 start to one it may choose (`allowedStart()`).
 Island day events (破片の落下 / 嵐 / 回収部隊: `EVENTS`, `DEBRIS`, `STORM`, `CREW`, `Profile.events`)
 were removed 2026-11-24 without feature flags (restore from Git history before that PR). Night raids
 (今夜の狙い / `nightTargets()` / `nightRaids()` / `NIGHT` / `tonight()` / `Battle.targets`) were
 removed the same day in PR3 the same way; the map table (地図の机) was removed in PR4 the same way
-(island overview on the departure / 車両; trophies, island news and island defence on 信号所; radio report on the shelves).
+(island overview on the departure / 門; trophies, island news and island defence on 信号所; radio report on the shelves).
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
 leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`) and the explored map (`Profile.seen`);

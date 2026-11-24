@@ -16,7 +16,6 @@ export type TermId =
   | "workshop"
   | "factory"
   | "signal"
-  | "vehicle"
   | "gate"
   | "relayBox"
   | "warehouse"
@@ -62,7 +61,6 @@ export const TERM = {
   workshop: "作業場",
   factory: "工場",
   signal: "信号所",
-  vehicle: "車両",
   gate: "門",
   relayBox: "中継ボックス",
   warehouse: "倉庫",
@@ -119,7 +117,8 @@ export const PHRASE = {
   /** 倉庫 capacity: raise from the shelves where the count is seen. */
   nextStashRaise: `${TERM.nextHand}${TERM.stashShelf} · ${TERM.raiseLevel}`,
   nextFactoryRaise: `${TERM.nextHand}${TERM.factory} · ${TERM.raiseLevel}`,
-  nextVehicleOrGate: `${TERM.nextHand}${TERM.vehicle}か${TERM.gate}から${TERM.sortie}`,
+  /** Departure opens only at the gate (車両 deleted 2026-11-24). */
+  nextGate: `${TERM.nextHand}${TERM.gate}から${TERM.sortie}`,
   sortieDo: `${TERM.sortie}する`,
   factoryRaiseReady: `${TERM.factory} · ${TERM.raiseLevelReady}`,
   sideWorkshop: TERM.workshop,
@@ -145,17 +144,17 @@ export function expeditionSentTo(place: string): string {
 }
 
 export function nextFront(name: string): string {
-  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name}`;
+  return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${TERM.front}：${name}`;
 }
 
 /** First sessions: same as nextFront, with 核 · 制圧 so the line's middle is named. */
 export function nextFrontCapture(name: string): string {
-  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name} · ${TERM.captureCore}`;
+  return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${TERM.front}：${name} · ${TERM.captureCore}`;
 }
 
 /** Next-hand line for a rival hold on the front (E4: 攻める). */
 export function nextAttack(name: string): string {
-  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.attack}`;
+  return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${name}を${TERM.attack}`;
 }
 
 /**
@@ -168,7 +167,7 @@ export function assaultFortified(name: string): string {
 
 /** 次の一手: 短いレイド出撃が可能になったときの表示。 */
 export function nextShortRaid(name: string): string {
-  return `${TERM.nextHand}${TERM.vehicle}から${TERM.shortRaid} · ${name}を${TERM.attack}`;
+  return `${TERM.nextHand}${TERM.gate}から${TERM.shortRaid} · ${name}を${TERM.attack}`;
 }
 
 export function moduleRaiseReady(moduleName: string): string {

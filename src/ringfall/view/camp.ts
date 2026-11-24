@@ -1,25 +1,18 @@
 import { CAMP, type CampSpot, type StationId } from "../sim/map";
-import { TERM } from "./copy";
-import { tipIsDefence } from "./hub";
-import { startIcon } from "./icons";
 import type { State } from "../sim/state";
+import { tipIsDefence } from "./hub";
 import type { World } from "./world";
 
 /*
  * The camp's overlay (DOM): each station's name floating over it with its mark when it has
- * something to act on, the use key's prompt for the station or the truck in reach, and the
- * credits in a corner. It reads the camp's state and never changes it.
+ * something to act on, the use key's prompt for the station in reach, and the credits in a
+ * corner. It reads the camp's state and never changes it. Walking out of the gate opens the
+ * departure (main.ts); stations only open their panels.
  */
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/**
- * Metres past which the truck's name is no longer shown. Other stations only show when the
- * player is in (or just arriving at) their use reach — otherwise the yard fills with labels
- * (docs/ringfall/ux-design.md).
- */
-const VEHICLE_LABEL_FAR = 40;
 /** How far past a station's `reach` an arriving player still sees its name. */
 const LABEL_ARRIVE = 1.35;
 /** Pixels kept between two stations' names. */
@@ -32,7 +25,7 @@ export class CampView {
     const root = $("camp-labels");
     for (const c of CAMP.spots) {
       const el = document.createElement("div");
-      el.className = `camp-label${c.id === "vehicle" ? " vehicle" : ""}`;
+      el.className = "camp-label";
       el.innerHTML = `<b>${esc(c.name)}</b><span></span>`;
       root.appendChild(el);
       this.labels.set(c.id, el);
@@ -67,9 +60,9 @@ export class CampView {
       const el = this.labels.get(c.id)!;
       const d = Math.hypot(c.x - eye.x, c.z - eye.z);
       const at = world.project({ x: c.x, y: c.y + c.top, z: c.z }, w, h);
-      const mark = c.id === "vehicle" ? "" : o.marks[c.id];
-      // Truck: far enough to find the gate. Others: only in reach / arriving, or marked and a short walk away.
-      const far = c.id === "vehicle" ? VEHICLE_LABEL_FAR : Math.max(c.reach * LABEL_ARRIVE, mark ? 12 : 0);
+      const mark = o.marks[c.id];
+      // Only in reach / arriving, or marked and a short walk away — otherwise the yard fills with labels.
+      const far = Math.max(c.reach * LABEL_ARRIVE, mark ? 12 : 0);
       if (at.behind || d > far || at.x < -60 || at.x > w + 60 || at.y < -30 || at.y > h + 30) {
         el.style.display = "none";
         continue;
@@ -122,10 +115,8 @@ export class CampView {
     }
     const key = o.touch ? "" : "<kbd>E</kbd>";
     let prompt = "";
-    // The truck opens the departure, as the gate does.
-    if (o.near?.id === "vehicle") prompt = `${key}${startIcon()}${TERM.sortie}`;
-    else if (o.near) prompt = `${key}${esc(o.near.name)}`;
-    // No station in reach: a short next-step tip (first day / incoming), not a second card.
+    if (o.near) prompt = `${key}${esc(o.near.name)}`;
+    // No station in reach: a short next-step tip (first day / next hand), not a second card.
     else if (!o.panel && o.tip) {
       // One beat when the tip is defend / attack (来る遠征・攻める) — juice only.
       const beat = tipIsDefence(o.tip) ? " tip-beat" : "";
@@ -134,6 +125,6 @@ export class CampView {
     $("camp-prompt").innerHTML = prompt;
     const use = $("t-use");
     use.hidden = !o.near;
-    if (o.near) use.querySelector("b")!.textContent = o.near.id === "vehicle" ? TERM.sortie : o.near.name;
+    if (o.near) use.querySelector("b")!.textContent = o.near.name;
   }
 }
