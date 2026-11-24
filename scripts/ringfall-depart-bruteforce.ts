@@ -142,7 +142,7 @@ async function simulateDepart(hub: Hub): Promise<{ ok: boolean; kind: string; de
   const gap = await hub.gapDepart();
   if (on.kind === "assault") {
     if (!gap) return { ok: false, kind: "assault-no-gap", detail: on.name };
-    // Hard fail: ready path could not pick any raidable node (fortified / empty).
+    // Hard fail: ready path could not pick any raidable node (unavailable / empty).
     if (gap.t === "waiting" && gap.toast.includes("攻められない")) {
       return { ok: false, kind: "unraidable", detail: gap.toast };
     }

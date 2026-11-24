@@ -4,8 +4,6 @@
  *
  * - **take**: an expedition lands at the pad and takes a node of the player's nobody defends; the
  *   next day the node is that player's.
- * - **fortified**: the node an expedition is sent at is announced and can be fortified; fortified, the
- *   expedition stands at its core and takes nothing, in the world and in numbers.
  * - **transit**: an expedition sent two links on walks through a node of the player's without
  *   coming at it (no threat, no capture, never the battle's focus there) and takes the node it was
  *   sent to; with the factory's turrets standing at the nodes on its way, it fights them as it passes.
@@ -26,7 +24,7 @@
  */
 import { CONQUEST, FACTORY_TOP, STRENGTH, TICK, type EnemyKind } from "../src/ringfall/sim/config";
 import { NODES, nodeIndex, POIS, type NodeId } from "../src/ringfall/sim/map";
-import { CAMP_NEXT, enemyNodes, fortifiable, frontNodes, ownNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
+import { CAMP_NEXT, enemyNodes, frontNodes, ownNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
 import { battleFocus, finishBattle, nodePoint, rivalRoute, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
 import { reckonApart, reckonCaptures, type ReckonSquad } from "../src/ringfall/sim/reckon";
 import { rivalHold } from "../src/ringfall/sim/holds";
@@ -88,8 +86,6 @@ export interface Rivals {
   transit: { t: number; threats: number; focus: number; turret: number };
   /** The expedition's last stop before its target, watched in the world: the node, the seconds its robots were there in the world, and the threats raised there. */
   watched: { node: string; seen: number; threats: number };
-  /** The battle's seconds the fortified relay stood against the expedition that took it unfortified, its squad at the core. */
-  fortified: number;
   /** Seconds to the factory's squads taking the relay back, or -1. */
   retake: number;
   /** The enemy's strength with `at` nodes its own (the fewest for its next level), and with one of them another player's instead. */
@@ -101,7 +97,7 @@ export interface Rivals {
 }
 
 export function rivalsRun(): { err: string | null; r: Rivals } {
-  const r: Rivals = { take: -1, fortified: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, watched: { node: "", seen: 0, threats: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, pure: -1, two: [-1, -1] };
+  const r: Rivals = { take: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, watched: { node: "", seen: 0, threats: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, pure: -1, two: [-1, -1] };
   const fail = (err: string) => ({ err: `rivals: ${err}`, r });
 
   // take: the relay (next to the pad) is the player's, defended by nobody, and an expedition lands for it.
@@ -118,20 +114,6 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   if (after.profile.poiState.relay.state !== rivalHold(OWNER)) return fail(`the next day the relay is ${after.profile.poiState.relay.state}`);
   if (after.raid.lost.join() !== "relay" || after.front.lost.join() !== "relay") return fail(`the day's changes read ${JSON.stringify({ raid: after.raid, front: after.front })}`);
   if (!frontNodes(NODES.map((n) => after.profile.poiState[n.id].state))[RELAY]) return fail("the relay another player took is not on the front the next day");
-
-  // fortified: the same expedition, the relay fortified (`FORTIFY`). The node it is sent at is announced and can be
-  // fortified; fortified, its squad stands at the core and takes nothing.
-  const ft = raid(tp, { factory: 0, rivals: [{ owner: OWNER, target: "relay", kinds: ["grunt", "grunt", "grunt"], at: 5 }] });
-  quiet(ft.battle!);
-  if (!ft.battle!.noticed.includes(RELAY) || !fortifiable(ft, RELAY) || fortifiable(ft, SUP)) return fail("the node an expedition is sent at is not the one to fortify");
-  ft.battle!.fortified.push(RELAY);
-  if (fortifiable(ft, RELAY)) return fail("a fortified node can be fortified again");
-  const stood = r.take + 2 * CONQUEST.capture + 60;
-  until(ft, stood, () => ft.nodes[RELAY] !== "own");
-  if (ft.nodes[RELAY] !== "own") return fail(`the fortified relay fell to the expedition (${ft.nodes[RELAY]})`);
-  if (!ft.battle!.squads.some((q) => q.side === 3 && q.to === RELAY)) return fail("the expedition at the fortified relay is gone");
-  r.fortified = stood;
-  if (raid(tp, { factory: 0 }).battle!.noticed.length) return fail("a battle with no expedition announces one");
 
   // transit: the supply depot, two links from the pad, through the player's quarry or relay (both undefended); the expedition walks through and takes the depot only.
   const xp = island(["supply", "quarry", "relay"]);
@@ -252,14 +234,6 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   }
   if (f.holds[0] !== rivalHold(OWNER) || r.pure !== Math.ceil(CONQUEST.capture / CONQUEST.tick) || f.squads[0].task !== "hold") return fail(`the reckoning in numbers left the node ${f.holds[0]} after ${r.pure} calls, its squad ${f.squads[0]?.task}`);
 
-  // The same in numbers with the node shut (fortified): the meter never fills for another player's squad.
-  let shut = { holds: ["own", "foe"] as State["nodes"], squads: [plain], guards: [[], []], present: [null, null], meter: [null, null] as Battle["meter"], threat: [false, false], shut: [true, false] };
-  for (let k = 1; k <= 60; k++) {
-    const out = reckonCaptures(shut, CONQUEST.tick);
-    shut = { ...shut, holds: out.holds, squads: out.squads, meter: out.meter, threat: out.threat };
-  }
-  if (shut.holds[0] !== "own" || shut.meter[0]) return fail(`a shut node in numbers was left ${shut.holds[0]}, its meter ${JSON.stringify(shut.meter[0])}`);
-
   // two expeditions: A (owner a) takes node 0, which B (owner b) only passes through on its way to node 1; B keeps
   // coming for node 1 and, once it stands there, takes it. In numbers, as a server would reckon them.
   const grunt = () => ({ kind: "grunt" as EnemyKind, hp: 100, shield: 0 });
@@ -290,7 +264,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
 
   // saves: a v26 save keeps another player's node; a v25 one reads it as the enemy's.
   const kept = parseProfile(JSON.parse(JSON.stringify(after.profile)));
-  if (!kept || kept.v !== 37 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
+  if (!kept || kept.v !== 39 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
   const old = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 25 })));
   if (!old || old.poiState.relay.state !== "foe") return fail(`a v25 save loaded the relay as ${old?.poiState.relay.state}`);
   const bad = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, poiState: { ...after.profile.poiState, relay: { state: "rival:" } } })));
@@ -317,7 +291,6 @@ export function checkRivals(): string | null {
 if (process.argv[1]?.endsWith("ringfall-rivals.ts")) {
   const { err, r } = rivalsRun();
   console.log(`take: the undefended relay fell to the expedition (set off at 5 s) ${r.take} s into the battle`);
-  console.log(`fortified: the relay, fortified, stood ${r.fortified} s against the same expedition`);
   console.log(`transit: the supply depot fell to the expedition ${r.transit.t} s into the battle; ${r.transit.threats} threats, ${r.transit.focus} steps of the battle's focus and no capture at the player's quarry and relay on its way`);
   console.log(`watched: the expedition's robots stood ${r.watched.seen} s by the ${r.watched.node}'s core in the world on their way on, raising ${r.watched.threats} threats there`);
   console.log(`turrets on the way: the expedition took ${r.transit.turret} health off the factory's turrets at the nodes it passed`);

@@ -22,7 +22,7 @@ import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultRep
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
-import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
+import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import type { IncursionPlan } from "./meta/incursion";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -84,7 +84,7 @@ let state: State = newRun(Date.now() & 0xffff);
 let running = false;
 /** The player is in the camp between raids (`state` is the camp's). */
 let camping = false;
-/** The truck's fade to a raid is under way. */
+/** A fade to a raid start away from the gate is under way. */
 let fading = false;
 let paused = false;
 let manual = false; // automation drives time through advanceTime()
@@ -337,7 +337,6 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   const from = who.code ? { code: who.code, name: who.name } : { code: "local", name: who.name };
   const raid = {
     lent: lentResults(raidLent, settled.battle),
-    fortified: fortifiedNodes(settled.battle),
     // Defence stock from deposits this raid (silent; no separate "aid" verb).
     parcels: who.code ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
@@ -570,15 +569,15 @@ const picker = new DepartPicker(hub, () => answerDepart(true));
 $("title-row").innerHTML = nodeRow(islandHolds(hub.profile));
 
 /**
- * The departure, while it is up: its map of starts, the kit and the confirm. Opened at the gate on
- * foot (`walk`, where the player stands now; `back` is the last place inside the yard, for a
- * cancel) or at the truck. Either way the start is the one chosen on the map.
+ * The departure, while it is up: its map of starts, the kit and the confirm. Opened by walking
+ * out of the gate (`walk`; `back` is the last place inside the yard, for a cancel). The start is
+ * the one chosen on the map.
  */
 let departing: { walk: boolean; back: { x: number; y: number; z: number; yaw: number } | null } | null = null;
 /** The last place inside the camp's yard the player stood, for turning back from the gate. */
 let inside: { x: number; y: number; z: number; yaw: number } | null = null;
 
-/** The camp stands still while a station's panel, the departure's check or the truck's fade is up. */
+/** The camp stands still while a station's panel, the departure's check or a start fade is up. */
 const campFrozen = () => hub.station !== null || departing !== null || fading;
 
 /** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
@@ -675,7 +674,7 @@ function askDepart(walk: boolean) {
     // A newer departure asks for itself, and the island answers it with the same lease.
     if (!r.ok || leaseReq !== req) return;
     if (req.on === "open") lease = r.body;
-    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut)) {
+    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions))) {
       raidLent = r.body.expeditions;
       hud.addRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
     }
@@ -689,9 +688,9 @@ function askDepart(walk: boolean) {
 }
 
 /**
- * The departure answered: out into the raid, or back into the yard facing it (from the gate). A
- * start at the gate's own way in walks out where the player stands; any other start, or one from
- * the truck, comes after a fade. A depot the loadout does not fit cannot be departed from.
+ * The departure answered: out into the raid, or back into the yard facing it. A start at the
+ * gate's own way in walks out where the player stands; any other start comes after a fade. A
+ * depot the loadout does not fit cannot be departed from.
  */
 async function answerDepart(go: boolean) {
   const d = departing;
@@ -747,12 +746,11 @@ function ride(incursion?: IncursionPlan) {
   }, 480);
 }
 
-/** The use key in the camp: the panel of the station in reach, or the truck. */
+/** The use key in the camp: the panel of the station in reach. */
 function useInCamp() {
   const spot = campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
   if (!spot) return;
-  if (spot.id === "vehicle") askDepart(false);
-  else openPanel(spot.id);
+  openPanel(spot.id);
 }
 
 function campTick() {
@@ -770,8 +768,8 @@ function campTick() {
 function campFrame() {
   const near = campFrozen() ? null : campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
   const p = hub.profile;
-  // One next hand on the line (design-direction): grow the base if ready, else sortie.
-  const tip = p.raids === 0 ? "車両か門から出撃" : hub.nextHand().replace(/^次：/, "");
+  // One next hand on the line (design-direction): grow the base if ready, else sortie at the gate.
+  const tip = p.raids === 0 ? `${TERM.gate}から${TERM.sortie}` : hub.nextHand().replace(/^次：/, "");
   campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
 }
 
@@ -837,13 +835,12 @@ function start(go: Launch, from?: State) {
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
     // 短いレイド: 自島バトルなし（ステージは他島コピーの数拠点）
-    battle: shortRaid
+        battle: shortRaid
       ? undefined
       : {
           factory: hub.profile.factory,
           away: squadsAway(hub.profile),
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
-          shut: lent?.shut,
         },
     finale: shortRaid ? false : finaleOpen(hub.profile),
     ...(shortRaid
@@ -1112,6 +1109,7 @@ declare global {
       wake: () => { x: number; z: number; yaw: number };
       walkTo: (id: CampSpot["id"]) => boolean;
       toGate: () => void;
+      openDepart: () => boolean;
       use: () => void;
       open: (id: StationId) => boolean;
       close: () => void;
@@ -1608,10 +1606,10 @@ window.ringfallEnd = (how, haul = [], found = []) => {
 };
 
 /**
- * Automation only: the camp. `walkTo` stands the player within reach of a station or the truck,
- * facing it, on the side toward the yard's middle (false out of the camp); `toGate` stands them
- * just inside the gate facing out; `use` presses the use key where they stand; `open` and `close`
- * open and close a station's panel.
+ * Automation only: the camp. `walkTo` stands the player within reach of a station, facing it, on
+ * the side toward the yard's middle (false out of the camp); `toGate` stands them just inside the
+ * gate facing out; `openDepart` opens the departure as walking out of the gate would; `use`
+ * presses the use key where they stand; `open` and `close` open and close a station's panel.
  */
 window.ringfallCamp = {
   spots: () => CAMP.spots,
@@ -1654,6 +1652,22 @@ window.ringfallCamp = {
     p.pitch = 0;
     p.onGround = true;
     placeAlly(state);
+  },
+  /** Opens the departure as walking out of the gate would (shots / automation). */
+  openDepart: () => {
+    if (!camping || departing) return false;
+    const p = state.player;
+    const x = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
+    const z = CAMP.gate.z + 3;
+    p.pos = { x, y: groundAt(x, z, 0.4, CAMP.y + 0.5), z };
+    p.vel = { x: 0, y: 0, z: 0 };
+    p.yaw = 0;
+    p.pitch = 0;
+    p.onGround = true;
+    placeAlly(state);
+    inside = { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw };
+    askDepart(true);
+    return true;
   },
   use: () => camping && !campFrozen() && useInCamp(),
   open: (id) => camping && openPanel(id),

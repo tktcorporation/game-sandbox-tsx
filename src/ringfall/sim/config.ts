@@ -586,14 +586,6 @@ export const FINALE = { nodes: 16, threat: 1 };
  */
 export const MOMENTUM = { max: 3, factory: 0.8, clock: 0.85, spoils: [600, 1200, 2000] };
 
-/**
- * Fortifying (固める): the use key at the core of a node of the player's that another player's
- * expedition is sent at (`Battle.noticed`) starts a meter that fills over `time` seconds while
- * the player stands on the core's ground (`FRONT.radius`) with no robot on it. Full, the node is
- * shut to those expeditions for the rest of the raid and for a day on the server.
- */
-export const FORTIFY = { time: 20 };
-
 /** What building a level of the factory takes from the stash, as a hideout module's level does (`ModuleLevel`). */
 export interface FactoryCost {
   items: [ValuableKind, number][];

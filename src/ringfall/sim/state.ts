@@ -512,10 +512,6 @@ export type GameEvent =
   | { t: "coreStart"; node: number }
   /** The raid's momentum rose to `level` (`MOMENTUM`). */
   | { t: "momentum"; level: number }
-  /** The player starts fortifying a node of theirs marked for the night (`FORTIFY`). */
-  | { t: "fortifyStart"; node: number }
-  /** The player has fortified a marked node (`FORTIFY`). */
-  | { t: "fortified"; node: number }
   /** A wave of a core's siege is announced (its beam stands at x, z; wave `wave` of `of`), and its squad steps out. */
   | { t: "siegeWarn"; node: number; x: number; z: number; wave: number; of: number }
   | { t: "siegeLand"; x: number; z: number }
@@ -704,8 +700,6 @@ export interface State {
   home: boolean;
   /** The decisive battle is on (`Start.finale`). */
   finale: boolean;
-  /** The fortifying under way (`FORTIFY`): the node, the seconds of its meter filled, and whether it filled this tick; null for none. */
-  fortify: { node: number; t: number; held: boolean } | null;
   /** Who holds each node of the front (`NODES` order) this raid: as the island stood at the start, then as it changes hands. */
   nodes: NodeHold[];
   /**
@@ -1094,7 +1088,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     nodes,
     capture: null,
     finale: !!start.finale,
-    fortify: null,
     contacts: [],
     factionT: 0,
     contactT: 0,

@@ -22,7 +22,7 @@ import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { PHRASE, TERM, assaultFortified, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
+import { PHRASE, TERM, assaultUnavailable, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -91,14 +91,14 @@ export function nextHandFor(p: Profile): string {
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
   if (teachFrontCapture(p)) {
     const pick = frontPickFor(p);
-    return pick ? nextFrontCapture(pick.name) : PHRASE.nextVehicleOrGate;
+    return pick ? nextFrontCapture(pick.name) : PHRASE.nextGate;
   }
   if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
   // 倉庫 capacity is raised at the shelves; tip there when that level is ready.
   if (canBuild(p, "storage")) return PHRASE.nextStashRaise;
   if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
   const pick = frontPickFor(p);
-  return pick ? nextFront(pick.name) : PHRASE.nextVehicleOrGate;
+  return pick ? nextFront(pick.name) : PHRASE.nextGate;
 }
 
 /** Whether the camp tip is a defend / attack hand (one beat of juice, no new key). */
@@ -392,9 +392,9 @@ export function whereLine(kind: ValuableKind): string {
 
 /**
  * The camp's station panels between raids: the stash and the loadout for the next raid (the
- * shelves), where the truck drives to (a way in of a region, or a depot already on; the map
- * table), the trader, and the hideout (the workshop). One panel is open at a time. It changes only
- * the profile; a raid starts from the kit, the region and the way in or depot `launch()` hands over.
+ * shelves), the start chosen on the departure map (a way in of a region, or a depot already on),
+ * the trader, and the hideout (the workshop). One panel is open at a time. It changes only the
+ * profile; a raid starts from the kit, the region and the way in or depot `launch()` hands over.
  */
 export class Hub {
   /** The station whose panel is open, or null with none open. */
@@ -402,9 +402,9 @@ export class Hub {
   /** The loadout for the next raid: the last one picked again while the stash holds it (`recallLoadout()`), always with a weapon (`armed()`). */
   private load: Loadout = emptyLoadout();
   private region: RegionId;
-  /** The way in of `region` the truck drives to, when not to a depot; null when the region is open only through a depot. */
+  /** The way in of `region` chosen on the departure map, when not a depot; null when the region is open only through a depot. */
   private entry: EntryId | null;
-  /** A depot the truck drives to instead of a way in; null for a way in. */
+  /** A depot start instead of a way in; null for a way in. */
   private from: PoiId | null = null;
   /**
    * お隣の前線（○○の前線）: 出撃マップで明示的に選択された場合に格納。
@@ -676,7 +676,7 @@ export class Hub {
     return armed(this.profile, this.load);
   }
 
-  /** The truck's depot's allowance and what the loadout costs of it, or null when it drives to a way in. */
+  /** The depot start's allowance and what the loadout costs of it, or null when starting at a way in. */
   private allowance() {
     if (!this.from) return null;
     const a = depotAllowance(this.profile, this.from);
@@ -847,13 +847,13 @@ export class Hub {
       let node: NodeId;
       if (ai) {
         const pick = this.aiShortRaidNode(neighbourFront.code, neighbourFront.shore, now);
-        if (!pick) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+        if (!pick) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
         node = pick;
       } else {
         const view = await readView(neighbourFront.code);
         if (!view.ok) return { t: "waiting", toast: errorText(view.error) };
         const pick = shortRaidTarget(view.body, neighbourFront.shore, now);
-        if (!pick) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+        if (!pick) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
         node = pick;
         const sent = await sendAssault(neighbourFront.code, node, units);
         if (!sent.ok) return { t: "waiting", toast: errorText(sent.error) };
@@ -862,7 +862,7 @@ export class Hub {
       const { list, created } = scheduleAssault(this.profile.expeditions, { code: neighbourFront.code, node, units, id, now });
       if (created) this.set({ ...this.profile, expeditions: list });
       existing = assaultOf(this.profile.expeditions, neighbourFront.code);
-      if (!existing) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+      if (!existing) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
     }
     let plan = await this.shortRaidPlan(neighbourFront.code, existing.node, ai);
     // 過去の予告が旧ショアノードを指している場合、再選定して試行
@@ -870,7 +870,7 @@ export class Hub {
       const retry = ai ? this.aiShortRaidNode(neighbourFront.code, neighbourFront.shore, now) : await this.realShortRaidNode(neighbourFront.code, neighbourFront.shore, now);
       if (retry && retry !== existing.node) plan = await this.shortRaidPlan(neighbourFront.code, retry, ai);
     }
-    if (!plan) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+    if (!plan) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
     return { t: "ready", plan };
   }
 
@@ -1139,7 +1139,7 @@ export class Hub {
     );
   }
 
-  /** The truck's depot allowance, as a slot: the depot's level, what the loadout uses of it, and the way to the next level. */
+  /** The depot start's allowance, as a slot: the depot's level, what the loadout uses of it, and the way to the next level. */
   private depotSlot(): string {
     const allow = this.allowance();
     if (!allow) return "";
@@ -1336,7 +1336,7 @@ export class Hub {
         rows(p.stash)
           .map(({ item, index }) => {
             const on = kit && used.has(index[0]);
-            // When the truck drives to a depot, each pick shows what it costs of the depot's allowance.
+            // When the start is a depot, each pick shows what it costs of the depot's allowance.
             const cost = kit && this.from && itemCost(item) > 0 ? `枠 ${itemCost(item)}` : "";
             // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
             const fixed = isStarter(item);

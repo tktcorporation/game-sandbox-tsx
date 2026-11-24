@@ -6241,7 +6241,7 @@ const BRIDGE: Box[] = placeIn("heart", [
 /**
  * The camp between raids, on the south beach behind the reservoir's first way in: a yard of
  * sheet fence 34 by 28 m with its gate facing north into the region, the stations a raid is
- * made ready at, the truck that drives the player to another start, and the tent they wake in.
+ * made ready at, and the tent they wake in. Walking out of the gate opens the departure map.
  * Written in its own frame round (0, 0), north = -z, on ground at 0; `CAMP` gives its places in
  * the world. Robots never walk in (`inCamp()`), and a raid ends alive when the player walks back
  * into it (`HOME`).
@@ -6255,9 +6255,9 @@ const CAMP_GATE = 4.25;
 
 export type StationId = "stash" | "shop" | "workshop" | "factory" | "signal";
 
-/** A place in the camp the use key acts at: a station's panel, or the truck. */
+/** A place in the camp the use key acts at: a station's panel. */
 export interface CampSpot {
-  id: StationId | "vehicle";
+  id: StationId;
   name: string;
   /** The middle of what stands there; the use key works within `reach` of it. */
   x: number;
@@ -6295,8 +6295,6 @@ function camp(): Box[] {
   // The gate: tall posts, a white bar over them, and its two leaves swung back along the fence.
   for (const s of [-1, 1]) out.push(box(s * (CAMP_GATE + 0.15), -Z, 0.3, 0.3, 3.6, "steel", 2), rect(s > 0 ? CAMP_GATE + 0.3 : -CAMP_GATE - 4.1, -Z + 0.15, s > 0 ? CAMP_GATE + 4.1 : -CAMP_GATE - 0.3, -Z + 0.27, 0.05, 2.0, "fence"));
   out.push(rect(-CAMP_GATE - 0.3, -Z - 0.15, CAMP_GATE + 0.3, -Z + 0.15, 3.3, 3.6, "steel", 4));
-  // The truck by the gate, its cab toward the gate.
-  out.push(box(8, -9.5, 2.3, 2.5, 3.0, "prop", PROP.cab), box(11.65, -9.5, 5, 2.5, 2.3, "prop", PROP.bed));
   // A board west of the gate (scenery only; not a station).
   out.push(box(-8, -10.5, 3, 0.12, 2.3, "prop", PROP.board, 0.9));
   for (const u of [-9.4, -6.6]) out.push(box(u, -10.6, 0.14, 0.14, 2.4, "steel", 2));
@@ -6339,7 +6337,6 @@ export const CAMP = {
     campSpot("factory", "工場", -1.5, 10.4, 2.4, 3.2),
     // The signal station by the west fence: a mast with a green lamp, where the camp talks to the other islands out at sea (drawn by the view, no box).
     campSpot("signal", "信号所", -14.2, 6.6, 2.6, 4.6),
-    campSpot("vehicle", "車両", 9.8, -9.5, 3.4, 3.5),
   ] satisfies CampSpot[],
 };
 

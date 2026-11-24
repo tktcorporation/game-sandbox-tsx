@@ -23,11 +23,10 @@
  * - **notice**: an expedition is in the owner's log at once and stands at its node `EXPEDITION.notice` on.
  * - **lease**: the owner's raid takes the expeditions in; the island leaves them alone until the
  *   raid's report (wiped out, or holding the node it took) or the lease's end, then goes on in numbers.
- * - **fortified**: a node the report names as fortified is shut for a day; the expedition stands off.
  * - **recall**: only its sender calls an expedition home; a node it held goes back to the enemy.
  * - **steady**: the island reckoned in one alarm or in many small ones ends the same.
  * - **x2**: a short-raid notice (`x2: true`) stands as 来る遠征, skips numeric fights and the
- *   owner's lease, and `assault` after the notice takes or wipes the node (fortify refused).
+ *   owner's lease, and `assault` after the notice takes or wipes the node.
  *
  * Run alone: `npx tsx scripts/ringfall-expeditions.ts`; it ends with "expeditions ok".
  */
@@ -446,7 +445,7 @@ const T2 = T1 + 400_000;
   check(!read.changed && !log.changed && rep.changed && !moved.changed && ticking.changed, "stored: what an op stores is not what it changed");
 }
 
-// --- notice, the owner's raid taking expeditions in, fortifying, and calling one home
+// --- notice, the owner's raid taking expeditions in, and calling one home
 {
   const op = (st: IslandState | null, o: IslandOp, t: number) => islandOp(st, o, t);
   const island = (holds: Record<string, string>, factory: number) => {
@@ -515,30 +514,6 @@ const T2 = T1 + 400_000;
   check(late.holds[quarry] === "own" && late.expeditions[0].units.length === top.length && !late.expeditions[0].holding, "lease report: a report after the lease ran out changed the expedition");
   check(limit.holds[quarry] === "own" && !limit.expeditions[0].holding, "lease report: a raid's capture went past the day's limit");
 
-  // Fortified: the node the owner held in a raid is shut for a day; the expedition stands off, then attacks.
-  const f = island({ quarry: "own", supply: "own" }, 0);
-  op(f, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
-  const ft = T1 + NOTICE - 3_600_000;
-  op(f, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: "own", supply: "own" }) as IslandState["holds"], factory: 0, day: 2, fortified: ["quarry", "supply", "relay"] }, ft);
-  const shut = (f.fort ?? []).filter((t) => t > 0).length;
-  run(f, T1 + NOTICE + 3_600_000);
-  const off = stateOf(f, T1 + NOTICE + 3_600_000);
-  const held = f.holds[quarry];
-  const opens = nextAlarm(f, T1 + NOTICE + 3_600_000);
-  run(f, ft + EXPEDITION.fortify * 1000 + 3_600_000);
-  console.log(`fortified: ${shut} node(s) shut of 3 named; an hour past its arrival the expedition is ${off}, quarry ${held}, the alarm when it opens ${opens !== null && Math.abs(opens - (ft + EXPEDITION.fortify * 1000)) < 2000}; an hour past that quarry ${f.holds[quarry]}`);
-  check(shut === 1 && off === "waiting" && held === "own" && opens !== null && Math.abs(opens - (ft + EXPEDITION.fortify * 1000)) < 2000, "fortified: an expedition attacked a node fortified that day");
-  check(f.holds[quarry] === `rival:${B.code}`, "fortified: the node stayed shut past its day");
-
-  // A raid inside the fortified day: the lease names the node as shut, and the raid's report cannot say it fell.
-  const g = island({ quarry: "own", supply: "own" }, 0);
-  op(g, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
-  op(g, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: "own", supply: "own" }) as IslandState["holds"], factory: 0, day: 2, fortified: ["quarry"] }, T1 + 1000);
-  const again2 = op(g, { t: "lease", player: A.id }, T1 + NOTICE + 3_600_000).body as { shut: string[]; expeditions: { id: number; state: string }[] };
-  op(g, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: `rival:${B.code}`, supply: "own" }) as IslandState["holds"], factory: 0, day: 3, lent: [{ id: again2.expeditions[0].id, left: 5 }] }, T1 + NOTICE + 3_700_000);
-  console.log(`fortified, next raid: the lease names ${JSON.stringify(again2.shut)} shut; a report that says it fell leaves quarry ${g.holds[quarry]}, the expedition holding ${g.expeditions[0].holding}`);
-  check(again2.shut.join() === "quarry" && g.holds[quarry] === "own" && !g.expeditions[0].holding && g.expeditions[0].units.length === 5, "fortified: a raid inside the fortified day lost the node");
-
   // A lease no raid uses is given back: the island reckons the expedition again at once; only the owner gives it back.
   const u = island({ quarry: "own", supply: "own" }, 0);
   op(u, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
@@ -602,18 +577,9 @@ const T2 = T1 + 400_000;
   check(x2TooSoon.status === 409 && (x2TooSoon.body as { error?: string }).error === "assault-not-ready", "x2: assault before notice");
   run(x2Isle, T1 + NOTICE + 5000);
   check(x2Isle.expeditions[0]?.arrived && x2Isle.expeditions[0]?.x2 && !x2Isle.expeditions[0]?.holding && x2Isle.holds[quarry] === "own", "x2: numeric fight took the node");
-  const x2Lease = op(x2Isle, { t: "lease", player: A.id }, T1 + NOTICE + 6000).body as { expeditions: unknown[]; noticed?: string[] };
+  const x2Lease = op(x2Isle, { t: "lease", player: A.id }, T1 + NOTICE + 6000).body as { expeditions: unknown[] };
   check(x2Lease.expeditions.length === 0, "x2: lease lent the short-raid notice as robots");
-  check(Array.isArray(x2Lease.noticed) && x2Lease.noticed.includes("quarry"), "x2: lease omitted noticed for 固める");
   op(x2Isle, { t: "releaseLease", player: A.id }, T1 + NOTICE + 7000);
-  // Fortify during notice, then assault refused.
-  const x2Fort = island({ quarry: "own", supply: "own" }, 0);
-  op(x2Fort, { t: "expedition", from: B, target: "quarry", kinds: top.slice(0, 1), x2: true }, T1);
-  const x2Fid = x2Fort.expeditions[0]!.id;
-  op(x2Fort, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: "own", supply: "own" }) as IslandState["holds"], factory: 0, day: 2, fortified: ["quarry"] }, T1 + 1000);
-  const x2FortAssault = op(x2Fort, { t: "assault", from: B.code, id: x2Fid, won: true }, T1 + NOTICE + 1000);
-  check(x2FortAssault.status === 409 && (x2FortAssault.body as { error?: string }).error === "fortified", "x2: assault ignored fortify");
-  check(x2Fort.holds[quarry] === "own", "x2: fortified node still fell");
   // Win and loss.
   const x2Win = island({ quarry: "own", supply: "own" }, 0);
   op(x2Win, { t: "expedition", from: B, target: "quarry", kinds: top.slice(0, 1), x2: true }, T1);
@@ -644,7 +610,7 @@ const T2 = T1 + 400_000;
   check(x2ApiEarly.status === 409 && err(x2ApiEarly) === "assault-not-ready", "x2 api: early assault ok");
   const x2ApiWin = await call("POST", `/api/islands/${A.code}/assault`, { from: B, id: x2ApiId, won: true }, T10 + NOTICE + 1000);
   check(x2ApiWin.status === 200 && holdOf(A.code, "quarry") === `rival:${B.code}`, "x2 api: win did not sync hold");
-  console.log(`x2: notice ${NOTICE / 3_600_000}h; win hold ${holdOf(A.code, "quarry")}; fortified refused; loss wiped`);
+  console.log(`x2: notice ${NOTICE / 3_600_000}h; win hold ${holdOf(A.code, "quarry")}; loss wiped`);
 
   // Legacy "held" / "freed" backward compatibility on PUT /api/islands/:code
   const legacyHolds = NODE_IDS.map((id) => (id === "supply" ? "freed" : "held"));

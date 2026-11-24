@@ -148,8 +148,8 @@ const lap = (name) => {
 
 /*
  * The camp between raids (src/ringfall/sim/camp.ts): the title's start wakes the player in it,
- * a station's panel opens by the use key (or the use button) standing at it, and the gate and the
- * truck both open the departure, whose map chooses the start: the gate's own way in walks out onto
+ * a station's panel opens by the use key (or the use button) standing at it, and walking out of
+ * the gate opens the departure, whose map chooses the start: the gate's own way in walks out onto
  * the south beach, any other start comes after a fade.
  */
 const readPage = async (pg) => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
@@ -191,7 +191,7 @@ const toCamp = async (pg, touch = false) => {
   await (touch ? pg.tap("#start") : pg.click("#start"));
   await faded(pg);
 };
-/** Stands at a station (or the truck) and presses the use key, or taps the use button with `cdp`; the camp's state after. */
+/** Stands at a station and presses the use key, or taps the use button with `cdp`; the camp's state after. */
 const useStation = async (pg, id, cdp) => {
   if (!(await pg.evaluate((i) => window.ringfallCamp.walkTo(i), id))) errors.push(`camp: could not stand at ${id}`);
   await pg.evaluate(() => window.advanceTime(100));
@@ -206,7 +206,7 @@ const useStation = async (pg, id, cdp) => {
   await pg.evaluate(() => window.advanceTime(50));
   await pg.waitForTimeout(100);
   const st = await readPage(pg);
-  if (id !== "vehicle" && st.camp?.panel !== id) errors.push(`camp: the use key at ${id} opened ${st.camp?.panel}`);
+  if (st.camp?.panel !== id) errors.push(`camp: the use key at ${id} opened ${st.camp?.panel}`);
   return st;
 };
 /** Closes the station's panel open now by its close button. */
@@ -313,14 +313,23 @@ const walkOutOfGate = async (pg, shot = "") => {
   if (st.screen !== "game") errors.push(`camp: walking out of the gate left the screen at ${st.screen} (${st.player.x},${st.player.z})`);
   return st;
 };
-/** By the truck from its use key, or its use button with `cdp`: the departure (choosing `pick` on its map), a fade, then the raid. The state once it is under way. */
+/** Opens the departure at the gate (automation: same as walking out). */
+const openDepart = async (pg) => {
+  if (!(await pg.evaluate(() => window.ringfallCamp.openDepart()))) errors.push("camp: could not open the departure at the gate");
+  await pg.evaluate(() => window.advanceTime(50));
+  await pg.waitForTimeout(100);
+  const st = await readPage(pg);
+  if (!st.camp?.depart) errors.push("camp: openDepart left the departure closed");
+  return st;
+};
+/** From the gate's departure (choosing `pick` on its map): a fade when the start is not the south beach, then the raid. The state once it is under way. */
 const rideOut = async (pg, cdp, shot = "", pick = null) => {
-  await useStation(pg, "vehicle", cdp);
+  await openDepart(pg);
   await confirmDepart(pg, { touch: !!cdp, shot, pick });
   await pg.waitForFunction(() => JSON.parse(window.render_game_to_text()).screen === "game", null, { timeout: 5000 }).catch(() => undefined);
   await faded(pg);
   const st = await readPage(pg);
-  if (st.screen !== "game") errors.push(`camp: the truck did not start a raid (${st.screen})`);
+  if (st.screen !== "game") errors.push(`camp: departing from the gate did not start a raid (${st.screen})`);
   return st;
 };
 /** Camp panel parts that spill past the screen, or lists that scroll sideways. */
@@ -601,8 +610,8 @@ if (part("phone")) {
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(page, true);
-  // The departure from the truck: the harbor, the city and the launch site carry padlocks, their ways in dashed and shut.
-  await useStation(page, "vehicle", await ctx.newCDPSession(page));
+  // The departure from the gate: the harbor, the city and the launch site carry padlocks, their ways in dashed and shut.
+  await openDepart(page);
   await departUp(page);
   const locks = await page.locator("#depart-points .region-lock .ico.lock").count();
   const shut = await page.locator("#depart-points button.pick.entry.shut").count();
@@ -635,13 +644,13 @@ if (part("phone")) {
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(page, true);
   const cdp = await ctx.newCDPSession(page);
-  // The truck's prompt opens the departure; the quay is tapped on its map and the confirm rides there.
-  await page.evaluate(() => window.ringfallCamp.walkTo("vehicle"));
+  // The gate opens the departure; the quay is tapped on its map and the confirm rides there.
+  await page.evaluate(() => window.ringfallCamp.toGate());
   await page.evaluate(() => window.advanceTime(100));
-  const truck = await page.textContent("#camp-prompt");
-  if (!/出撃/.test(truck)) errors.push(`mobile harbor: the truck's prompt reads "${truck}"`);
-  await page.screenshot({ path: `${out}/m6-camp-truck.png` });
-  await useStation(page, "vehicle", cdp);
+  const tip = await page.textContent("#camp-prompt");
+  if (!/出撃/.test(tip ?? "")) errors.push(`mobile harbor: the gate tip reads "${tip}"`);
+  await page.screenshot({ path: `${out}/m6-camp-gate.png` });
+  await openDepart(page);
   await departUp(page);
   await pickStart(page, "entry", "quay", true);
   const fitH = await departFits(page);
@@ -766,10 +775,10 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await useStation(page, "workshop");
   await page.screenshot({ path: `${out}/00-panel-workshop.png` });
   await closePanel(page);
-  // 地図の机 deleted: open refused; island overview and starts live on the departure (車両).
+  // 地図の机 deleted: open refused; island overview and starts live on the departure (門).
   if (await page.evaluate(() => window.ringfallCamp.open("map"))) errors.push("camp: open(map) still worked");
-  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor, the city and the launch site carry padlocks and their ways in are dashed; cancelled with Esc.
-  await useStation(page, "vehicle");
+  // The departure from the gate: a fresh profile knows only the reservoir's first way in, so the harbor, the city and the launch site carry padlocks and their ways in are dashed; cancelled with Esc.
+  await openDepart(page);
   await departUp(page);
   const harborLocked = await page.locator("#depart-points .region-lock").count();
   const entriesOffered = await page.locator("#depart-points button.pick.entry:not(.shut)").count();
@@ -808,8 +817,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   if (stats.length !== 2 || !stats.every((t) => t.length === 3 && t.every((n) => /^\d+(×\d+)?$/.test(n))) || !(await page.locator("#hub-stash .item small .wstats").count())) errors.push(`camp: the shelves' weapons show ${JSON.stringify(stats)}`);
   await page.screenshot({ path: `${out}/00-panel-stash.png` });
   await closePanel(page);
-  await seen("vehicle");
-  await page.evaluate(() => window.ringfallCamp.toGate());
+    await page.evaluate(() => window.ringfallCamp.toGate());
   await page.evaluate(() => window.advanceTime(100));
   await page.screenshot({ path: `${out}/00-camp-gate.png` });
   const h2 = await walkOutOfGate(page, "00-depart");
@@ -1275,7 +1283,7 @@ console.log(JSON.stringify((await read()).stats));
   await page.reload({ waitUntil: "load" });
   await toCamp(page);
   await page.evaluate((s) => window.ringfallBot(s), skill);
-  await rideOut(page, undefined, "27-depart-truck", ["entry", "outskirts"]);
+  await rideOut(page, undefined, "27-depart-gate", ["entry", "outskirts"]);
   await page.evaluate(() => window.advanceTime(1500));
   await draw(page);
   await page.screenshot({ path: `${out}/28-harbor-start.png` });
@@ -1416,7 +1424,7 @@ if (part("meta")) {
   await pg.screenshot({ path: `${out}/m12-stash-intel.png` });
   await closePanel(pg, true);
   // The departure holds the depots too, tapped on its map, and stays inside the screen.
-  await useStation(pg, "vehicle", cdp);
+  await openDepart(pg);
   await departUp(pg);
   await pickStart(pg, "depot", "yard", true);
   fit = fit.concat(await departFits(pg));
@@ -1427,7 +1435,7 @@ if (part("meta")) {
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE レア" }).tap();
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).tap();
   await closePanel(pg, true);
-  await useStation(pg, "vehicle", cdp);
+  await openDepart(pg);
   await departUp(pg);
   const overM = (await readOf(pg)).camp.depart;
   if (overM?.start?.id !== "yard" || !overM.refused || !(await pg.locator("#depart-go:disabled").count()) || !(await pg.locator("#depart-points button.pick.on.over .mini i.over").count())) errors.push(`mobile depot: over the allowance the departure reads ${JSON.stringify(overM?.start)} refused "${overM?.refused}"`);
@@ -1453,8 +1461,8 @@ if (part("meta")) {
   // An epic armour in the stash: with the rare PIKE (2) it is over a level 0 depot's allowance (2).
   const pg = await withProfile(ctx, { ...depotGame, stash: [...midGame.stash, { t: "armor", tier: 2 }] });
   await toCamp(pg);
-  // The departure from the truck offers the two depots that open a start; the supply depot is chosen and the departure cancelled.
-  await useStation(pg, "vehicle");
+  // The departure from the gate offers the two depots that open a start; the supply depot is chosen and the departure cancelled.
+  await openDepart(pg);
   await departUp(pg);
   const starts = await pg.locator("#depart-points button.pick.depot:not(.shut)").count();
   if (starts !== 2) errors.push(`depot: the departure offers ${starts} depots to start from, not 2`);
@@ -1475,7 +1483,7 @@ if (part("meta")) {
   await pg.screenshot({ path: `${out}/46-stash-depot-over.png` });
   await closePanel(pg);
   // Over the allowance the departure opens on the depot in red, its confirm shut: Enter stays in the camp.
-  await useStation(pg, "vehicle");
+  await openDepart(pg);
   await departUp(pg);
   const overD = (await readOf(pg)).camp.depart;
   const red = await pg.locator("#depart-points button.pick.on.over .mini i.over").count();
@@ -1588,7 +1596,7 @@ if (part("meta")) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, { ...depotGame, depots: ["supply", "yard", "lodge"] });
   await toCamp(pg);
-  await useStation(pg, "vehicle");
+  await openDepart(pg);
   await departUp(pg);
   await peekLocked(pg, "#depart-points button.pick.depot[data-id=lodge]", { tag: "shut depot", name: "峠の宿舎の中継ボックス", why: "未制圧", how: /峠の宿舎/ });
   await pg.screenshot({ path: `${out}/46-depart-depot-shut.png` });
@@ -1656,11 +1664,11 @@ const islandDay = {
   // The nodes a profile holds: the day's battle, reckoned to its end, may have taken some back.
   const mine = (p) => Object.entries(p.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
   if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "freed" || (await own("#camp-row")) !== 3) errors.push(`island: the camp reads day ${c.profile.day}, the quarry ${c.profile.poiState.quarry.state}, ${await own("#camp-row")} of the row filled`);
-  await pg.evaluate(() => window.ringfallCamp.walkTo("vehicle"));
+  await pg.evaluate(() => window.ringfallCamp.toGate());
   await pg.evaluate(() => window.advanceTime(100));
   await pg.screenshot({ path: `${out}/70-island-camp-row.png` });
-  // Island overview is the departure's map (地図の机 deleted).
-  await useStation(pg, "vehicle");
+  // Island overview is the departure's map (地図の机・車両 deleted).
+  await openDepart(pg);
   await departUp(pg);
   await pg.waitForTimeout(300);
   if (!(await pg.locator("#depart-map").count())) errors.push("island: the departure shows no island map");
@@ -1714,7 +1722,7 @@ const islandDay = {
   await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(pg, true);
   const cdp = await ctx.newCDPSession(pg);
-  await useStation(pg, "vehicle", cdp);
+  await openDepart(pg);
   await departUp(pg);
   await pg.waitForTimeout(300);
   const fit = await spills(pg);
@@ -1766,7 +1774,7 @@ lap("island");
     await toCamp(pg, phone);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
     // 強度 is not chosen at camp stations (契約板・地図の机 deleted); departure / raid show freedAt on the map.
-    await useStation(pg, "vehicle", cdp);
+    await openDepart(pg);
     await departUp(pg);
     if (await pg.locator("#depart .hub-threat, #depart [data-act=threat], #hub-side .hub-threat").count()) errors.push("threat: a camp screen still offers a threat of its own");
     await pg.locator("#depart-map").scrollIntoViewIfNeeded();
@@ -2209,7 +2217,7 @@ if (part("rules")) for (const phone of [false, true]) {
   const why = phone ? "rules on a phone" : "rules";
   await toCamp(pg);
   // Carry-in boxes: the PIKE fills its two boxes, armour on top spills past them in red; the heals sit outside.
-  await useStation(pg, "vehicle");
+  await openDepart(pg);
   await departUp(pg);
   await pickStart(pg, "depot", "supply", phone);
   await pg.keyboard.press("Escape");
@@ -2225,7 +2233,7 @@ if (part("rules")) for (const phone of [false, true]) {
   await snap("2-pouch-shelf");
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
   await closePanel(pg);
-  await useStation(pg, "vehicle");
+  await openDepart(pg);
   await pg.waitForFunction(() => !document.getElementById("depart").hidden, null, { timeout: 4000 }).catch(() => undefined);
   if (!(await pg.locator("#depart-carry .seg").count())) errors.push(`${why}: the departure's check shows no carry-in boxes`);
   await snap("1-carry-depart");
@@ -2291,7 +2299,7 @@ if (part("rules")) for (const phone of [false, true]) {
   // The departure: the harbor's ways in, learned, as solid rings that can be chosen, its padlock gone.
   await pg.click("#restart");
   await faded(pg);
-  await useStation(pg, "vehicle");
+  await openDepart(pg);
   await departUp(pg);
   const learnt = ((await readOf(pg)).camp.depart?.starts ?? []).filter((q) => q.kind === "entry" && q.region === "harbor" && q.open);
   if (!learnt.length || (await pg.locator('#depart-points .region-lock[data-id="harbor"]').count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);

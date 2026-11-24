@@ -90,12 +90,6 @@ export interface Battle {
   rally: number;
   /** The counter-attacks due on nodes the player has just taken (`COUNTER`): which node, and the battle's clock at which its squad sets off. */
   counters: { node: number; at: number }[];
-  /** Nodes the player has fortified (`FORTIFY`), shutting expeditions at them. */
-  fortified: number[];
-  /** The nodes other players' expeditions are sent to take in this raid (places in `NODES`): announced and fortified the same way, which shuts them to those expeditions. */
-  noticed: number[];
-  /** The nodes shut to other players' expeditions from before the raid (fortified in an earlier one, `BattleStart.shut`). */
-  shut: number[];
   /** The battle's clock when the raid ended before the battle did, and each node's standing then; null while the raid is on. */
   left: { at: number; nodes: NodeHold[] } | null;
   /** Other players' expeditions still to come, soonest first. */
@@ -122,13 +116,6 @@ export interface RivalExpedition {
 export interface BattleStart {
   factory: number;
   rivals?: readonly RivalExpedition[];
-  /** The player's nodes still shut to expeditions as the raid starts (fortified in an earlier raid, docs/ringfall/multiplayer.md); left out, none. */
-  shut?: readonly NodeId[];
-  /**
-   * Nodes announced for 固める without lending robot squads (short-raid notices on the lease,
-   * and `Profile.incoming`). Merged into `Battle.noticed`.
-   */
-  noticed?: readonly NodeId[];
   /** The factory's squads out on expeditions (meta/expeditions.ts `squadsAway()`); left out, none. */
   away?: number;
 }
@@ -338,9 +325,6 @@ export function initBattle(s: State, start: BattleStart): Battle {
     threat: NODES.map(() => false),
     rally: -1,
     counters: [],
-    fortified: [],
-    noticed: [],
-    shut: [],
     left: null,
     rivals: [],
     away: Math.max(0, Math.round(start.away ?? 0)),
@@ -349,53 +333,35 @@ export function initBattle(s: State, start: BattleStart): Battle {
     if (s.nodes[i] !== "own") return;
     for (let k = 0; k < FACTORY.levels[factory].turrets + heldUnlocks(s.nodes, "turret").reduce((n, id) => n + (UNLOCKS[id].turret ?? 0), 0); k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
-  addRivals(s, b, start.rivals ?? [], start.shut ?? []);
-  addNoticed(b, start.noticed ?? []);
+  addRivals(s, b, start.rivals ?? []);
   return b;
 }
 
 /**
- * Other players' expeditions join battle `b`: each still to set off waits its turn (soonest first)
- * and its node is announced; one sent at 0 to a node its owner holds stands there, holding it.
- * `shut` are the nodes already shut to them. As the battle starts, and for expeditions the island's
- * server hands over a moment after the raid began (`takeRivals()`).
+ * Other players' expeditions join battle `b`: each still to set off waits its turn (soonest first);
+ * one sent at 0 to a node its owner holds stands there, holding it. As the battle starts, and for
+ * expeditions the island's server hands over a moment after the raid began (`takeRivals()`).
  */
-function addRivals(s: Pick<State, "nodes">, b: Battle, rivals: readonly RivalExpedition[], shut: readonly NodeId[]) {
+function addRivals(s: Pick<State, "nodes">, b: Battle, rivals: readonly RivalExpedition[]) {
   for (const x of [...rivals].sort((p, q) => p.at - q.at)) {
     const i = nodeIndex(x.target);
     // An owner whose standing a save could not read back (`parseHold()`) never lands: the node it took would be lost on reload.
     if (i < 0 || !x.kinds.length || !parseHold(rivalHold(x.owner))) continue;
     if (x.at <= 0 && rivalOf(s.nodes[i]) === x.owner) Object.assign(addSquad(b, 3, x.kinds, i, i, "hold"), { owner: x.owner });
-    else {
-      b.rivals.push({ ...x, kinds: [...x.kinds] });
-      if (!b.noticed.includes(i)) b.noticed.push(i);
-    }
+    else b.rivals.push({ ...x, kinds: [...x.kinds] });
   }
   b.rivals.sort((p, q) => p.at - q.at);
-  for (const id of shut) {
-    const i = nodeIndex(id);
-    if (i >= 0 && !b.shut.includes(i)) b.shut.push(i);
-  }
-}
-
-/** Announce nodes for 固める without lending robot squads (short-raid notices). */
-function addNoticed(b: Battle, nodes: readonly NodeId[]) {
-  for (const id of nodes) {
-    const i = nodeIndex(id);
-    if (i >= 0 && !b.noticed.includes(i)) b.noticed.push(i);
-  }
 }
 
 /**
  * The raid under way takes in other players' expeditions its start did not have (the island's
- * server answered after the raid began): as `BattleStart.rivals` and `shut` would have brought
- * them. False for a raid with no battle, or one whose battle is over.
+ * server answered after the raid began): as `BattleStart.rivals` would have brought them. False for
+ * a raid with no battle, or one whose battle is over.
  */
-export function takeRivals(s: State, rivals: readonly RivalExpedition[], shut: readonly NodeId[] = [], noticed: readonly NodeId[] = []): boolean {
+export function takeRivals(s: State, rivals: readonly RivalExpedition[]): boolean {
   const b = s.battle;
   if (!b || b.done) return false;
-  addRivals(s, b, rivals, shut);
-  addNoticed(b, noticed);
+  addRivals(s, b, rivals);
   return true;
 }
 
@@ -1072,7 +1038,7 @@ function fightAndTake(s: State, b: Battle, dt: number) {
   if (gone.size) s.enemies = s.enemies.filter((e) => !gone.has(e));
   settleSquads(b, fought.squads);
   const left = garrisons.map((g, i) => g.filter((_, k) => !fought.fell[i].includes(k)));
-  const taken = reckonCaptures({ holds: s.nodes, squads: b.squads.map(reckonSquad), guards: standing(fought), present: NODES.map((n, i) => presence(s, b, i)), meter: b.meter, threat: b.threat, shut: b.fortified.length || b.shut.length ? NODES.map((_, i) => b.fortified.includes(i) || b.shut.includes(i)) : undefined }, dt);
+  const taken = reckonCaptures({ holds: s.nodes, squads: b.squads.map(reckonSquad), guards: standing(fought), present: NODES.map((n, i) => presence(s, b, i)), meter: b.meter, threat: b.threat }, dt);
   settleSquads(b, taken.squads);
   b.meter = taken.meter;
   b.threat = taken.threat;

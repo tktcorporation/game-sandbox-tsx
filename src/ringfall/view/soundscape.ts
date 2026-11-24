@@ -521,7 +521,6 @@ export class Soundscape {
         sfx.threat();
         break;
       case "liberated":
-      case "fortified":
       case "coreTaken":
         sfx.coreTaken();
         break;
