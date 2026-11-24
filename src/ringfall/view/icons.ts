@@ -99,9 +99,6 @@ export const healIcon = (shield: boolean) => (shield ? svg(`<path d="M8 1.5 L14 
 /** A loudspeaker: the action makes noise the robots hear. */
 export const noiseIcon = (c = "currentColor") => svg(`<path d="M2 6 H5 L9 2.5 V13.5 L5 10 H2 Z" fill="${c}"/><path d="M11 5.5 C12.3 6.8 12.3 9.2 11 10.5 M12.8 3.8 C15 6 15 10 12.8 12.2" stroke="${c}" stroke-width="1.4" fill="none" stroke-linecap="round"/>`, "noise");
 
-/** The night between two days: a crescent moon (the enemy's attacks overnight, meta/island.ts `nightRaids()`). */
-export const nightIcon = (c: string = UI.mist) => svg(`<path d="M10.5 1.8 A6.6 6.6 0 1 0 14.2 11 A5.4 5.4 0 0 1 10.5 1.8 Z" fill="${c}"/>`, "night");
-
 /** The pouch's own colour: what sits in it comes home even from a wipe. Used for its slots on every screen. */
 export const POUCH = UI.pouch;
 
@@ -149,7 +146,7 @@ export const paperIcon = (c: string = UI.parch) =>
  * The hideout's modules each have one mark, drawn both on the module's card in the workshop and
  * wherever its effect shows elsewhere, so the card's mark tells where an upgrade grows: the
  * infirmary's case beside the shelves' issued heals, the storage's crate at the stash's count, the
- * workbench's wrench over the trader's materials, the radio's mast at the map table's report. The
+ * workbench's wrench over the trader's materials, the radio's mast at the shelves' report. The
  * pouch keeps `pouchIcon()` and the factory `factoryIcon()`.
  */
 
@@ -165,7 +162,7 @@ export const stashIcon = (c: string = UI.sand) =>
 export const workbenchIcon = (c: string = UI.mist) =>
   svg(`<path d="M10.8 1.6 A4 4 0 0 0 7.2 6.9 L1.9 12.2 A1.5 1.5 0 0 0 4 14.3 L9.3 9 A4 4 0 0 0 14.6 5.4 L12.3 7.7 L9.9 7.3 L8.6 6.1 L8.4 3.9 Z" fill="${c}"/>`, "bench");
 
-/** The radio: a mast sending waves. At the map table's report, what it tells of the next raid. */
+/** The radio: a mast sending waves. At the shelves' report, what it tells of the next raid. */
 export const radioIcon = (c: string = UI.sky) =>
   svg(`<path d="M8 6.5 L5 15 M8 6.5 L11 15 M6 12 H10" stroke="${c}" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="8" cy="5.5" r="1.6" fill="${c}"/><path d="M5 3 A4 4 0 0 0 5 8 M11 3 A4 4 0 0 1 11 8 M2.8 1.2 A6.5 6.5 0 0 0 2.8 9.8 M13.2 1.2 A6.5 6.5 0 0 1 13.2 9.8" stroke="${c}" stroke-width="1.3" fill="none" stroke-linecap="round"/>`, "radio");
 

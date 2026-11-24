@@ -247,7 +247,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   console.log(`lease: unfortified, the raid left the relay ${taken.mine} (server ${taken.server}, ${taken.left} left, holding ${taken.holding}); fortified, ${held.mine} (server ${held.server}, ${held.left} left, shut ${held.shut})`);
   check(taken.status === 200 && taken.mine === rivalHold(B) && taken.server === rivalHold(B) && taken.left === 3 && taken.holding, "lease: a node the expedition took in the raid is not its on the server");
   check(held.mine === "own" && held.server === "own" && held.left === 3 && held.there === 1 && !held.holding && held.fortified.join() === "relay" && held.shut, "lease: a node fortified in the raid fell, or is not shut on the server");
-  check(fortifiedNodes({ fortified: [2], noticed: [] }).length === 0, "lease: a night's target fortified was reported as shut to expeditions");
+  check(fortifiedNodes({ fortified: [2], noticed: [] }).length === 0, "lease: a node fortified without being noticed was reported as shut to expeditions");
   // Two expeditions of one sender, one sent through the other's node: a squad only passing through a node is not the expedition sent at it.
   const QUARRY = NODES.findIndex((n) => n.id === "quarry");
   const STATION = NODES.findIndex((n) => n.id === "station");
@@ -455,9 +455,9 @@ function island(freed: string[], rival: string[] = []): Profile {
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(current?.v === 35 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
-  check(v27?.v === 35 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
-  check(v26?.v === 35 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(current?.v === 37 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
+  check(v27?.v === 37 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
+  check(v26?.v === 37 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");

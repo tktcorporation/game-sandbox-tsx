@@ -2,7 +2,7 @@
  * The expeditions' screenshots for the shots gate (scripts/ringfall-shots.mjs runs them;
  * `node scripts/ringfall-shots-expeditions.mjs` runs them alone against the build): a profile
  * another player's expedition is sent at (`Profile.incoming`) with expeditions of its own out. The
- * map table marks the node sent at with a green arrow and lists who is coming; the other islands
+ * departure map may mark neighbours; the other islands
  * are the signal station's (信号所): its mark tells of the island's news, its panel lists the
  * neighbours (one of the game's own, marked AI), the news with 仕返し and the expeditions out, each
  * that can be called home with its button, and calling one home gives its squad back at once; the
@@ -46,7 +46,7 @@ export async function expeditionShots({ browser, port, out, errors }) {
   await pg.addInitScript(([k, v]) => localStorage.getItem(k) || localStorage.setItem(k, v), [KEY, JSON.stringify({ ...SAVE, incoming: SAVE.incoming.map((e) => ({ ...e, arriveAt: Date.now() + 5.4 * 3_600_000 })) })]);
   // The neighbours the server offered at the last sync, as the browser keeps them (island-net.ts): drawn out at sea on the camp's maps.
   await pg.addInitScript((v) => localStorage.setItem("ringfall.neighbours.v1", v), JSON.stringify({ neighbours: NEAR }));
-  // The landing is 5.4 hours from when these screens are shot, not from when the gate started: the map table rounds it up to 6.
+  // The landing is 5.4 hours from when these screens are shot, not from when the gate started.
   await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await pg.waitForTimeout(300);
   await pg.click("#start");
@@ -62,12 +62,8 @@ export async function expeditionShots({ browser, port, out, errors }) {
     await pg.keyboard.press("Escape");
     await pg.evaluate(() => window.advanceTime(200));
   };
-  // Reactive defence deleted: map table does not show 来る遠征 warnings.
-  await open("map");
-  const news = await pg.evaluate(() => document.querySelector(".island-news.incoming")?.textContent ?? "");
-  if (news) errors.push(`expeditions: the map table still warns of incoming "${news}" (reactive defence deleted)`);
-  await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
-  await close();
+  // 地図の机 deleted: open refused; 来る遠征 warnings stay gone.
+  if (await pg.evaluate(() => window.ringfallCamp.open("map"))) errors.push("expeditions: open(map) still worked");
   // The island's news as marks (E4: no 遠征に出す answer button).
   await pg.evaluate(() =>
     window.ringfallNews([
@@ -75,13 +71,9 @@ export async function expeditionShots({ browser, port, out, errors }) {
       { seq: 1, at: 0, t: "wiped", node: "quarry", by: { code: "K7M2QX", name: "みなと" } },
     ]),
   );
-  // The other islands are the signal station's (信号所), not the map table's: its mark tells of the news until it is opened.
+  // The other islands are the signal station's (信号所): its mark tells of the news until it is opened.
   const mark = await pg.evaluate(() => JSON.parse(window.render_game_to_text()).camp?.marks?.signal ?? "");
   if (!/知らせ 2/.test(mark)) errors.push(`expeditions: the signal station's mark reads "${mark}"`);
-  await open("map");
-  const onMap = await pg.evaluate(() => document.querySelectorAll("#hub-side .island-news:not(.incoming), #hub-side .revenge").length);
-  if (onMap) errors.push(`expeditions: the map table still lists ${onMap} pieces of the other islands' news`);
-  await close();
   // The station itself in the yard: its mast and green lamp, its name and mark over it.
   if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("signal")))) errors.push("expeditions: could not stand at the signal station");
   await pg.evaluate(() => window.advanceTime(300));

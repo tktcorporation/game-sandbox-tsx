@@ -11,7 +11,6 @@
 /** Stable ids for player-facing place / action terms (one concept = one id). */
 export type TermId =
   | "camp"
-  | "mapTable"
   | "stashShelf"
   | "traderStall"
   | "workshop"
@@ -44,7 +43,6 @@ export type TermId =
   | "backToCamp"
   | "hideout"
   | "islandNews"
-  | "nightRaid"
   | "wares"
   | "loadout"
   | "seaIslands"
@@ -58,7 +56,6 @@ export type TermId =
  */
 export const TERM = {
   camp: "野営地",
-  mapTable: "地図の机",
   stashShelf: "倉庫の棚",
   traderStall: "商人の屋台",
   /** World label + panel head/side for the hideout station. */
@@ -103,12 +100,11 @@ export const TERM = {
   /** Modules collectively (医務室・作業台…). Not the station name. */
   hideout: "隠れ家",
   islandNews: "島の知らせ",
-  nightRaid: "夜の襲撃",
   wares: "売り物",
   loadout: "持っていく物",
   seaIslands: "海の向こうの島",
   island: "島",
-  /** Ranking T1 — signal station / map table. */
+  /** Ranking T1 — signal station / results. */
   trophy: "トロフィー",
   /**
    * お隣の島の一部への短いレイド（Short Raid）。

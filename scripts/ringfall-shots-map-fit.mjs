@@ -1,5 +1,5 @@
 /**
- * Map readability shots: the map table, departure, raid map (region + whole), minimap,
+ * Map readability shots: departure, raid map (region + whole), minimap,
  * and results day map, at desktop / tablet / phone landscape / phone portrait.
  * Writes to shots/ringfall/map-compare/<tag>/ (pass BEFORE or AFTER as argv[2]).
  *
@@ -123,18 +123,7 @@ for (const size of SIZES) {
   await pg.evaluate(() => window.advanceTime(400));
   if (size.touch) await pg.evaluate(() => document.body.classList.add("touch"));
 
-  // Map table
-  await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
-  await pg.evaluate(() => window.advanceTime(100));
-  await pg.keyboard.press("KeyE");
-  await pg.evaluate(() => window.advanceTime(500));
-  const hubM = await measureMap(pg, "#hub-island-map");
-  notes.push({ size: size.id, screen: "map-table", ...hubM });
-  await snap(pg, `${size.id}-01-map-table`);
-  await pg.keyboard.press("Escape");
-  await pg.evaluate(() => window.advanceTime(200));
-
-  // Departure
+  // Departure (island overview; 地図の机 deleted)
   await pg.evaluate(() => window.ringfallCamp.toGate());
   await pg.keyboard.down("KeyW");
   for (let i = 0; i < 40; i++) {
@@ -155,7 +144,7 @@ for (const size of SIZES) {
     });
   });
   notes.push({ size: size.id, screen: "depart", ...depM, startsClipped: starts.filter((s) => s.clipped).map((s) => s.id) });
-  await snap(pg, `${size.id}-02-depart`);
+  await snap(pg, `${size.id}-01-depart`);
   await pg.keyboard.press("Enter");
   await pg.waitForTimeout(400);
   for (let i = 0; i < 25; i++) {

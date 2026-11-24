@@ -381,11 +381,10 @@ export const PROP_PAL = {
   /** The frame rail under a truck and the slats under a pallet: sun-dried grey, not black. */
   chassis: 0x6a6660,
   tyre: 0x3e3f42,
-  /** The camp's khaki tarps, the yellow notice among the white on its board, a bedroll, the land on the map table's map. */
+  /** The camp's khaki tarps, the yellow notice among the white on its board, a bedroll. */
   canvas: 0xb9a37a,
   note: 0xeedc8a,
   mat: 0x6f7e5c,
-  mapLand: 0xd9a868,
 } as const;
 
 /** A wheel for a vehicle prop: a dark disc standing at (x, z) on the ground, its axle across the vehicle, which runs along x when `alongX`. */
@@ -477,23 +476,15 @@ function buildProp(b: Box, i: number): THREE.Object3D {
       g.add(part(L + 0.04, W + 0.04, -0.12, 0.02, new THREE.Color(cloth).multiplyScalar(0.8).getHex(), 0, false));
       break;
     }
-    case PROP.table:
     case PROP.bench: {
-      // A timber top on four legs. The map table carries the island's map, the bench a vice and its tools.
+      // A timber top on four legs: the workshop's bench, a vice and its tools.
       const top = 0.08;
       g.add(part(L, W, h - top, h, PROP_PAL.wood));
       for (const t of [-L / 2 + 0.12, L / 2 - 0.12]) for (const v of [-W / 2 + 0.1, W / 2 - 0.1]) g.add(mesh(new THREE.BoxGeometry(0.09, h - top, 0.09), flat(PROP_PAL.chassis), long ? t : v, b.y0 + (h - top) / 2, long ? v : t));
-      if (b.tint === PROP.table) {
-        g.add(part(L * 0.8, W * 0.75, h, h + 0.01, PAL.paint, 0, false));
-        g.add(part(L * 0.3, W * 0.4, h + 0.01, h + 0.02, PROP_PAL.mapLand, -L * 0.12, false));
-        g.add(part(L * 0.22, W * 0.3, h + 0.01, h + 0.02, PROP_PAL.mapLand, L * 0.22, false));
-        g.add(part(0.06, W * 0.6, h + 0.02, h + 0.025, PAL.ring, L * 0.05, false));
-      } else {
-        g.add(part(0.3, 0.22, h, h + 0.22, PAL.gun, -L / 2 + 0.35));
-        g.add(part(0.7, 0.3, h, h + 0.12, PAL.rust, 0.2));
-        g.add(part(0.5, 0.08, h, h + 0.05, PAL.gunLight, L / 2 - 0.5, false));
-        g.add(part(L * 0.9, 0.06, 0.25, 0.32, PROP_PAL.wood, 0, false));
-      }
+      g.add(part(0.3, 0.22, h, h + 0.22, PAL.gun, -L / 2 + 0.35));
+      g.add(part(0.7, 0.3, h, h + 0.12, PAL.rust, 0.2));
+      g.add(part(0.5, 0.08, h, h + 0.05, PAL.gunLight, L / 2 - 0.5, false));
+      g.add(part(L * 0.9, 0.06, 0.25, 0.32, PROP_PAL.wood, 0, false));
       break;
     }
     case PROP.board: {

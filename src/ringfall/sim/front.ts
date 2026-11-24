@@ -17,7 +17,7 @@ import { hypot2 } from "./hypot";
  * ground is on the front, and only a node on the front can be taken, by capturing its core
  * (`FRONT`). Query helpers here (`frontNodes`, `ownNodes`, …) are pure; `stepFront` / `useZones`
  * / siege waves mutate the raid's `State` (and a module-level zone cache). The same hold rules
- * also feed the island's nights (`meta/island.ts`) and the maps.
+ * also feed the maps.
  */
 
 /** Who holds a node: the enemy, the player, or another player (sim/holds.ts). Another player's node is not the player's: on the front it is taken by its core as the enemy's is. */
@@ -106,8 +106,8 @@ export function inZone(x: number, z: number, r = 0): boolean {
   return false;
 }
 
-/** Whether node `i` is the player's, marked by the enemy for the night or by another player's expedition sent at it, and not fortified yet: its core takes the use key (`FORTIFY`). */
-export const fortifiable = (s: Pick<State, "nodes" | "battle">, i: number) => s.nodes[i] === "own" && !!s.battle && (s.battle.targets.includes(i) || s.battle.noticed.includes(i)) && !s.battle.fortified.includes(i);
+/** Whether node `i` is the player's, marked by another player's expedition sent at it, and not fortified yet: its core takes the use key (`FORTIFY`). */
+export const fortifiable = (s: Pick<State, "nodes" | "battle">, i: number) => s.nodes[i] === "own" && !!s.battle && s.battle.noticed.includes(i) && !s.battle.fortified.includes(i);
 
 /** The core within reach of the use key, as a place in `NODES`, or -1. An owned node's core does nothing, but for one to fortify. */
 export function coreInReach(s: State): number {
@@ -168,7 +168,7 @@ export const onCore = (s: State, i: number) => {
   return p.downed <= 0 && dist2d(p.pos, c) < FRONT.radius && Math.abs(p.pos.y - c.y) < FRONT.rise;
 };
 
-/** The fortifying under way fills while the player holds the core's ground with no robot on it; full, the node is safe from the night. Lost or left, it is dropped. */
+/** The fortifying under way fills while the player holds the core's ground with no robot on it; full, the node is shut to expeditions (`FORTIFY`). Lost or left, it is dropped. */
 function stepFortify(s: State) {
   const f = s.fortify;
   if (!f || s.phase !== "play") return;

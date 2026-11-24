@@ -90,10 +90,9 @@ export interface Battle {
   rally: number;
   /** The counter-attacks due on nodes the player has just taken (`COUNTER`): which node, and the battle's clock at which its squad sets off. */
   counters: { node: number; at: number }[];
-  /** The enemy's targets for the coming night (places in `NODES`, `NIGHT`), and those of them the player has fortified (`FORTIFY`). */
-  targets: number[];
+  /** Nodes the player has fortified (`FORTIFY`), shutting expeditions at them. */
   fortified: number[];
-  /** The nodes other players' expeditions are sent to take in this raid (places in `NODES`): announced as the night's targets are, and fortified the same way, which shuts them to those expeditions. */
+  /** The nodes other players' expeditions are sent to take in this raid (places in `NODES`): announced and fortified the same way, which shuts them to those expeditions. */
   noticed: number[];
   /** The nodes shut to other players' expeditions from before the raid (fortified in an earlier one, `BattleStart.shut`). */
   shut: number[];
@@ -122,8 +121,6 @@ export interface RivalExpedition {
 /** What a raid of the island brings to its battle: the factory's level, and the other players' expeditions coming. */
 export interface BattleStart {
   factory: number;
-  /** The enemy's targets for the coming night (meta/island.ts `nightTargets()`), announced all day; left out, none. */
-  targets?: readonly NodeId[];
   rivals?: readonly RivalExpedition[];
   /** The player's nodes still shut to expeditions as the raid starts (fortified in an earlier raid, docs/ringfall/multiplayer.md); left out, none. */
   shut?: readonly NodeId[];
@@ -341,7 +338,6 @@ export function initBattle(s: State, start: BattleStart): Battle {
     threat: NODES.map(() => false),
     rally: -1,
     counters: [],
-    targets: (start.targets ?? []).map((id) => nodeIndex(id)).filter((i) => i >= 0),
     fortified: [],
     noticed: [],
     shut: [],
@@ -736,8 +732,8 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
   // A node of the player's where the enemy comes ashore or next to the enemy's, with none of the player's squads there or going: one goes to hold it.
   const bare = NODES.map((_, i) => i).filter((i) => s.nodes[i] === "own" && !b.squads.some((q) => q.side === 0 && q.to === i && q.task !== "rally") && (NET_EDGE.includes(NODES[i].id) || NEIGHBOURS[i].some((k) => s.nodes[k] !== "own")));
   if (bare.length) {
-    // The night's targets first: a squad standing there as the battle ends halves the night's chance (`NIGHT.guarded`).
-    const want = (k: number) => +(b.targets.includes(k) && !b.fortified.includes(k)) * 2 + +NET_EDGE.includes(NODES[k].id);
+    // Prefer a landing-edge node (`NET_EDGE`).
+    const want = (k: number) => +NET_EDGE.includes(NODES[k].id);
     const i = bare.sort((a, c) => want(c) - want(a))[0];
     return { from: i, to: i, task: "defend" };
   }
@@ -990,9 +986,6 @@ export function countered(s: { battle: Battle | null | undefined; nodes: readonl
   const b = s.battle;
   return NODES.map((_, i) => !!b && s.nodes[i] === "own" && b.squads.some((q) => q.counter && q.ashore <= 0 && boundFor(q) === i));
 }
-
-/** The nodes the player's squads stand at, holding them, as the battle stands: those the night finds guarded. */
-export const guardedNodes = (b: Battle): number[] => NODES.map((_, i) => i).filter((i) => b.squads.some((q) => q.side === 0 && q.to === i && q.units.length > 0 && (q.task === "post" || q.task === "hold" || q.task === "defend") && arrived(q)));
 
 /* ---------- walking, fighting and taking, in numbers ---------- */
 

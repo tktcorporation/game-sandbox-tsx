@@ -4,7 +4,7 @@
  * hideout cards (each with its mark and the next level's gain, was → now), a module opened to its
  * ladder of levels and what the next takes, the factory's card, and the places the same marks
  * stand where the effects show (the shelves' issued heals and pouch, the stash's count, the
- * trader's materials, the map table's report). On a desktop and on a phone on its side under real
+ * trader's materials, the shelves' radio report). On a desktop and on a phone on its side under real
  * touch events; every panel must fit the window.
  */
 import { createServer } from "node:http";
@@ -152,9 +152,9 @@ export async function upgradeShots({ browser, port, out, errors }) {
     await check(pg, `${where} shop`);
     await shot("6-shop-materials");
     await close(pg, phone);
-    // The radio's mast at the map table's report.
-    await station(pg, "map", cdp);
-    if (!(await pg.locator("#hub-side .slot.intel .ico.radio").count())) errors.push("upgrades: the map table's report carries no radio mast");
+    // The radio's mast at the shelves' report (地図の机 deleted).
+    await station(pg, "stash", cdp);
+    if (!(await pg.locator("#hub-side .slot.intel .ico.radio").count())) errors.push("upgrades: the shelves' report carries no radio mast");
     await close(pg, phone);
     await ctx.close();
   }

@@ -567,27 +567,6 @@ export const COUNTER = {
 };
 
 /**
- * The night between two days (meta/island.ts): the enemy's move is announced, as its shots are.
- * As a day starts, the enemy picks its targets for the coming night among the player's nodes next
- * to its own ground (a node of its, the pad or the north shore): `few` of them, `many` once the
- * player holds `spread` nodes or more (`nightTargets()`), drawn from the raid's seed and the day,
- * never the raid's random numbers. The camp's maps and the raid's show them all day. Only a
- * target can fall overnight, and only one the player still holds as the battle ends: with the
- * chance `fall`, times `guarded` when the player's squads stood at it then, times the factory's
- * level's `night` (`FACTORY.levels`). A target the player fortified in the raid (`FORTIFY`)
- * never falls.
- */
-export const NIGHT = {
-  few: 1,
-  many: 2,
-  spread: 6,
-  fall: 0.4,
-  guarded: 0.5,
-  /** What the chance is multiplied by while the player holds a node that watches the night (`UNLOCKS[].watch`). */
-  watch: 0.5,
-};
-
-/**
  * The decisive battle (決戦) and the next round (次の周): the island has an ending. Once the
  * player holds `nodes` of the nodes, one of them bordering the titan's pad, the pad is open
  * (`finaleOpen()` in meta/island.ts): the raid's objective is the titan, and a raid in which it
@@ -608,10 +587,10 @@ export const FINALE = { nodes: 16, threat: 1 };
 export const MOMENTUM = { max: 3, factory: 0.8, clock: 0.85, spoils: [600, 1200, 2000] };
 
 /**
- * Fortifying (固める): the use key at the core of a node of the player's that the enemy has marked
- * for the night (`NIGHT`) starts a meter that fills over `time` seconds while the player stands
- * on the core's ground (`FRONT.radius`) with no robot on it. Full, the node is safe from the
- * night, whatever the battle does after.
+ * Fortifying (固める): the use key at the core of a node of the player's that another player's
+ * expedition is sent at (`Battle.noticed`) starts a meter that fills over `time` seconds while
+ * the player stands on the core's ground (`FRONT.radius`) with no robot on it. Full, the node is
+ * shut to those expeditions for the rest of the raid and for a day on the server.
  */
 export const FORTIFY = { time: 20 };
 
@@ -631,8 +610,6 @@ export interface FactoryLevel {
   kinds: EnemyKind[];
   /** Turrets (a robot that never leaves the core) at each node the player holds at the raid's start. */
   turrets: number;
-  /** What the chance of a node of the player's falling in the night is multiplied by (`NIGHT`). */
-  night: number;
   /** What building this level takes; level 0 is the factory the camp starts with, never built. */
   cost?: FactoryCost;
 }
@@ -641,15 +618,15 @@ export interface FactoryLevel {
 export const FACTORY = {
   name: "工場",
   levels: [
-    { every: 230, max: 1, kinds: ["grunt", "grunt"], turrets: 0, night: 1 },
-    { every: 200, max: 1, kinds: ["grunt", "grunt", "grunt"], turrets: 0, night: 0.9, cost: { items: [["parts", 3], ["fuse", 2]], cash: 1250 } },
-    { every: 170, max: 2, kinds: ["grunt", "heavy", "grunt"], turrets: 0, night: 0.8, cost: { items: [["parts", 4], ["wire", 2]], cash: 3500 } },
-    { every: 140, max: 2, kinds: ["grunt", "heavy", "drone", "grunt"], turrets: 1, night: 0.7, cost: { items: [["wire", 3], ["board", 2]], cash: 7000 } },
-    { every: 110, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt"], turrets: 1, night: 0.65, cost: { items: [["board", 3], ["drive", 2]], cash: 12000 } },
-    { every: 100, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 1, night: 0.6, cost: { items: [["drive", 3], ["gyro", 2]], cash: 18000 } },
-    { every: 90, max: 4, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 2, night: 0.55, cost: { items: [["gyro", 3], ["core", 1]], cash: 26000 } },
-    { every: 80, max: 4, kinds: ["grunt", "heavy", "heavy", "drone", "grunt", "charger"], turrets: 2, night: 0.5, cost: { items: [["board", 4], ["core", 2]], cash: 36000 } },
-    { every: 70, max: 5, kinds: ["grunt", "grunt", "heavy", "heavy", "drone", "charger", "grunt"], turrets: 3, night: 0.45, cost: { items: [["gyro", 2], ["core", 2], ["reactor", 1]], cash: 50000 } },
+    { every: 230, max: 1, kinds: ["grunt", "grunt"], turrets: 0 },
+    { every: 200, max: 1, kinds: ["grunt", "grunt", "grunt"], turrets: 0, cost: { items: [["parts", 3], ["fuse", 2]], cash: 1250 } },
+    { every: 170, max: 2, kinds: ["grunt", "heavy", "grunt"], turrets: 0, cost: { items: [["parts", 4], ["wire", 2]], cash: 3500 } },
+    { every: 140, max: 2, kinds: ["grunt", "heavy", "drone", "grunt"], turrets: 1, cost: { items: [["wire", 3], ["board", 2]], cash: 7000 } },
+    { every: 110, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt"], turrets: 1, cost: { items: [["board", 3], ["drive", 2]], cash: 12000 } },
+    { every: 100, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 1, cost: { items: [["drive", 3], ["gyro", 2]], cash: 18000 } },
+    { every: 90, max: 4, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 2, cost: { items: [["gyro", 3], ["core", 1]], cash: 26000 } },
+    { every: 80, max: 4, kinds: ["grunt", "heavy", "heavy", "drone", "grunt", "charger"], turrets: 2, cost: { items: [["board", 4], ["core", 2]], cash: 36000 } },
+    { every: 70, max: 5, kinds: ["grunt", "grunt", "heavy", "heavy", "drone", "charger", "grunt"], turrets: 3, cost: { items: [["gyro", 2], ["core", 2], ["reactor", 1]], cash: 50000 } },
   ] as FactoryLevel[],
 };
 
@@ -939,7 +916,7 @@ export const MOD = {
 };
 
 /**
- * The threat (脅威度) the player chooses for a raid at the map table, 0 to `max`: on top of the
+ * The threat (脅威度) applied to a raid, 0 to `max`: on top of the
  * enemy's strength (`STRENGTH.levels`), the reinforcements come `reinforce` times as soon and as
  * often, the raiders `raiders` times as soon, `plate` of the plain grunts and heavies wear a
  * tier-1 plate, and robots answer shots from afar `range` times as far (`RETURN`). In return the

@@ -26,7 +26,7 @@ import { hypot2 } from "./hypot";
 export type BoxKind = "crate" | "container" | "wall" | "rock" | "pad" | "tower" | "slab" | "step" | "steel" | "fence" | "prop";
 
 /** What a `prop` box is, by its tint: the renderer draws each as that thing. */
-export const PROP = { pallets: 0, sandbags: 1, barrier: 2, cab: 3, bed: 4, car: 5, rubble: 6, tarp: 7, table: 8, board: 9, shelf: 10, counter: 11, bench: 12, bedroll: 13 } as const;
+export const PROP = { pallets: 0, sandbags: 1, barrier: 2, cab: 3, bed: 4, car: 5, rubble: 6, tarp: 7, board: 8, shelf: 9, counter: 10, bench: 11, bedroll: 12 } as const;
 
 /** A solid spanning y0..h. Floors, roofs and bridges have y0 > 0 and leave open space below. */
 export interface Box {
@@ -2609,7 +2609,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   radar: {
     region: "launch",
     depotOut: 18,
-    front: { tier: 2, unlocks: { watch: true } },
+    front: { tier: 2, unlocks: { scout: true } },
     name: "追跡レーダー",
     x: 0,
     z: 0,
@@ -6253,7 +6253,7 @@ const CAMP_HALF = { x: 17, z: 14 };
 /** Half the gate's width, in the middle of the north fence. */
 const CAMP_GATE = 4.25;
 
-export type StationId = "map" | "stash" | "shop" | "workshop" | "factory" | "signal";
+export type StationId = "stash" | "shop" | "workshop" | "factory" | "signal";
 
 /** A place in the camp the use key acts at: a station's panel, or the truck. */
 export interface CampSpot {
@@ -6300,8 +6300,6 @@ function camp(): Box[] {
   // A board west of the gate (scenery only; not a station).
   out.push(box(-8, -10.5, 3, 0.12, 2.3, "prop", PROP.board, 0.9));
   for (const u of [-9.4, -6.6]) out.push(box(u, -10.6, 0.14, 0.14, 2.4, "steel", 2));
-  // The map table in the middle of the yard, in the open sun.
-  out.push(box(-1, -3, 2.6, 1.6, 0.92, "prop", PROP.table));
   // The trader's stall against the east fence, south of the shelves: a counter in the sun, its
   // goods behind it under an awning whose shade falls on the fence (the sun stands to the south-west).
   out.push(box(14, 7.5, 1, 3.4, 1.05, "prop", PROP.counter), box(15.9, 6.2, 1.2, 1.2, 1.2, "crate"), box(16, 7.7, 1.0, 1.2, 0.9, "crate"), box(15.8, 9.1, 1.2, 1.0, 1.6, "crate"), ...tarp(15.6, 7.5, 2.6, 4.6, 2.9));
@@ -6334,7 +6332,6 @@ export const CAMP = {
   /** Where the player wakes between raids, in front of the tent, facing the gate. */
   wake: { x: CAMP_AT[0] + 6, z: CAMP_AT[1] + 8, yaw: 0 },
   spots: [
-    campSpot("map", "地図の机", -1, -3, 2.8, 1.9),
     campSpot("stash", "倉庫の棚", 15.9, 0.9, 3.0, 2.6),
     campSpot("shop", "商人の屋台", 14, 7.5, 2.6, 3.3),
     campSpot("workshop", "作業場", -10, 10.5, 2.6, 2.0),
@@ -7142,9 +7139,8 @@ export const TIER = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.tier])) as 
  * direction reinforcements beam in from shown in the raid; `shore`, no enemy boats land on the
  * harbor's north shore; `heal`, one more heal of that kind issued to every raid; `ult`, the
  * leap's charge a raid starts with (summed, to 1); `mod`, a raid starts wearing one mod part the
- * profile knows; `turret`, more turrets at each node held as a battle starts; `watch`, the
- * night's targets fall half as often (`NIGHT.watch`). Every node opens something, so which to
- * take first is a choice and losing one is felt.
+ * profile knows; `turret`, more turrets at each node held as a battle starts. Every node opens
+ * something, so which to take first is a choice and losing one is felt.
  */
 export interface NodeUnlock {
   shop?: Rarity;
@@ -7156,7 +7152,6 @@ export interface NodeUnlock {
   ult?: number;
   mod?: true;
   turret?: number;
-  watch?: true;
 }
 /** What holding each node opens (`POI_DEFS`). */
 export const UNLOCKS = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.unlocks])) as Record<NodeId, NodeUnlock>;

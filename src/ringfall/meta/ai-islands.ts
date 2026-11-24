@@ -143,7 +143,7 @@ export function withAi(server: readonly Neighbour[], salt: number, day: number, 
   return [...server, ...aiIslands(salt, taken).map((a) => aiNeighbour(a, salt, day, now))].sort((x, y) => x.slot - y.slot);
 }
 
-/** What changed on its island overnight, for the map table: the nodes it took, and those it lost. */
+/** What changed on its island overnight: the nodes it took, and those it lost. */
 export function aiChanges(a: AiIsland, salt: number, day: number): { took: NodeId[]; lost: NodeId[] } {
   const now = aiNodes(a, salt, day);
   const before = aiNodes(a, salt, day - 1);

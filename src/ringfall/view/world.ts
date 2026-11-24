@@ -485,7 +485,7 @@ export class World {
       put(sign, 4.5, -0.8);
     }
     {
-      // The camp's fire, in the open yard between the map table and the tent.
+      // The camp's fire, in the open yard toward the tent.
       const { fire } = buildEntryMark();
       const x = (CAMP.x0 + CAMP.x1) / 2 - 3;
       const z = (CAMP.z0 + CAMP.z1) / 2 + 4;

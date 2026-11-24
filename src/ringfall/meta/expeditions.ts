@@ -235,7 +235,7 @@ export function parseIncoming(raw: unknown): Incoming[] {
     .slice(0, 8);
 }
 
-/** A warning as a line for the map table: who is coming at which node, and how long the owner has at `now`. */
+/** A warning as a line: who is coming at which node, and how long the owner has at `now`. */
 export function incomingLine(e: Incoming, now: number): string {
   const who = e.by.name || e.by.code;
   const at = nodeName(e.node);
@@ -339,7 +339,7 @@ export function logLine(e: IslandLogEntry): string {
   }
 }
 
-/** What happened in a log entry, in a word, for the map table's marks. */
+/** What happened in a log entry, in a word, for the signal station's marks. */
 export const LOG_WORD: Record<IslandLogEntry["t"], string> = { noticed: "遠征", landed: "上陸", taken: "奪取", wiped: "全滅", retaken: "奪還", released: "手放し", recalled: "撤収" };
 
 /** Whether an entry is someone's attack on this island, answered by sending one back (仕返し). */

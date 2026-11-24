@@ -890,7 +890,7 @@ export interface Start {
   island?: Partial<Record<PoiId, PoiHold>>;
   /** The titan's pad is open to the decisive battle (`FINALE`): the raid's objective is the titan, and its fall frees the island. */
   finale?: boolean;
-  /** The threat chosen at the map table, 0 to `THREAT.max`; left out, 0. */
+  /** The threat for this raid, 0 to `THREAT.max`; left out, 0. */
   threat?: number;
   /** The mod kinds the profile knows; left out, `MOD_START`. */
   known?: ModKind[];

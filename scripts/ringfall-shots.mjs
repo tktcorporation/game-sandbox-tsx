@@ -766,16 +766,8 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await useStation(page, "workshop");
   await page.screenshot({ path: `${out}/00-panel-workshop.png` });
   await closePanel(page);
-  // The map table shows the island and chooses no start: that is the departure's.
-  await seen("map");
-  await useStation(page, "map");
-  if ((await page.locator("#hub-side [data-act=entry], #hub-side [data-act=region], #hub-side [data-act=from]").count()) || !(await page.locator("#hub-island-map").count())) errors.push("camp: the map table still chooses a start, or shows no island");
-  await page.screenshot({ path: `${out}/00-panel-map.png` });
-  // The enemy's nodes off the front carry a padlock, the front's none; a click on one says how to open it.
-  await page.locator("#hub-island-map").scrollIntoViewIfNeeded();
-  await clickLock(page, "#hub-island-map", "camp map table", (x, y) => page.mouse.click(x, y));
-  await page.screenshot({ path: `${out}/00-panel-map-lock.png` });
-  await closePanel(page);
+  // 地図の机 deleted: open refused; island overview and starts live on the departure (車両).
+  if (await page.evaluate(() => window.ringfallCamp.open("map"))) errors.push("camp: open(map) still worked");
   // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor, the city and the launch site carry padlocks and their ways in are dashed; cancelled with Esc.
   await useStation(page, "vehicle");
   await departUp(page);
@@ -784,6 +776,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   const harborRings = await page.locator("#depart-points button.pick.entry.shut").count();
   const fresh = (await readPage(page)).camp.depart;
   if (harborLocked !== 3 || entriesOffered !== 1 || harborRings !== 9 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
+  if (!(await page.locator("#depart-map").count())) errors.push("camp: the departure shows no island map");
   await page.screenshot({ path: `${out}/00-depart-locked.png` });
   // A click between the starts reaches the map's padlocks under them.
   const starts = await page.evaluate(() => {
@@ -1346,14 +1339,14 @@ if (part("meta")) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, midGame);
   await toCamp(pg);
-  // The stations with something to act on carry a mark over them: the workshop has a module to build, the map table the radio's report.
+  // The stations with something to act on carry a mark over them: the workshop has a module to build, the shelves the radio's report.
   const c0 = await readOf(pg);
-  if (!c0.camp.marks.workshop || !c0.camp.marks.map) errors.push(`camp: the marks read ${JSON.stringify(c0.camp.marks)}`);
-  await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
+  if (!c0.camp.marks.workshop || !c0.camp.marks.stash) errors.push(`camp: the marks read ${JSON.stringify(c0.camp.marks)}`);
+  await pg.evaluate(() => window.ringfallCamp.walkTo("stash"));
   await pg.evaluate(() => window.advanceTime(100));
   await pg.screenshot({ path: `${out}/40-camp-marks.png` });
-  // The radio (Lv1) names the POI whose bins lean rare in the next raid.
-  await useStation(pg, "map");
+  // The radio (Lv1) names the POI whose bins lean rare in the next raid (on the shelves).
+  await useStation(pg, "stash");
   const intel = await pg.evaluate(() => document.querySelector("#hub-side .intel")?.textContent ?? "");
   await closePanel(pg);
   await useStation(pg, "workshop");
@@ -1418,9 +1411,9 @@ if (part("meta")) {
   fit = fit.concat(await spills(pg));
   await pg.screenshot({ path: `${out}/m11-hideout-module.png` });
   await closePanel(pg, true);
-  await useStation(pg, "map", cdp);
+  await useStation(pg, "stash", cdp);
   fit = fit.concat(await spills(pg));
-  await pg.screenshot({ path: `${out}/m12-map-intel.png` });
+  await pg.screenshot({ path: `${out}/m12-stash-intel.png` });
   await closePanel(pg, true);
   // The departure holds the depots too, tapped on its map, and stays inside the screen.
   await useStation(pg, "vehicle", cdp);
@@ -1643,9 +1636,9 @@ if (part("meta")) {
 /*
  * The island's state, from a profile saved before the six-node island on day 6: the supply depot
  * and the wreck freed, the quarry thin, which loads as three nodes the player's. The camp's line
- * of the day and the map table fill three of the row's six marks, the raid's map paints the
- * player's ground blue and the enemy's red with the front between, the HUD's row under the
- * compass shows the same, and coming home ends the day on the results' map.
+ * of the day fills three of the row's six marks, the raid's map paints the player's ground blue
+ * and the enemy's red with the front between, the HUD's row under the compass shows the same, and
+ * coming home ends the day on the results' map.
  */
 const islandDay = {
   v: 13, cash: 2400, stash: [], raids: 5, extracted: 4, time: 3600, region: "reservoir", entry: "beach", seed: 4242, escaped: null,
@@ -1663,16 +1656,19 @@ const islandDay = {
   // The nodes a profile holds: the day's battle, reckoned to its end, may have taken some back.
   const mine = (p) => Object.entries(p.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
   if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "freed" || (await own("#camp-row")) !== 3) errors.push(`island: the camp reads day ${c.profile.day}, the quarry ${c.profile.poiState.quarry.state}, ${await own("#camp-row")} of the row filled`);
-  await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
+  await pg.evaluate(() => window.ringfallCamp.walkTo("vehicle"));
   await pg.evaluate(() => window.advanceTime(100));
   await pg.screenshot({ path: `${out}/70-island-camp-row.png` });
-  await useStation(pg, "map");
+  // Island overview is the departure's map (地図の机 deleted).
+  await useStation(pg, "vehicle");
+  await departUp(pg);
   await pg.waitForTimeout(300);
-  if ((await own("#hub-side .hub-row")) !== 3 || (await pg.locator("#hub-side .tomorrow, #hub-side .hub-net, #hub-side .score-days").count())) errors.push(`island: the map table fills ${await own("#hub-side .hub-row")} of the row, or still shows the network or the battles`);
+  if (!(await pg.locator("#depart-map").count())) errors.push("island: the departure shows no island map");
   const fit = await spills(pg);
-  if (fit.length) errors.push(`island map table (1280x720): ${fit.join(", ")}`);
-  await pg.screenshot({ path: `${out}/71-island-panel.png` });
-  await closePanel(pg);
+  if (fit.length) errors.push(`island departure (1280x720): ${fit.join(", ")}`);
+  await pg.screenshot({ path: `${out}/71-island-depart.png` });
+  await pg.keyboard.press("Escape");
+  await pg.evaluate(() => window.advanceTime(200));
   const run = await walkOutOfGate(pg);
   const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
   if (run.hold.slice(0, 5).join() !== "freed,freed,held,held,freed" || run.hold.slice(5).some((h) => h !== "held") || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
@@ -1691,8 +1687,8 @@ const islandDay = {
   // Home again after time away: the raid ends alive, the day with it.
   await pg.evaluate(() => window.ringfallStep(7000));
   await pg.evaluate(() => {
-    const m = window.ringfallCamp.spots().find((q) => q.id === "map");
-    window.ringfallPlace(m.x + 7, m.z + 11, 0);
+    const w = window.ringfallCamp.wake();
+    window.ringfallPlace(w.x, w.z, w.yaw);
   });
   await pg.evaluate(() => window.advanceTime(200));
   await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
@@ -1718,12 +1714,14 @@ const islandDay = {
   await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(pg, true);
   const cdp = await ctx.newCDPSession(pg);
-  await useStation(pg, "map", cdp);
+  await useStation(pg, "vehicle", cdp);
+  await departUp(pg);
   await pg.waitForTimeout(300);
   const fit = await spills(pg);
-  if (fit.length) errors.push(`island map table (phone): ${fit.join(", ")}`);
-  await pg.screenshot({ path: `${out}/m21-island-panel.png` });
-  await closePanel(pg, true);
+  if (fit.length) errors.push(`island departure (phone): ${fit.join(", ")}`);
+  await pg.screenshot({ path: `${out}/m21-island-depart.png` });
+  await pg.keyboard.press("Escape");
+  await pg.evaluate(() => window.advanceTime(200));
   await rideOut(pg, cdp);
   await pg.evaluate(() => window.ringfallStep(4000));
   const bb = await pg.locator("#t-map").boundingBox();
@@ -1767,12 +1765,14 @@ lap("island");
     const pg = await withProfile(ctx, modGame);
     await toCamp(pg, phone);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
-    // The map table has no 強度 of its own; it marks each POI's best.
-    await useStation(pg, "map", cdp);
-    if (await pg.locator("#hub-side .hub-threat, #hub-side [data-act=threat]").count()) errors.push("threat: the map table still offers a threat of its own");
-    await pg.locator("#hub-island-map").scrollIntoViewIfNeeded();
-    await pg.screenshot({ path: tag("80-map-threat-best.png", "m30-map-threat-best.png") });
-    await closePanel(pg, phone);
+    // 強度 is not chosen at camp stations (契約板・地図の机 deleted); departure / raid show freedAt on the map.
+    await useStation(pg, "vehicle", cdp);
+    await departUp(pg);
+    if (await pg.locator("#depart .hub-threat, #depart [data-act=threat], #hub-side .hub-threat").count()) errors.push("threat: a camp screen still offers a threat of its own");
+    await pg.locator("#depart-map").scrollIntoViewIfNeeded();
+    await pg.screenshot({ path: tag("80-depart-threat-best.png", "m30-depart-threat-best.png") });
+    await pg.keyboard.press("Escape");
+    await pg.evaluate(() => window.advanceTime(200));
     if (phone) await rideOut(pg, cdp);
     else await walkOutOfGate(pg);
     await pg.evaluate(() => window.ringfallStep(1500));
@@ -1809,8 +1809,8 @@ lap("island");
     // Home through the camp's yard, alive with the parts: the results offer them for analysis.
     await pg.evaluate(() => window.ringfallStep(9000));
     await pg.evaluate(() => {
-      const m = window.ringfallCamp.spots().find((q) => q.id === "map");
-      window.ringfallPlace(m.x + 7, m.z + 11, 0);
+      const w = window.ringfallCamp.wake();
+      window.ringfallPlace(w.x, w.z, w.yaw);
     });
     await pg.evaluate(() => window.advanceTime(200));
     await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
@@ -1835,7 +1835,7 @@ lap("island");
 /*
  * The day's battle (陣取り戦): a profile on day 9 with the supply depot and the quarry the
  * player's, the factory at level 3, saved with the last days' battles' points (dropped on load).
- * The factory's panel and the map table's row; out of the gate, the row under the compass, one
+ * The factory's panel and the camp's row; out of the gate, the row under the compass, one
  * of the player's own squads fighting one of the enemy's in front of the player, and the battle
  * map with the squads, on the desktop and a phone on its side.
  */
@@ -2022,15 +2022,11 @@ if (part("battle")) for (const phone of [false, true]) {
   if (fitShop.length) errors.push(`battle shop panel (${phone ? "phone" : "1280x720"}): ${fitShop.join(", ")}`);
   await pg.screenshot({ path: tag(8, "panel-shop-nodes") });
   await closePanel(pg, phone);
-  await useStation(pg, "map", cdp);
-  await pg.waitForTimeout(300);
+  // The camp's line of the day, its row, and 今日の作戦 (地図の机 deleted: tug row lives here).
   const tugOwn = async (sel) => Number((await pg.locator(`${sel} .tug-n.own`).first().textContent().catch(() => "-1")) ?? -1);
-  if ((await tugOwn("#hub-side .hub-row")) !== 2) errors.push("battle: the map table's row does not fill the two nodes held");
-  await pg.screenshot({ path: tag(2, "panel-map-row") });
-  await closePanel(pg, phone);
-  // The camp's line of the day, its row, and 今日の作戦.
   const today = await pg.textContent("#camp");
   if (!/9 日目/.test(today) || !/攻める拠点/.test(today) || (await tugOwn("#camp-row")) !== 2) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
+  await pg.screenshot({ path: tag(2, "camp-row") });
   await pg.screenshot({ path: tag(6, "camp-today") });
   const run = await walkOutOfGate(pg);
   if (!run.battle || run.battle.factory !== 3) errors.push(`battle: the raid out of the gate has ${JSON.stringify(run.battle && { factory: run.battle.factory })}`);
@@ -2075,12 +2071,12 @@ if (part("battle")) for (const phone of [false, true]) {
 
 /*
  * The push and pull (docs/ringfall/island-v2.md, 押し合い), from a profile on day 12 holding the
- * supply depot, the quarry and the weather station (its seed one whose night takes some of them back): a node built on the open ground
+ * supply depot, the quarry and the weather station: a node built on the open ground
  * (the waterworks) seen from its gate; the player takes it, and the enemy's counter-attack lands
  * and walks to it (the arrow at the screen's edge, the HUD's bar pulsing at its blue end, the
  * map's ring); the player leaves at the waterworks' depot with the counter-attack on its way;
- * and the results play the raid's change, the battle after the player left (the depot's mark)
- * and the night's attacks (the moon), the bar sliding at each.
+ * and the results play the raid's change and the battle after the player left (the depot's mark),
+ * the bar sliding at each.
  */
 const pushDay = {
   v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5012, escaped: null,
@@ -2090,7 +2086,7 @@ const pushDay = {
 };
 if (part("push")) for (const phone of [false, true]) {
   const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  // The game's first scout has come in this browser (the expeditions' shots show it): this day is the push and the night's, and the scout would take the observatory the night falls on.
+  // The game's first scout has come in this browser (the expeditions' shots show it).
   await ctx.addInitScript(() => localStorage.setItem("ringfall.ai.scouted.v1", "1"));
   const pg = await withProfile(ctx, pushDay);
   if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
@@ -2179,8 +2175,7 @@ if (part("push")) for (const phone of [false, true]) {
   const r = await readOf(pg);
   const set = r.settled;
   if (r.screen !== "results" || !set || !set.raid.gained.includes("waterworks") || !set.after.lost.includes("waterworks")) errors.push(`push-pull: the results read ${r.screen}, raid ${JSON.stringify(set?.raid)}, after ${JSON.stringify(set?.after)}`);
-  if (!set?.night.lost.length) errors.push(`push-pull: the night took nothing (${JSON.stringify(set?.night)})`);
-  // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, the battle after leaving, the night.
+  // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, then the battle after leaving.
   const beatOf = async (b) => {
     const ready = await pg.waitForFunction(() => typeof window.ringfallBeat === "function", null, { timeout: 25000 }).then(() => true, () => false);
     return ready && (await pg.evaluate(() => window.ringfallBeat())) === b;
@@ -2191,9 +2186,6 @@ if (part("push")) for (const phone of [false, true]) {
   if (!(await beatOf("after")) || !/depot/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' beat after leaving did not show the depot's mark");
   await pg.waitForTimeout(1200);
   await pg.screenshot({ path: tag(6, "results-after-leaving") });
-  if (!(await beatOf("night")) || !/night/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' night beat did not show the moon");
-  await pg.waitForTimeout(1200);
-  await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
   if (bar !== `${held} / 21`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
@@ -2315,7 +2307,7 @@ lap("movement");
 await bagShots({ browser, port, out, errors });
 lap("bag");
 await upgradeShots({ browser, port, out, errors });
-// The decisive battle: the camp's card, the pad ringed on the map table, the raid's objective.
+// The decisive battle: the camp's card, the pad ringed on the departure map, the raid's objective.
 await finaleShots({ browser, port, out, errors });
 await expeditionShots({ browser, port, out, errors });
 lap("upgrades");
