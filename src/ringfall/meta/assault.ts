@@ -6,7 +6,7 @@
  * only once it is ready. Do not import the worker from the client bundle.
  */
 import { AI } from "./ai-islands";
-import { alive, type Outgoing } from "./expeditions";
+import { expeditionsOut, type Outgoing } from "./expeditions";
 import { reactiveDefenseOn } from "./features";
 import type { NodeId } from "../sim/map";
 
@@ -25,7 +25,7 @@ export const assaultNoticeSec = (ai: boolean): number => {
 
 /** An outbound assault notice still open for a short raid (not holding / gone / recalling). */
 export function assaultOf(list: readonly Outgoing[], code: string): Outgoing | null {
-  return alive({ expeditions: list }).find((o) => o.code === code && o.state !== "holding") ?? null;
+  return expeditionsOut({ expeditions: list }).find((o) => o.code === code && o.state !== "holding") ?? null;
 }
 
 /** Whether the notice has elapsed and the short raid may begin. */
@@ -40,7 +40,7 @@ export function assaultLeft(o: Pick<Outgoing, "sentAt">, ai: boolean, now = Date
 
 /**
  * Schedule a map-entry assault (穴 A / 攻める). Reuses Outgoing so AI views and the signal
- * station's 「出ている遠征」 show the same 来る遠征 shape. Idempotent while one is alive for `code`.
+ * station's 「出ている遠征」 show the same 来る遠征 shape. Idempotent while one is still out for `code`.
  */
 export function scheduleAssault(
   list: readonly Outgoing[],

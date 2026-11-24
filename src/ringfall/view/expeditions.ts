@@ -6,7 +6,7 @@
 import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
-import { alive, numbered, recallAll, sentKey, dropStale, factorySquads, homeSquads, refreshOutgoing, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { expeditionsOut, numbered, recallAll, sentKey, dropStale, factorySquads, squadsRemaining, refreshOutgoing, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
@@ -69,7 +69,7 @@ export class ExpeditionPanel {
     });
   }
 
-  /** The factory's panel opened: this island read anew, and the expeditions out with it. */
+  /** The signal station's expeditions section opened: this island read anew, and the expeditions out with it. */
   open() {
     this.note = null;
     this.copied = false;
@@ -132,7 +132,7 @@ export class ExpeditionPanel {
   /** The expeditions out, each as its island shows it now. */
   private async refresh(mine: string, ask: number) {
     const asked = numbered(this.get().expeditions);
-    const codes = [...new Set(alive(this.get()).map((e) => e.code))];
+    const codes = [...new Set(expeditionsOut(this.get()).map((e) => e.code))];
     if (!codes.length) return;
     const views: Record<string, IslandView | null> = {};
     for (const c of codes) {
@@ -237,15 +237,15 @@ export class ExpeditionPanel {
     // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
     const head = `<div class="mod-head"><strong>${flagIcon()}お隣の島</strong>${trop}</div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
-    const send = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.sendForm(p) : "";
+    const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
     const out = p.expeditions.length
       ? `<h4 class="exp-sub">出ている遠征</h4><div class="exp-list">${p.expeditions
           .map((e) => `<div class="req exp-out ${e.state}"><span>${this.islandName(e.code)}${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small>${e.id > 0 && (e.state === "coming" || e.state === "attacking" || e.state === "waiting" || e.state === "holding") ? `<button type="button" class="exp-recall" data-act="exp-recall" data-arg="${esc(sentKey(e))}">引き上げる</button>` : ""}</div>`)
           .join("")}</div>`
       : "";
     // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.
-    const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${homeSquads(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
-    // Island codes: folded away from daily entry (お隣 cards are the primary). Open when answering 遠征に出す.
+    const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${squadsRemaining(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
+    // Island codes: folded away from daily entry (お隣 cards are the primary).
     const dis = this.busy ? " disabled" : "";
     const openCodes = this.answering || this.typed ? " open" : "";
     const own =
@@ -258,11 +258,11 @@ export class ExpeditionPanel {
             : `<details class="exp-codes${openCodes}"${openCodes ? " open" : ""}><summary>島の番号</summary>` +
               `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button></div>` +
               `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="友達の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div></details>`;
-    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${send}${out}${cost}<div class="exp-foot">${own}</div></div></div>`;
+    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${browse}${out}${cost}<div class="exp-foot">${own}</div></div></div>`;
   }
 
-  /** Neighbours as a board, plus a looked-up island's nodes (read-only; E4 has no send). */
-  private sendForm(p: Profile): string {
+  /** Neighbours as a board, plus a looked-up island's nodes (read-only; no send button). */
+  private neighboursBoard(p: Profile): string {
     const dis = this.busy ? " disabled" : "";
     // The neighbours: whose island, how much they hold; a tap opens a read-only look below.
     const mine = new Set<string>(playerNodes(p));

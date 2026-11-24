@@ -21,7 +21,7 @@ import { currentStory } from "./meta/story";
 import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
-import { sendIsland } from "./net";
+import { postRaidSummary } from "./post-raid-summary";
 import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { reactiveDefenseOn } from "./meta/features";
 import { loadIdentity } from "./meta/identity";
@@ -34,7 +34,7 @@ import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
 import { step } from "./sim/step";
 import { hurtAlly, placeAlly } from "./sim/ally";
-import { haulValue } from "./sim/results";
+import { haulAndSentWorth } from "./sim/results";
 import { bagLoad } from "./sim/world";
 import { getMixer, preferLowPower, savedMusic, savedVolume, setMusicVolume, setVolume, unlock, type Mixer } from "./view/audio";
 import { Music, type Mood } from "./view/music";
@@ -283,7 +283,7 @@ function onEvent(e: GameEvent, s: State) {
     hub.reload(settled.profile);
     saveProfile(hub.profile);
     // X2 on a real neighbour: pending results are flushed (and retried) with the island sync.
-    sendIsland(settled, s);
+    postRaidSummary(settled, s);
     syncIsland(settled.profile, s);
     // The game's own islands' part in the raid, as their log would tell it: on the results and the map table.
     if (raidAi) {
@@ -1171,7 +1171,7 @@ window.render_game_to_text = () => {
     cleared: s.cleared,
     hold: s.hold,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
-    haul: { items: s.player.haul, tools: s.player.tools, value: haulValue(s), bag: bagLoad(s.player) },
+    haul: { items: s.player.haul, tools: s.player.tools, value: haulAndSentWorth(s), bag: bagLoad(s.player) },
     routes: s.routes,
     depots: s.depots,
     depotSpots: DEPOTS.map((d) => ({ poi: d.poi, x: d.x, z: d.z, yaw: d.yaw })),

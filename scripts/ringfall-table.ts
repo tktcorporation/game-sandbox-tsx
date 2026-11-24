@@ -11,7 +11,7 @@ import { inWorld } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS, type Skill } from "../src/ringfall/sim/bot";
 import { starterKit, newRun, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
-import { haulValue } from "../src/ringfall/sim/results";
+import { haulAndSentWorth } from "../src/ringfall/sim/results";
 import { recordOf, type RaidRecord } from "./ringfall-pacing";
 
 /** A table's printed lines in order (errors go to stderr), and the raids that ended. */
@@ -192,7 +192,7 @@ export function playState(s: State, skillName: string, r: number): RaidResult {
       peakBots,
       cleared: s.stats.cleared.length,
       waves: s.reinforceN,
-      got: s.outcome === "extracted" ? { minutes: s.time / 60, haul: haulValue(s) } : undefined,
+      got: s.outcome === "extracted" ? { minutes: s.time / 60, haul: haulAndSentWorth(s) } : undefined,
       downs: s.stats.downs,
       shots: s.stats.shots,
       hits: s.stats.hits,

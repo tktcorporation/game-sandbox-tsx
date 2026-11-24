@@ -526,10 +526,11 @@ export type GameEvent =
   | { t: "crewOut"; x: number; z: number; n: number }
   /** A core's capture started (the alarm), was refused off the front, and the node was taken (places in `NODES`). */
   | { t: "coreStart"; node: number }
-  /** The player starts fortifying a node of theirs marked for the night, and has fortified it (`FORTIFY`). */
   /** The raid's momentum rose to `level` (`MOMENTUM`). */
   | { t: "momentum"; level: number }
+  /** The player starts fortifying a node of theirs marked for the night (`FORTIFY`). */
   | { t: "fortifyStart"; node: number }
+  /** The player has fortified a marked node (`FORTIFY`). */
   | { t: "fortified"; node: number }
   /** A wave of a core's siege is announced (its beam stands at x, z; wave `wave` of `of`), and its squad steps out. */
   | { t: "siegeWarn"; node: number; x: number; z: number; wave: number; of: number }

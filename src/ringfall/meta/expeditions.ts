@@ -345,8 +345,11 @@ export const LOG_WORD: Record<IslandLogEntry["t"], string> = { noticed: "遠征"
 /** Whether an entry is someone's attack on this island, answered by sending one back (仕返し). */
 export const answerable = (e: IslandLogEntry): boolean => (e.t === "noticed" || e.t === "landed" || e.t === "taken") && isIslandCode(e.by.code);
 
-/** Expeditions sent and still out (not gone, not called home). */
-export const alive = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state !== "gone" && e.state !== "recalling");
+/**
+ * Expeditions that still take a factory squad slot: not `gone`, and not `recalling`
+ * (a recall has already returned its squad to the factory).
+ */
+export const expeditionsOut = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state !== "gone" && e.state !== "recalling");
 
 /**
  * The expeditions with those out called home (引き上げ): each the server has numbered is `recalling`
@@ -363,13 +366,13 @@ export function recallAll(list: Outgoing[], only?: (o: Outgoing) => boolean): Ou
 export const answerRecall = (list: Outgoing[], done: Pick<Outgoing, "code" | "id">): Outgoing[] => list.filter((o) => !(o.state === "recalling" && o.code === done.code && o.id === done.id));
 
 /** The squads the expeditions out take from the factory: one each. */
-export const squadsAway = (p: { expeditions: readonly Outgoing[] }) => alive(p).length;
+export const squadsAway = (p: { expeditions: readonly Outgoing[] }) => expeditionsOut(p).length;
 
 /** The squads the factory keeps out at once on its own island: its level's and the nodes' (`factoryMax()` in sim/battle.ts), before the expeditions take theirs. */
 export const factorySquads = (p: { factory: number; poiState: Island }) => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, p.factory))].max + unlocked(p).squad;
 
-/** The squads left for the island's own battle once the expeditions out take theirs, never below 0. */
-export const homeSquads = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => Math.max(0, factorySquads(p) - squadsAway(p));
+/** Factory squad slots left for this island's own battle after expeditions take theirs, never below 0. */
+export const squadsRemaining = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => Math.max(0, factorySquads(p) - squadsAway(p));
 
 /** Whether the factory has a squad to send: an expedition takes one of the squads it keeps out. */
 export const canSend = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => squadsAway(p) < factorySquads(p);

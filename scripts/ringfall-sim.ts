@@ -38,7 +38,7 @@ import { callLeft, cellOf, decodeSeen, encodeSeen, starterKit, idleInput, newRun
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
-import { haulValue } from "../src/ringfall/sim/results";
+import { haulAndSentWorth } from "../src/ringfall/sim/results";
 import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, toolIn, useTarget } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
@@ -772,7 +772,7 @@ function checkBagSwap(): string | null {
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
-  if (!p.haul.includes("core") || bagUsed(p.haul) > BAG.slots || haulValue(s) !== 1000 + (BAG.slots - 3) * 100) return `bag scenario: after the swap ${p.haul.join(",")}`;
+  if (!p.haul.includes("core") || bagUsed(p.haul) > BAG.slots || haulAndSentWorth(s) !== 1000 + (BAG.slots - 3) * 100) return `bag scenario: after the swap ${p.haul.join(",")}`;
   return null;
 }
 /** A swap throws out the cheapest set that makes room, not just the cheapest items for their size. */
@@ -1630,10 +1630,10 @@ function checkDepots(): string | null {
   s.depots[PADD] = true;
   stand(s);
   s.player.haul = ["core", "board", "parts"];
-  const worth = haulValue(s);
+  const worth = haulAndSentWorth(s);
   step(s, press, false);
   const sentEv = s.events.find((e): e is Extract<GameEvent, { t: "deposit" }> => e.t === "deposit");
-  if (s.player.haul.length || s.sent.join() !== "core,board,parts" || haulValue(s) !== worth || sentEv?.n !== 3 || sentEv.value !== worth || s.leaving) return `depot scenario: sending the bag left haul ${s.player.haul.join()}, sent ${s.sent.join()}, worth ${haulValue(s)} of ${worth}`;
+  if (s.player.haul.length || s.sent.join() !== "core,board,parts" || haulAndSentWorth(s) !== worth || sentEv?.n !== 3 || sentEv.value !== worth || s.leaving) return `depot scenario: sending the bag left haul ${s.player.haul.join()}, sent ${s.sent.join()}, worth ${haulAndSentWorth(s)} of ${worth}`;
   // ...and it comes home after a wipe, with the depot and the explored map kept for later raids.
   s.outcome = "dead";
   const old = { ...newProfile(), depots: ["supply" as const] };

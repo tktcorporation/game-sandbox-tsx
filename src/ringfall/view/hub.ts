@@ -5,7 +5,7 @@ import { assaultLeft, assaultOf, assaultReady, scheduleAssault } from "../meta/a
 import { aiByCode, aiNextId, aiView } from "../meta/ai-islands";
 import { assaultTarget, planShortRaid, takenOn, type IncursionPlan } from "../meta/incursion";
 import { neighbourFronts, type NeighbourFront } from "../meta/neighbour-front";
-import { homeSquads } from "../meta/expeditions";
+import { squadsRemaining } from "../meta/expeditions";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
@@ -68,20 +68,17 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
   return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
 }
 
-/** Whether this Gap A front can run an X2 short raid (AI and real neighbours). */
-export const isPlayableFront = (_f: NeighbourFront): boolean => true;
-
 /** Whether the front's island is an AI copy (notice clock and local view). */
 export const isAiFront = (f: NeighbourFront): boolean => !!f.ai || isAi(f.code);
 
 /** Gap A neighbour fronts — X2 entrances on the map (穴 A / 攻める). */
-export function playableFronts(p: Profile, from?: { x: number; z: number }): NeighbourFront[] {
-  return neighbourFronts(p.poiState, neighboursFor(p), from).filter(isPlayableFront);
+export function gapFronts(p: Profile, from?: { x: number; z: number }): NeighbourFront[] {
+  return neighbourFronts(p.poiState, neighboursFor(p), from);
 }
 
-/** Nearest playable Gap A front, or null. */
-export function playableFrontPick(p: Profile, from: { x: number; z: number } = CAMP.wake): NeighbourFront | null {
-  return playableFronts(p, from)[0] ?? null;
+/** Nearest Gap A front, or null. */
+export function gapFrontPick(p: Profile, from: { x: number; z: number } = CAMP.wake): NeighbourFront | null {
+  return gapFronts(p, from)[0] ?? null;
 }
 
 /**
@@ -95,7 +92,7 @@ export function nextHandFor(p: Profile): string {
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
   // Gap A / X2: AI or real neighbour front on the map — attack entry via 出撃.
-  const gap = playableFrontPick(p);
+  const gap = gapFrontPick(p);
   if (gap) {
     const ai = isAiFront(gap);
     const out = assaultOf(p.expeditions, gap.code);
@@ -505,8 +502,8 @@ export class Hub {
   private peeked: LockedPick | null = null;
   /** The hideout module opened to show what its next level takes. */
   private module: ModuleId | null = null;
-  /** A stash row a module still needs, pressed once to sell: the next press sells it. */
-  private armed = "";
+  /** A stash row a module still needs, pressed once to sell: the next press sells it. Not `armed()` (loadout weapons). */
+  private sellConfirm = "";
   /** The contract board last put up on the board panel; a new day's board slides its papers in once. */
   private boardSeen: string;
   /** What became of this island's expeditions out (each that took its node, or was wiped out or lost it), newest first, for the signal station. */
@@ -609,7 +606,7 @@ export class Hub {
     this.station = null;
     this.module = null;
     this.factoryLadder = false;
-    this.armed = "";
+    this.sellConfirm = "";
     this.exped.cancel();
     // A field typed in (the factory's island code) gives up the keys with the panel.
     if (document.activeElement instanceof HTMLElement && $("hub").contains(document.activeElement)) document.activeElement.blur();
@@ -677,7 +674,7 @@ export class Hub {
       return this.exped.act(act, arg);
     }
     const pick = arg.split(",").map(Number);
-    if (act !== "sell") this.armed = "";
+    if (act !== "sell") this.sellConfirm = "";
     if (act === "close") {
       sfx.click();
       return this.close();
@@ -729,11 +726,11 @@ export class Hub {
       const it = this.profile.stash[n];
       if (isStarter(it)) return this.render();
       // A valuable the hideout or the factory still needs is sold only on a second press.
-      if (it?.t === "valuable" && wanted(this.profile)[it.kind] >= 0 && this.armed !== arg) {
-        this.armed = arg;
+      if (it?.t === "valuable" && wanted(this.profile)[it.kind] >= 0 && this.sellConfirm !== arg) {
+        this.sellConfirm = arg;
         sfx.click();
       } else {
-        this.armed = "";
+        this.sellConfirm = "";
         this.reindex([n]);
         this.set(sell(this.profile, n));
         sfx.sell();
@@ -832,7 +829,7 @@ export class Hub {
       return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: !this.assaultAim && this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
     });
     // Gap A / X2: neighbour fronts (AI and real) — map entrance only, no signal-station button.
-    const assaults: StartPoint[] = playableFronts(p, CAMP.wake).map((f) => ({
+    const assaults: StartPoint[] = gapFronts(p, CAMP.wake).map((f) => ({
       kind: "assault" as const,
       id: f.code,
       name: f.name,
@@ -864,7 +861,7 @@ export class Hub {
     }
     if (at.kind === "assault") {
       // Listed only while the Gap A front is open; a stale peek is shut.
-      const f = playableFronts(p).find((n) => n.code === at.id);
+      const f = gapFronts(p).find((n) => n.code === at.id);
       return f ? null : { name: TERM.shortRaid, why: `${TERM.front}が開いていない`, how: [`<span class="how">${flagIcon(SIDE.rival)}${TERM.shortRaid}</span>`] };
     }
     if (at.kind === "entry") {
@@ -913,7 +910,7 @@ export class Hub {
     const p = this.profile;
     this.peeked = null;
     if (kind === "assault") {
-      const f = playableFronts(p).find((n) => n.code === id);
+      const f = gapFronts(p).find((n) => n.code === id);
       if (!f) return false;
       this.assaultAim = f;
       this.from = null;
@@ -949,11 +946,11 @@ export class Hub {
    */
   async gapDepart(now = Date.now()): Promise<GapDepart | null> {
     const gap = this.assaultAim;
-    if (!gap || !isPlayableFront(gap)) return null;
+    if (!gap) return null;
     const ai = isAiFront(gap);
     let existing = assaultOf(this.profile.expeditions, gap.code);
     if (!existing) {
-      const units = Math.max(1, homeSquads(this.profile) || 1);
+      const units = Math.max(1, squadsRemaining(this.profile) || 1);
       let id = aiNextId(this.profile.expeditions, gap.code);
       let node: NodeId;
       if (ai) {
@@ -1566,7 +1563,7 @@ export class Hub {
     const story = takenStory(p) ? currentStory(p.records) : null;
     // Each value is HTML: marks, and names escaped here.
     const rival = rivalFrontPick(p);
-    const gap = !rival ? playableFrontPick(p) : null;
+    const gap = !rival ? gapFrontPick(p) : null;
     const teach = teachFrontCapture(p);
     const plan: [string, string][] = [
       // The pad open to the decisive battle comes before any node. A rival on the front is why to sortie.
@@ -1630,7 +1627,7 @@ export class Hub {
             const fixed = isStarter(item);
             const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
             const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
-            return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.armed === index.join(",") });
+            return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
           })
           .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }

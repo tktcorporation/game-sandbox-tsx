@@ -79,8 +79,11 @@ const extractStep = (s: State): Step => ({
   done: s.outcome === "extracted",
 });
 
-/** Marks each step done when it or any later one is, so the steps fall in order. */
-function settle(title: string, steps: Step[]): Objective {
+/**
+ * Assembles an objective: marks every step before a done one as done too, then sets `current`.
+ * Not the raid's meta settle (`meta/profile.ts`).
+ */
+function buildObjective(title: string, steps: Step[]): Objective {
   for (let k = steps.length - 2; k >= 0; k--) if (steps[k + 1].done) steps[k].done = true;
   const current = steps.findIndex((st) => !st.done);
   return { title, steps, current: current < 0 ? steps.length : current };
@@ -94,7 +97,7 @@ function captureSteps(s: State, i: number, title: string): Objective {
   const under = s.capture?.node === i;
   const c = under ? s.capture : null;
   const front = frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
-  return settle(title, [
+  return buildObjective(title, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: freed || under || dist2d(s.player.pos, core) < ARRIVE },
     { kind: "start", label: "核を起動する", until: front || freed ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: freed || under, near: "核に触れて制圧を始める" },
     {
@@ -121,7 +124,7 @@ function defendSteps(s: State, i: number): Objective {
   const near = s.enemies.filter((e) => e.battle && dist2d(e.pos, n.core) < CONQUEST.zone * 2).length;
   const coming = !!s.battle && s.battle.squads.some((q) => q.side !== 0 && attacking(q, i));
   const held = s.nodes[i] === "freed";
-  return settle(`陣取り戦：${n.name}を守る`, [
+  return buildObjective(`陣取り戦：${n.name}を守る`, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: !held || !coming || dist2d(s.player.pos, core) < ARRIVE },
     {
       kind: "act",
@@ -153,7 +156,7 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
     const at = ground(pad.x, pad.z);
     const titan = s.enemies.find((e) => e.kind === "titan");
     const fell = s.cleared[i];
-    return settle("決戦", [
+    return buildObjective("決戦", [
       { kind: "go", label: `${pad.name}へ向かう`, until: `${pad.name}に入る`, at, done: fell || dist2d(s.player.pos, pad) < pad.trigger },
       { kind: "act", label: "タイタンを倒す", until: "タイタンを倒す", at: titan ? ground(titan.pos.x, titan.pos.z) : at, done: fell },
       extractStep(s),
@@ -170,7 +173,7 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
     .filter(({ n, i }) => front[i] && n.region === region)
     .sort((a, b) => dist2d(a.n.core, s.player.pos) - dist2d(b.n.core, s.player.pos))[0];
   if (near) return captureSteps(s, near.i, `前線：${near.n.name}を取る`);
-  return settle("探索して脱出する", [
+  return buildObjective("探索して脱出する", [
     { kind: "explore", label: "島を探索する", until: "回収品を 1 つ持つ", at: null, done: s.player.haul.length > 0 || s.sent.length > 0 },
     extractStep(s),
   ]);
@@ -188,7 +191,7 @@ function taskSteps(s: State, task: Task): Objective {
       const got = [...haulOrigins(s.player).map((from, n) => ({ kind: s.player.haul[n], from })), ...s.sent.map((kind, n) => ({ kind, from: s.sentAt[n] ?? -1 }))].filter((v) => v.kind === task.kind && v.from === i).length;
       const bins = s.bins.filter((b) => !b.open && s.fetch?.bins.includes(b.id));
       const bin = bins.sort((a, b) => dist2d(a, p) - dist2d(b, p))[0];
-      return settle(`${VALUABLES[task.kind].label}の回収`, [
+      return buildObjective(`${VALUABLES[task.kind].label}の回収`, [
         { kind: "go", label: `${poi.name}へ向かう`, until: `${poi.name}に入る`, at: ground(poi.x, poi.z), done: got > 0 || dist2d(p, poi) < poi.trigger },
         { kind: "act", label: `${poi.name}の補給箱を開ける`, until: `${VALUABLES[task.kind].label}を ${task.n} 個見つける`, progress: `${Math.min(got, task.n)}/${task.n}`, at: bin ? ground(bin.x, bin.z, bin.y) : null, done: got >= task.n, near: "補給箱を使う" },
         extractStep(s),
@@ -200,7 +203,7 @@ function taskSteps(s: State, task: Task): Objective {
       const lead = members.sort((a, b) => dist2d(a.pos, p) - dist2d(b.pos, p))[0];
       const at = lead ? ground(lead.pos.x, lead.pos.z) : task.at ? ground(task.at.x, task.at.z) : null;
       const beaten = s.stats.wiped.includes(task.key);
-      return settle(`${task.name}の迎撃`, [
+      return buildObjective(`${task.name}の迎撃`, [
         { kind: "go", label: "相手のいる辺りへ向かう", until: `${ARRIVE} m 以内に近づく`, at, done: beaten || (!!at && dist2d(p, at) < ARRIVE) },
         { kind: "act", label: `${task.name}を全滅させる`, until: "最後の 1 体まで倒す", progress: members.length ? `残り ${members.length}` : undefined, at, done: beaten },
         extractStep(s),
@@ -210,7 +213,7 @@ function taskSteps(s: State, task: Task): Objective {
       const r = recordSpot(task.id);
       const held = s.player.records.includes(task.id) || s.sentRecords.includes(task.id);
       const at = ground(r.x, r.z, r.y);
-      return settle(`記録：${r.name}`, [
+      return buildObjective(`記録：${r.name}`, [
         { kind: "go", label: `${r.place}へ向かう`, until: `${ARRIVE} m 以内に着く`, at, done: held || dist2d(p, at) < ARRIVE },
         { kind: "act", label: `${r.name}を使う`, until: "記録を使う（バッグ 1 枠）", at, done: held, near: `${r.name}を使う` },
         extractStep(s),

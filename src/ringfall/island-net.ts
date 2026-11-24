@@ -1,7 +1,7 @@
 /*
  * The island API's requests (docs/ringfall/multiplayer.md, 島の番号と遠征の API): claiming this
  * player's island, the owner's report and log, any island's public view, and sending an expedition.
- * Browser only, beside net.ts: the sim and the scripts never import it. Every answer comes back as
+ * Browser only, beside post-raid-summary.ts: the sim and the scripts never import it. Every answer comes back as
  * data, a failure as its error code (meta/island-errors.ts), and nothing throws or logs, so play is
  * the same with no server. Under a browser driver (the shots gate) nothing is sent and every request
  * answers `no-island-server`: the browser logs a refused request's status as a console error.

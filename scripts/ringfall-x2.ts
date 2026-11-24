@@ -18,7 +18,7 @@ import { ENTRIES, NODES, nodeIndex, type NodeId } from "../src/ringfall/sim/map"
 import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 import { rivalOf } from "../src/ringfall/sim/holds";
 import { step } from "../src/ringfall/sim/step";
-import { Hub, isAiFront, isPlayableFront } from "../src/ringfall/view/hub";
+import { Hub, isAiFront } from "../src/ringfall/view/hub";
 import type { NeighbourFront } from "../src/ringfall/meta/neighbour-front";
 import { applySync, type IslandView } from "../src/ringfall/meta/expeditions";
 import { holdsOf } from "../src/ringfall/meta/neighbour-front";
@@ -69,12 +69,10 @@ check(fullRival, "full plan still mirrors all owner nodes");
   check(!!planShortRaid(withNotice, target, { ai: true }), "notice: plan blocked by own x2");
 }
 
-// Real and AI neighbour fronts are both playable X2 entrances (§5.8 wired).
+// Real and AI neighbour fronts both count as X2 entrances; AI flag drives the notice clock.
 {
   const real: NeighbourFront = { name: "となりの前線", x: 0, z: 0, shore: target, code: "ZZZZZZ" };
   const aiFront: NeighbourFront = { name: `${a.name}の前線`, x: 0, z: 0, shore: target, code: a.code, ai: true };
-  check(isPlayableFront(real), "playable: real neighbour refused");
-  check(isPlayableFront(aiFront), "playable: AI front refused");
   check(!isAiFront(real) && isAiFront(aiFront), "playable: ai/real clock split wrong");
 }
 
