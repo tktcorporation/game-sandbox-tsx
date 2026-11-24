@@ -1512,21 +1512,9 @@ body.camp #pause .keys .raid {
   background: rgb(var(--ink-rgb) / 0.9);
   box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12), 6px 6px 0 rgb(var(--shade-rgb) / 0.25);
 }
-/* A station with one list of its own (the board, the workshop): a narrower panel. The map table is wider, for the island's map beside its notes. */
-#hub[data-station="map"] .hub-inner {
-  width: min(960px, 100%);
-}
-#hub[data-station="quests"] .hub-inner,
+/* A station with one list of its own (the workshop): a narrower panel. */
 #hub[data-station="workshop"] .hub-inner {
   width: min(720px, 100%);
-}
-/* The map table's and the board's few lines fit any screen but a phone's: there the panel keeps the screen's height and its list scrolls. */
-@media (min-height: 501px) {
-  #hub[data-station="map"] .hub-inner,
-  #hub[data-station="quests"] .hub-inner {
-    height: auto;
-    max-height: 100%;
-  }
 }
 .hub-cols.one {
   grid-template-columns: 1fr;
@@ -1787,161 +1775,26 @@ body.touch #hub-close kbd {
   color: var(--ring);
   font-weight: 800;
 }
-/* The map table's island: the map coloured by who holds each POI, the day and 明日の島 beside it.
- * Aspect follows the framed view (--map-aspect from view/map.ts) so the island is not letterboxed
- * into a wide empty box (docs/ringfall/map-readability.md). */
-.hub-island {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
-  gap: 12px;
-  margin-bottom: 8px;
-  align-items: start;
-}
-#hub-island-map {
-  /* Width capped so height from aspect-ratio stays under max-height (no letterbox bars). */
-  width: min(100%, calc(min(56vh, 560px) * var(--map-aspect, 1.3)));
-  max-width: 100%;
-  max-height: min(56vh, 560px);
-  height: auto;
-  aspect-ratio: var(--map-aspect, 1.3);
-  background: var(--board);
-  box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12);
-  touch-action: none;
-  cursor: grab;
-}
-#hub-island-map:active {
-  cursor: grabbing;
-}
-.hub-island-side {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-.hub-island-side > small {
-  color: var(--muted);
-  font-size: 13px;
-}
-.hub-day {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.hub-day small {
-  color: var(--muted);
-  font-size: 13px;
-}
-.hub-day b {
-  font-family: var(--num);
-  font-size: 30px;
-  line-height: 1;
-}
-.hub-trophy {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-top: 4px;
-}
-.hub-trophy small {
-  color: var(--muted);
-  font-size: 13px;
-}
-.hub-trophy b {
-  font-family: var(--num);
-  font-size: 18px;
-}
+/* The signal station's trophy: primary ranking readout (map table removed). */
 .exp-trophy {
-  font-size: 13px;
-  color: var(--muted);
-}
-.exp-trophy b {
-  font-family: var(--num);
-  color: var(--white);
-  margin-left: 4px;
-}
-/* The network's meter on the map table: a cell per level, lit up to the current one; red from 3. */
-
-.hub-island ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.hold-key {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--plate);
+  box-shadow: inset 3px 0 0 var(--sky);
+}
+.exp-trophy small {
+  color: var(--muted);
   font-size: 13px;
   font-weight: 800;
 }
-.hold-key li {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.hold-key i {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1.5px rgb(var(--night-rgb) / 0.9);
-}
-.hold-key i.titan {
-  border-radius: 2px;
-}
-.hold-key b {
+.exp-trophy b {
   font-family: var(--num);
-  color: var(--muted);
-}
-/* The front's nodes and the day's income take a row each: they are words, not counts. */
-.hold-key li.front,
-.hold-key li.income {
-  flex-basis: 100%;
-}
-.hold-key li.front i {
-  background: transparent;
-  border: 2px dashed var(--paper);
-  box-shadow: none;
-}
-.hold-key li.income {
-  padding-left: 17px;
-}
-/* The padlock on the map's nodes off the front: a word, so it takes a row like the front. */
-.hold-key li.locked {
-  flex-basis: 100%;
-}
-.hold-key li.locked b {
-  font-family: var(--jp);
-}
-.hold-key li.locked .ico {
-  width: 12px;
-  height: 12px;
-}
-.hold-key li.front b,
-.hold-key li.income b {
-  font-family: var(--jp);
-  color: var(--paper);
-}
-
-@media (max-height: 500px) {
-  .hub-island {
-    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
-    gap: 8px;
-  }
-  #hub-island-map {
-    width: min(100%, calc(min(62vh, 420px) * var(--map-aspect, 1.3)));
-    max-height: min(62vh, 420px);
-  }
-  .hub-day b {
-    font-size: 24px;
-  }
-}
-@media (orientation: portrait) and (max-width: 600px) {
-  .hub-island {
-    grid-template-columns: 1fr;
-  }
-  #hub-island-map {
-    width: min(100%, calc(min(42vh, 360px) * var(--map-aspect, 1.3)));
-    max-height: min(42vh, 360px);
-  }
+  font-size: 30px;
+  line-height: 1;
+  color: var(--white);
 }
 /* What a pick costs of a depot start's allowance. */
 #hub .item b.cost {
@@ -2052,77 +1905,6 @@ body.touch #hub-close kbd {
   font-size: 13px;
   color: var(--muted);
 }
-/* The map table's starts: the regions, the chosen region's ways in, the depots on, each a row of buttons under its label. */
-.hub-list .hub-region {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px 10px;
-  background: var(--plate);
-}
-.hub-region > small {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 4px;
-}
-.hub-region .row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-#hub .hub-region button {
-  font-size: 16px;
-  padding: 7px 14px;
-  background: transparent;
-  color: var(--white);
-  box-shadow: inset 0 0 0 2px var(--muted);
-}
-/* The map table's threat: six buttons 0 to 5, the chosen one in the hot colour, what the choice asks and pays under them. */
-/* The taken contract's 強度: a button for each, what it gives (gold), then what it asks (muted). */
-.hub-list .strength {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgb(var(--white-rgb) / 0.14);
-}
-.strength > small {
-  color: var(--muted);
-  font-size: 12px;
-}
-.strength .row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-#hub .strength button {
-  flex: 0 0 auto;
-  min-width: 38px;
-  font-family: var(--num);
-  font-size: 16px;
-  padding: 4px 8px;
-  background: transparent;
-  color: var(--white);
-  box-shadow: inset 0 0 0 2px var(--muted);
-}
-#hub .strength button.on {
-  background: var(--hot);
-  color: var(--ink);
-  box-shadow: none;
-}
-.hub-list .strength p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.4;
-}
-.hub-list .strength p.gives {
-  color: var(--r3);
-}
-.hub-list .strength p.asks,
-.hub-list .strength p.sub {
-  color: var(--muted);
-}
 /* A starter weapon's pin, before its name on the shelves and the trader's side. */
 #hub .starter {
   display: inline-flex;
@@ -2139,41 +1921,6 @@ body.touch #hub-close kbd {
   font-size: 12px;
   font-weight: 500;
   color: var(--muted);
-}
-.hub-list .quest.story.taken {
-  box-shadow: inset 0 0 0 2px var(--r3);
-}
-/* A depot is a start on the ground: teal, the colour the map and the world give a depot that is on. */
-#hub .hub-region button.depot {
-  box-shadow: inset 0 0 0 2px var(--mate);
-}
-#hub .hub-region button.depot.on {
-  background: var(--mate-light);
-}
-#hub .hub-region button.on {
-  background: var(--white);
-  color: var(--ink);
-  box-shadow: none;
-}
-#hub .hub-region button.entry {
-  font-size: 14px;
-  padding: 6px 12px;
-}
-/* A region with no way in known and no depot on: shown, so the player knows it is there, but not chosen. */
-#hub .hub-region button.locked {
-  opacity: 0.45;
-  cursor: default;
-  box-shadow: inset 0 0 0 2px var(--muted);
-  border: 0;
-}
-/* How to open a locked region, under the starts. */
-.hub-lock {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-.hub-lock[hidden] {
-  display: none;
 }
 /* Where the truck drives. */
 .hub-list .slot.ride {
@@ -3034,12 +2781,6 @@ body:not(.playing) #banner {
 .hub-list .quest.route.open > b {
   color: var(--sky);
 }
-.hub-island .hub-taken {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--r3);
-}
 .hub-list .hub-sub.first {
   margin-top: 0;
 }
@@ -3197,7 +2938,6 @@ body:not(.playing) #banner {
   --h: 12px;
   font-size: 16px;
 }
-/* In the map table's side column the bar narrows to the column (a phone's panel). */
 .hub-row .tug-bar {
   flex: 0 1 var(--w);
   min-width: 60px;
@@ -3741,9 +3481,6 @@ body.touch #results #restart {
 .hub-list > * {
   flex-shrink: 0;
 }
-body.touch #hub .strength button {
-  min-width: 40px;
-}
 #camp-plan[hidden] {
   display: none;
 }
@@ -3958,25 +3695,6 @@ body.touch #obj-raid .short {
 .hub-list .quest.route em {
   font-style: normal;
   font-weight: 800;
-}
-.hub-region .row .unseen {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 2px;
-}
-.hub-region button.locked .ico.entry {
-  margin: 0 0 0 4px;
-}
-.hub-island-side .taken-line {
-  display: inline-block;
-  width: 22px;
-  margin-left: 6px;
-  vertical-align: middle;
-  border-top: 2px dashed var(--r3);
-}
-.strength .gives .ico,
-.strength .asks .ico {
-  vertical-align: -2px;
 }
 .taken-tag .ico {
   vertical-align: -2px;
@@ -4209,17 +3927,6 @@ body.touch #obj-raid .short {
   from {
     transform: translateY(-12px);
   }
-}
-.hub-list .strength p.bins {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  margin-top: 2px;
-}
-.hub-list .strength p.bins b {
-  font-family: var(--num);
-  font-size: 16px;
-  color: var(--white);
 }
 #home .analyse button.mod {
   display: grid;
@@ -5052,11 +4759,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--white);
   box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.25);
 }
-.hub-island ul.island-news.incoming li {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-}
 .mod-body .exp-out small {
   display: inline-flex;
   align-items: center;
@@ -5201,21 +4903,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .exp-note.good {
   color: var(--hot);
 }
-.hub-island ul.island-news li {
-  padding: 2px 0;
-  font-size: 13px;
-  font-weight: 800;
-}
-/* A piece of news as marks: whose, what happened, where; an attack answered from here. */
-.hub-island ul.island-news:not(.incoming) li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .island-news .who {
   color: var(--rival-light);
 }
-/* A neighbour on the map table: whose, how much they hold, and what they did last. */
+/* A neighbour listed on the signal station: whose, how much they hold, and what they did last. */
 .island-news .held,
 .island-news .last,
 .exp-near .last {
@@ -5245,9 +4936,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
   font-weight: 800;
   color: var(--rival-light);
   vertical-align: middle;
-}
-.hub-island ul.island-news.near li {
-  flex-wrap: wrap;
 }
 /* What changed overnight on its island: the nodes it took, and those it lost. */
 .island-news .overnight {
@@ -5441,17 +5129,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 /* Lists that were sentences: each thing its own piece, a name and a number. */
 .srcs,
 .names,
-.quest .pay,
-.strength .gives,
-.strength .asks {
+.quest .pay {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 2px 12px;
 }
-.mod-body .req .srcs b,
-.strength .gives b,
-.strength .asks b {
+.mod-body .req .srcs b {
   margin-left: 4px;
   font-family: var(--num);
   color: var(--white);

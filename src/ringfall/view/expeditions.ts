@@ -235,9 +235,10 @@ export class ExpeditionPanel {
     const away = squadsAway(p);
     const c = this.conn;
     // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
-    const trop = `<span class="exp-trophy">${TERM.trophy} <b>${p.trophies ?? 0}</b></span>`;
+    // Trophy is the signal station's primary ranking readout (map table removed): large number first.
+    const trop = `<div class="exp-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>`;
     // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
-    const head = `<div class="mod-head"><strong>${flagIcon()}お隣の島</strong>${trop}</div>`;
+    const head = `${trop}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
     const out = p.expeditions.length

@@ -280,7 +280,7 @@ function onEvent(e: GameEvent, s: State) {
     // 実プレイヤーのお隣への短いレイド: 保留中の勝敗報告を同期時に送信（失敗時は再試行）。
     postRaidSummary(settled, s);
     syncIsland(settled.profile, s);
-    // The game's own islands' part in the raid, as their log would tell it: on the results and the map table.
+    // The game's own islands' part in the raid, as their log would tell it: on the results and the signal station.
     if (raidAi) {
       const news = aiRaidNews(before, settlement.profile, aiSalt(), raidAi.slots, Date.now(), raidAi.scouted);
       // The first scout has come once an island's expedition was in a raid: it does not come again.
@@ -324,7 +324,7 @@ let aiNews: string[] = [];
 /**
  * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
  * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
- * news that comes in time is on the results, and all of it on the map table. An answer that comes
+ * news that comes in time is on the results, and all of it on the signal station. An answer that comes
  * while the next raid is under way, or after a later sync started, only clears the nodes taken
  * back it reported: the raid plays the island it started with, and the next sync reads the holds and
  * the log again.
@@ -1109,6 +1109,7 @@ declare global {
     };
     ringfallCamp: {
       spots: () => CampSpot[];
+      wake: () => { x: number; z: number; yaw: number };
       walkTo: (id: CampSpot["id"]) => boolean;
       toGate: () => void;
       use: () => void;
@@ -1550,7 +1551,7 @@ window.ringfallBot = (skill: string) => {
   bot = new Bot(SKILLS.find((k) => k.name === skill) ?? SKILLS[1], 31);
 };
 
-/** Automation only: the island's news as a sync would bring it (the map table lists it, attacks with 仕返し). */
+/** Automation only: the island's news as a sync would bring it (the signal station lists it). */
 window.ringfallNews = (entries) => hub.takeNews(entries);
 /** Automation only: the expeditions out sent `ms` earlier, those on the game's own islands brought up to that clock (as a sync would, through the hub). */
 window.ringfallAge = (ms) => {
@@ -1614,6 +1615,8 @@ window.ringfallEnd = (how, haul = [], found = []) => {
  */
 window.ringfallCamp = {
   spots: () => CAMP.spots,
+  /** Where the player wakes between raids (yard middle toward the tent). */
+  wake: () => ({ x: CAMP.wake.x, z: CAMP.wake.z, yaw: CAMP.wake.yaw }),
   walkTo: (id) => {
     const c = CAMP.spots.find((q) => q.id === id);
     if (!camping || !c) return false;

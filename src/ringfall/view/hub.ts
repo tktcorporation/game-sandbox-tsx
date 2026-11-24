@@ -1,5 +1,5 @@
 import { PLAYER } from "../sim/config";
-import { aiSalt, isAi, neighboursFor, neighboursOnMap, readView, sendAssault } from "../island-net";
+import { aiSalt, isAi, neighboursFor, readView, sendAssault } from "../island-net";
 import { errorText } from "../meta/island-errors";
 import { assaultOf, scheduleAssault } from "../meta/assault";
 import { aiByCode, aiNextId, aiView } from "../meta/ai-islands";
@@ -14,9 +14,8 @@ import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UN
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
-import { departDepots, finaleOpen, islandHolds, heldIncome, playerNodes, shopRarity, unlocked } from "../meta/island";
+import { departDepots, finaleOpen, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
-import { IslandMap, islandScene, RIVAL_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
 import { LOG_WORD, logLine, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { frontNodes, ownNodes } from "../sim/front";
@@ -213,7 +212,7 @@ function rows(stash: Item[]): { item: Item; index: number[] }[] {
 
 /**
  * Each hideout module's mark. The same mark stands where the module's effect shows elsewhere (the
- * shelves' issued heals, the stash's count, the trader's materials, the map table's report, the
+ * shelves' issued heals, the stash's count, the trader's materials, the shelves' radio report, the
  * pouch's slots), so the card says where an upgrade grows.
  */
 const MODULE_ICON: Record<ModuleId, () => string> = { infirmary: () => issueIcon(), workbench: () => workbenchIcon(), storage: () => stashIcon(), radio: () => radioIcon(), pouch: () => pouchIcon() };
@@ -295,7 +294,6 @@ const yen = (n: number) => n.toLocaleString("ja-JP");
 
 /** The panel each camp station opens: the panel's title and whether the stash's column stands beside its own. */
 const PANELS: Record<StationId, { title: string; stash: boolean }> = {
-  map: { title: TERM.mapTable, stash: false },
   stash: { title: TERM.stashShelf, stash: true },
   shop: { title: TERM.traderStall, stash: true },
   workshop: { title: TERM.workshop, stash: false },
@@ -425,7 +423,7 @@ export class Hub {
   private factoryLadder = false;
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
   private exped: ExpeditionPanel;
-  /** The island's news from the server (its log), as lines for the map table, and whether the map table has shown them. */
+  /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
   private news: IslandLogEntry[] = [];
   private newsSeen = true;
 
@@ -473,7 +471,7 @@ export class Hub {
     return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}</li>`;
   }
 
-  /** Takes the island's news from the server (its log's new entries): the map table lists them and its mark tells of them until it is opened. */
+  /** Takes the island's news from the server (its log's new entries): the signal station lists them and its mark tells of them until it is opened. */
   takeNews(entries: readonly IslandLogEntry[]) {
     if (!entries.length) return;
     this.news = [...entries, ...this.news].slice(0, 8);
@@ -929,19 +927,18 @@ export class Hub {
     return null;
   }
 
-  /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report. */
+  /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report on the shelves. */
   marks(): Record<StationId, string> {
     const p = this.profile;
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    const map = [p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
     const unread = this.news.length + this.expNews.length + aid;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
-    // Shelves mark when the warehouse can grow (same ▲ as the workshop / factory).
-    const stashUp = canBuild(p, "storage") ? `▲ Lv${p.hideout.storage + 1}` : "";
-    return { map, stash: stashUp, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
+    // Shelves: warehouse growth, and the radio's report (moved here from the removed map table).
+    const stash = [p.hideout.radio ? "無線" : "", canBuild(p, "storage") ? `▲ Lv${p.hideout.storage + 1}` : ""].filter(Boolean).join("・");
+    return { stash, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
@@ -1185,60 +1182,9 @@ export class Hub {
   }
 
   /**
-   * The map table's island: the map with each POI coloured by who holds it, the day, the row of
-   * the six nodes, the key to the colours, the front and the day's income.
-   */
-  private islandPanel(): string {
-    const p = this.profile;
-    const holds = islandHolds(p);
-    const front = frontNodes(holds);
-    // The map says who holds what (blue and red, as the row above) and where the front is (its rings):
-    // beside it stand only what the map cannot say, the nodes to strike next by name and the day's income.
-    const key =
-      // Another player only once one holds a node of the island: a colour the row above does not explain.
-      (holds.some((h) => rivalOf(h) !== null) ? `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` : "") +
-      `<li class="front"><i></i><b class="names">${NODES.filter((_, i) => front[i]).map((n) => `<span>${esc(n.name)}</span>`).join("") || "—"}</b></li>` +
-      (heldIncome(p) ? `<li class="income"><b class="cash">${coinIcon()}${heldIncome(p).toLocaleString()}</b></li>` : "");
-    return (
-      `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
-      `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
-      `<div class="hub-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>` +
-      `<div class="hub-row">${nodeRow(holds)}</div>` +
-      `<ul class="hold-key">${key}</ul>` +
-      `</div></div>`
-    );
-  }
-
-  /** Draws the map table's island into its canvas: the whole island, fit with a pad (map-readability.md). */
-  private drawIsland() {
-    const canvas = document.getElementById("hub-island-map") as HTMLCanvasElement | null;
-    if (!canvas) return;
-    const map = new IslandMap(canvas);
-    canvas.addEventListener("click", (e) => map.pick(e.clientX, e.clientY) && sfx.locked());
-    map.known = this.profile.entries;
-    map.whole = true;
-    map.region = this.from ? poiRegion(this.from).id : this.region;
-    map.contract = null;
-    map.neighbours = neighboursOnMap(this.profile);
-    map.bindNav();
-    // 来る遠征の予告 UI は削除済み: Profile.incoming を地図に載せない
-    map.draw(islandScene({ ...this.profile, incoming: [] }));
-  }
-
-  /** The map table's radio report on the next raid, as a slot, or "" without a radio. */
-  private intelSlot(): string {
-    const intel = this.intel();
-    return intel ? `<div class="slot intel"><small>${radioIcon()}無線</small><span>${intel}</span></div>` : "";
-  }
-
-  /**
-   * The shelves: the two weapons picked from the stash (the starter weapons with nothing else
-   * picked) with their numbers, the armour, keys and heals to take (the issued heals always come
-   * too), and the truck's allowance when it drives to a depot.
-   */
-  /**
-   * Shelves' side column: the warehouse card (raise capacity where the count is seen), then the
-   * next raid's kit. The workshop still lists every hideout module, warehouse included.
+   * Shelves' side column: the radio's report (when built), the warehouse card (raise capacity
+   * where the count is seen), then the next raid's kit. The workshop still lists every hideout
+   * module, warehouse included.
    */
   private kitPanel(): string {
     const p = this.profile;
@@ -1258,6 +1204,8 @@ export class Hub {
     const room = full
       ? `<p class="lock-note">${lockIcon()}${nextLevel(p.hideout, "storage") ? PHRASE.warehouseFullRaise : PHRASE.warehouseFullSell}</p>`
       : "";
+    const intel = this.intel();
+    const intelSlot = intel ? `<div class="slot intel"><small>${radioIcon()}無線</small><span>${intel}</span></div>` : "";
     const kit =
       this.depotSlot() +
       weapons +
@@ -1268,7 +1216,7 @@ export class Hub {
         .join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
       `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`;
-    return `${room}${this.moduleCard("storage")}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
+    return `${intelSlot}${room}${this.moduleCard("storage")}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
   }
 
   /**
@@ -1406,9 +1354,7 @@ export class Hub {
           ? PHRASE.sideFactory
           : st === "signal"
             ? TERM.seaIslands
-            : st === "map"
-              ? TERM.island
-              : TERM.loadout;
+            : TERM.loadout;
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
@@ -1424,11 +1370,7 @@ export class Hub {
       $("hub-side").innerHTML = room + shelfTiers(p) + wares(p)
         .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");
-    } else if (st === "map") {
-      $("hub-side").innerHTML = this.intelSlot() + this.islandPanel();
-      this.drawIsland();
-    }
-    else $("hub-side").innerHTML = this.kitPanel();
+    } else $("hub-side").innerHTML = this.kitPanel();
     // The shelves' footer: what the next raid takes out, in a line.
     $("hub-foot").hidden = !kit;
     if (kit) {

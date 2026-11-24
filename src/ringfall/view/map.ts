@@ -28,8 +28,8 @@ import { UI, alpha } from "./palette";
  *
  * Framing (docs/ringfall/map-readability.md): fit the framed bounds with a pad so edge
  * names stay whole; the raid map opens on the region the player is in and switches to the
- * whole world (N); the camp's map table and the departure open on the whole island. Wheel
- * and pinch zoom, drag to pan, within the fitted frame; off-screen goals get an edge arrow.
+ * whole world (N); the departure opens on the whole island. Wheel and pinch zoom, drag to
+ * pan, within the fitted frame; off-screen goals get an edge arrow.
  */
 
 /** A rectangle of the world in metres. */
@@ -478,7 +478,7 @@ export class IslandMap {
   whole = false;
   /** The ways in the base offers; null when the map is drawn without a profile, as all of them. */
   known: EntryId[] | null = null;
-  /** The region framed when the scene has no player on it (the camp's map table). */
+  /** The region framed when the scene has no player on it (the departure's map). */
   region: RegionId = HOME_REGION.id;
   /**
    * Cleared by callers that once marked a taken contract; always null (quest board removed).
@@ -507,7 +507,7 @@ export class IslandMap {
    * the player, and no names: the map (M) is where they are read.
    */
   mini = 0;
-  /** What holding each node opens, as small marks beside it: the camp's map table's (a raid's map leaves them out, to read at a glance). */
+  /** What holding each node opens, as small marks beside it: the departure's (a raid's map leaves them out, to read at a glance). */
   unlocks = true;
   /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
   picked = -1;

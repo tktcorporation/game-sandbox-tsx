@@ -2,7 +2,7 @@
  * The decisive battle's screenshots for the shots gate (scripts/ringfall-shots.mjs runs them;
  * `node scripts/ringfall-shots-finale.mjs` runs them alone against the build (`npm run build`)): a profile on its
  * second round holding sixteen nodes, two of them by the titan's pad. The camp names the round
- * beside the day and its card the decisive battle; the map table rings the pad in gold; and the
+ * beside the day and its card the decisive battle; the departure map rings the pad in gold; and the
  * raid walked out of the gate has the titan as its objective.
  */
 import { createServer } from "node:http";
@@ -39,12 +39,12 @@ export async function finaleShots({ browser, port, out, errors }) {
   if (!/41 日目・2 周目/.test(head)) errors.push(`finale: the camp's day line reads "${head}"`);
   if (!/決戦/.test(card)) errors.push("finale: the camp's card does not name the decisive battle");
   await pg.screenshot({ path: `${out}/140-finale-camp.png` });
-  // The map table: the pad ringed in gold.
-  if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("map")))) errors.push("finale: could not stand at the map table");
+  // The departure map: the pad ringed in gold (地図の机 deleted).
+  if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("vehicle")))) errors.push("finale: could not stand at the vehicle");
   await pg.evaluate(() => window.advanceTime(100));
   await pg.keyboard.press("KeyE");
   await pg.evaluate(() => window.advanceTime(400));
-  await pg.screenshot({ path: `${out}/141-finale-map.png` });
+  await pg.screenshot({ path: `${out}/141-finale-depart.png` });
   await pg.keyboard.press("Escape");
   await pg.evaluate(() => window.advanceTime(200));
   // Out of the gate: the raid's objective is the titan.

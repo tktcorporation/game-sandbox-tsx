@@ -19,7 +19,7 @@ export const UI = {
   ink: "#141a33",
   /** Outlines and discs behind marks on the maps, so they read on any ground. */
   night: "#141828",
-  /** The maps' table: the ground a map is drawn on. */
+  /** The maps' board: the ground a map is drawn on. */
   board: "#1c1f2a",
   /** A screen that covers the game (the world map, the departure). */
   deep: "#0e101c",

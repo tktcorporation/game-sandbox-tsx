@@ -916,7 +916,7 @@ export const MOD = {
 };
 
 /**
- * The threat (脅威度) the player chooses for a raid at the map table, 0 to `max`: on top of the
+ * The threat (脅威度) applied to a raid, 0 to `max`: on top of the
  * enemy's strength (`STRENGTH.levels`), the reinforcements come `reinforce` times as soon and as
  * often, the raiders `raiders` times as soon, `plate` of the plain grunts and heavies wear a
  * tier-1 plate, and robots answer shots from afar `range` times as far (`RETURN`). In return the
