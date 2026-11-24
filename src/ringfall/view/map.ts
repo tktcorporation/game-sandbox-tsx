@@ -327,8 +327,6 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   battle?: Battle | null;
   /** The titan's pad is open to the decisive battle (`FINALE`): a gold ring round it. */
   finale?: boolean;
-  /** The nodes other players' expeditions are sent at (places in `NODES`), for the camp's maps; a raid's are its battle's. */
-  noticed?: readonly number[];
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
   /** The raid's bins, for the flares still lying on the tall buildings' top floors; without them every flare bin is drawn as not yet searched. */
@@ -341,27 +339,6 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   names?: readonly PoiId[];
 };
 
-/** A landing arrow: the mark of a node another player's expedition is sent at. */
-export function drawLanding(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
-  g.save();
-  g.beginPath();
-  g.arc(x, y, r, 0, Math.PI * 2);
-  g.fillStyle = alpha(UI.night, 0.85);
-  g.fill();
-  g.beginPath();
-  g.moveTo(x - r * 0.62, y - r * 0.2);
-  g.lineTo(x - r * 0.22, y - r * 0.2);
-  g.lineTo(x - r * 0.22, y - r * 0.7);
-  g.lineTo(x + r * 0.22, y - r * 0.7);
-  g.lineTo(x + r * 0.22, y - r * 0.2);
-  g.lineTo(x + r * 0.62, y - r * 0.2);
-  g.lineTo(x, y + r * 0.62);
-  g.closePath();
-  g.fillStyle = fill;
-  g.fill();
-  g.restore();
-}
-
 /** A label's box on the canvas, so labels do not overlap. */
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
@@ -369,7 +346,7 @@ type Rect = { x0: number; y0: number; x1: number; y1: number };
 export const SIDE_CSS: Record<Side, string> = { 0: UI.ownBright, 1: UI.alert, 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number; incoming?: readonly { node: NodeId }[] }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number }): MapScene {
   return {
     seen: decodeSeen(p.seen),
     cleared: POIS.map(() => false),
@@ -380,7 +357,6 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
     finale: finaleOpen(p),
-    ...(p.incoming?.length && { noticed: p.incoming.map((e) => nodeIndex(e.node)) }),
   };
 }
 
@@ -1362,10 +1338,6 @@ export class IslandMap {
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
         if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "own");
-        const k = nodeIndex(poi.id as NodeId);
-        // Another player's expedition is sent at it: a green landing arrow at its foot; blue once fortified.
-        const noticed = s.noticed ?? s.battle?.noticed;
-        if (noticed?.includes(k) && hold(i) === "own") drawLanding(g, p.x + r * 1.35, p.y + r * 1.05, r * 0.8, s.battle?.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[3]);
       }
       if (poi.boss && s.finale) {
         // Open to the decisive battle: a gold ring, pulsing.
@@ -1569,12 +1541,11 @@ export class IslandMap {
 
   /**
    * Chevrons at the canvas edge toward goals that sit off the framed view: the player (when
-   * panned away), a coming expedition, and a node under threat.
+   * panned away) and a node under threat.
    */
   private drawEdgeArrows(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number) {
     const goals: { x: number; z: number; color: string }[] = [];
     if (s.player) goals.push({ x: s.player.pos.x, z: s.player.pos.z, color: UI.white });
-    if (s.noticed) for (const i of s.noticed) goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.rival });
     if (s.battle?.threat) s.battle.threat.forEach((hot, i) => hot && goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert }));
     // Front nodes only once the player has zoomed or panned: the fitted region already shows its own.
     if (!this.whole && this.cam.zoom > 1 && s.nodes) {

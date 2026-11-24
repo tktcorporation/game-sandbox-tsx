@@ -22,7 +22,7 @@ import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultRep
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
-import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
+import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import type { IncursionPlan } from "./meta/incursion";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -337,7 +337,6 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   const from = who.code ? { code: who.code, name: who.name } : { code: "local", name: who.name };
   const raid = {
     lent: lentResults(raidLent, settled.battle),
-    fortified: fortifiedNodes(settled.battle),
     // Defence stock from deposits this raid (silent; no separate "aid" verb).
     parcels: who.code ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
@@ -675,7 +674,7 @@ function askDepart(walk: boolean) {
     // A newer departure asks for itself, and the island answers it with the same lease.
     if (!r.ok || leaseReq !== req) return;
     if (req.on === "open") lease = r.body;
-    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut)) {
+    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions))) {
       raidLent = r.body.expeditions;
       hud.addRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
     }
@@ -836,13 +835,12 @@ function start(go: Launch, from?: State) {
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
     // 短いレイド: 自島バトルなし（ステージは他島コピーの数拠点）
-    battle: shortRaid
+        battle: shortRaid
       ? undefined
       : {
           factory: hub.profile.factory,
           away: squadsAway(hub.profile),
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
-          shut: lent?.shut,
         },
     finale: shortRaid ? false : finaleOpen(hub.profile),
     ...(shortRaid

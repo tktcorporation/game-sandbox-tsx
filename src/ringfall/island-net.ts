@@ -267,7 +267,7 @@ export async function reportAssault(code: string, id: number, won: boolean, time
 }
 
 /** 相手サーバーから短いレイド勝利が受理されなかった場合のエラー群（ローカルの占有・獲得トロフィーを巻き戻す）。 */
-const ASSAULT_WIN_REJECT: ReadonlySet<string> = new Set(["day-limit", "fortified", "node-not-open", "not-assault", "no-expedition", "already-resolved", "protected", "closed-node"]);
+const ASSAULT_WIN_REJECT: ReadonlySet<string> = new Set(["day-limit", "node-not-open", "not-assault", "no-expedition", "already-resolved", "protected", "closed-node"]);
 
 /**
  * 保留中の短いレイド結果（`Outgoing.x2Pending`）を防衛側サーバーへ報告する。
@@ -292,10 +292,9 @@ export async function flushAssaultReports(get: () => Profile, put: (p: Profile) 
   }
 }
 
-/** What a raid's report says beside the island's holds: what became of the expeditions it took in, and the nodes sent at that it fortified. */
+/** What a raid's report says beside the island's holds: what became of the expeditions it took in. */
 export interface RaidReport {
   lent: { id: number; left: number; waiting?: true }[];
-  fortified: string[];
   /** Aid parcels left at depots this raid (ux-design C2). */
   parcels?: { poi: string; kind: string; from: { code: string; name: string } }[];
   /** Aid parcel ids taken this raid. */
@@ -306,7 +305,7 @@ export interface RaidReport {
  * The owner's raid takes in the expeditions on the island (`POST …/lease`): the island leaves them
  * alone until the raid's report, or until `until`. With no island yet, or no server, nothing.
  */
-export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[]; shut: NodeId[]; noticed: NodeId[] }>> {
+export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[] }>> {
   await releasing;
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
@@ -379,7 +378,7 @@ let applied = 0;
  * `Profile.retaken`; a first claim always reports, so the server's island starts as the profile's),
  * then reads the log after `p.logSeq` and the island's view. The report resets the server's
  * garrisons, so it is sent only after a raid. `raid` is what the raid made of the expeditions it took
- * in (`lent`) and the nodes sent at that it fortified, which go with the report.
+ * in (`lent`), which go with the report.
  */
 export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): Promise<Answer<OwnSync>> {
   const ticket = ++lastSync;
@@ -403,7 +402,6 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         factory: p.factory,
         day: p.day,
         ...(raid?.lent.length ? { lent: raid.lent } : {}),
-        ...(raid?.fortified.length ? { fortified: raid.fortified } : {}),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
       }),

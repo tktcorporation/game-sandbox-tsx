@@ -9,7 +9,7 @@ import { raiseAlly, startHelp } from "./ally";
 import { boosted, callLeft, strengthLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
-import { fortifiable, inZone, useCore } from "./front";
+import { inZone, useCore } from "./front";
 import { hypot2, hypot3 } from "./hypot";
 import { squadMembers } from "./members";
 
@@ -700,7 +700,7 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
   // Every reachable core, nearest-facing first (not `NODES` order).
   const coreReach = PLAYER.interactRange + FRONT.half + 0.5;
   NODES.forEach((n, i) => {
-    if (s.nodes[i] === "own" && !fortifiable(s, i)) return;
+    if (s.nodes[i] === "own") return;
     const d = dist2d(n.core, p.pos);
     if (d >= coreReach) return;
     if (p.pos.y <= n.core.y - 1.5 || p.pos.y >= n.core.y + 2) return;

@@ -30,8 +30,6 @@ export type TermId =
   | "raiseLevelReady"
   | "nextLevel"
   | "lastLevel"
-  | "fortify"
-  | "fortifyCore"
   | "captureCore"
   | "sendToWarehouse"
   | "cutAndExtract"
@@ -76,8 +74,6 @@ export const TERM = {
   raiseLevelReady: "レベルを上げられる",
   nextLevel: "次のレベル",
   lastLevel: "最後のレベル",
-  fortify: "固める",
-  fortifyCore: "核 · 固める",
   captureCore: "核 · 制圧",
   sendToWarehouse: "倉庫へ送る",
   cutAndExtract: "切り上げて生還",
@@ -158,11 +154,11 @@ export function nextAttack(name: string): string {
 }
 
 /**
- * 相手拠点が要塞化・占有変更等で出撃できないときのエラートースト。
- * 【元】（なし） 【案】〜は固められていて攻められない 【理由】来る遠征と同じ「固める」語で拒否理由を出す。
+ * 相手拠点へ今すぐ短いレイドで出られないときのエラートースト。
+ * 【元】〜は固められていて攻められない 【案】〜へは今攻められない 【理由】固める削除後も短いレイド拒否が必要
  */
-export function assaultFortified(name: string): string {
-  return `${name}は${TERM.fortify}られていて攻められない`;
+export function assaultUnavailable(name: string): string {
+  return `${name}へは今攻められない`;
 }
 
 /** 次の一手: 短いレイド出撃が可能になったときの表示。 */

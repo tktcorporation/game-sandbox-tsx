@@ -1,4 +1,4 @@
-import { ALLY, COUNTER, ENEMIES, FORTIFY, FRONT, MOMENTUM, PLAYER, TICK, type EnemyKind, type Rarity, type SiegeWave } from "./config";
+import { ALLY, COUNTER, ENEMIES, FRONT, MOMENTUM, PLAYER, TICK, type EnemyKind, type Rarity, type SiegeWave } from "./config";
 import { dist2d } from "./geom";
 import { depotIndex, FRONT_LINKS, NODES, nodeIndex, POIS, poiIndex, TIER, type NodeId, type PoiId } from "./map";
 import { cellsAround, fieldTo } from "./hunt";
@@ -106,13 +106,10 @@ export function inZone(x: number, z: number, r = 0): boolean {
   return false;
 }
 
-/** Whether node `i` is the player's, marked by another player's expedition sent at it, and not fortified yet: its core takes the use key (`FORTIFY`). */
-export const fortifiable = (s: Pick<State, "nodes" | "battle">, i: number) => s.nodes[i] === "own" && !!s.battle && s.battle.noticed.includes(i) && !s.battle.fortified.includes(i);
-
-/** The core within reach of the use key, as a place in `NODES`, or -1. An owned node's core does nothing, but for one to fortify. */
+/** The core within reach of the use key, as a place in `NODES`, or -1. An owned node's core is never a use target. */
 export function coreInReach(s: State): number {
   const p = s.player;
-  return NODES.findIndex((n, i) => (s.nodes[i] !== "own" || fortifiable(s, i)) && dist2d(n.core, p.pos) < PLAYER.interactRange + FRONT.half + 0.5 && p.pos.y > n.core.y - 1.5 && p.pos.y < n.core.y + 2);
+  return NODES.findIndex((n, i) => s.nodes[i] !== "own" && dist2d(n.core, p.pos) < PLAYER.interactRange + FRONT.half + 0.5 && p.pos.y > n.core.y - 1.5 && p.pos.y < n.core.y + 2);
 }
 
 /**
@@ -128,13 +125,7 @@ export const capturable = (s: Pick<State, "nodes" | "incursion">, i: number) =>
  * sends the node's garrison to the core.
  */
 export function useCore(s: State, i: number) {
-  if (s.nodes[i] === "own") {
-    if (fortifiable(s, i) && s.fortify?.node !== i) {
-      s.fortify = { node: i, t: 0, held: false };
-      s.events.push({ t: "fortifyStart", node: i });
-    }
-    return;
-  }
+  if (s.nodes[i] === "own") return;
   if (!capturable(s, i)) {
     s.events.push({ t: "coreShielded", node: i });
     return;
@@ -168,22 +159,6 @@ export const onCore = (s: State, i: number) => {
   return p.downed <= 0 && dist2d(p.pos, c) < FRONT.radius && Math.abs(p.pos.y - c.y) < FRONT.rise;
 };
 
-/** The fortifying under way fills while the player holds the core's ground with no robot on it; full, the node is shut to expeditions (`FORTIFY`). Lost or left, it is dropped. */
-function stepFortify(s: State) {
-  const f = s.fortify;
-  if (!f || s.phase !== "play") return;
-  if (!fortifiable(s, f.node) || dist2d(s.player.pos, NODES[f.node].core) > FRONT.siege.near) {
-    s.fortify = null;
-    return;
-  }
-  f.held = onCore(s, f.node) && !contesting(s, f.node);
-  if (f.held) f.t += TICK;
-  if (f.t < FORTIFY.time) return;
-  s.battle!.fortified.push(f.node);
-  s.fortify = null;
-  s.events.push({ t: "fortified", node: f.node });
-}
-
 /** The waves of node `i`'s siege (`FRONT.siege`): its tier's, the first with what the enemy's strength adds. */
 export function siegeWaves(s: Pick<State, "strength">, i: number): SiegeWave[] {
   const waves = FRONT.siege.waves[Math.min(TIER[NODES[i].id], FRONT.siege.waves.length - 1)];
@@ -204,7 +179,6 @@ export function stepFront(s: State) {
     sq.walk = undefined;
     s.enemies = s.enemies.filter((e) => e.squad !== k);
   });
-  stepFortify(s);
   const c = s.capture;
   if (!c || s.phase !== "play") return;
   if (s.nodes[c.node] === "own") {

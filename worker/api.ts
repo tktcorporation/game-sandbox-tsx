@@ -379,11 +379,10 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const holds = parseHolds(raw.holds);
     const retaken = parseRetaken(raw.retaken);
     const lent = parseLent(raw.lent);
-    const fortified = parseRetaken(raw.fortified);
     const parcels = parseParcels(raw.parcels);
     const takenParcels = parseTakenParcels(raw.takenParcels);
-    if (!player || !holds || !retaken || !lent || !fortified || !parcels || !takenParcels || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
-    const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, fortified, parcels, takenParcels }, now);
+    if (!player || !holds || !retaken || !lent || !parcels || !takenParcels || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, parcels, takenParcels }, now);
     if (r.status === 200) await ownCode(env, code, player.id, now);
     return r;
   }

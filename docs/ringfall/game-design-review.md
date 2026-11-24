@@ -282,7 +282,7 @@ T2（アリーナ床）・旧解放日数ランキング・日次「遠征に出
 #### 実装メモ
 
 - `meta/incursion.ts`（部分集合）＋`meta/assault.ts`（予告）＋地図の穴 A。ゲートの通常レイド表は変えない（X2 は別シナリオ）。
-- 実島: `POST …/expeditions` に `x2: true` → 予告満了後に短いレイド → `POST …/assault` `{ id, won }`。数の戦いには乗せず、固めると 409 `fortified`。詳細は [multiplayer.md](multiplayer.md)。
+- 実島: `POST …/expeditions` に `x2: true` → 予告満了後に短いレイド → `POST …/assault` `{ id, won }`。数の戦いには乗せず。詳細は [multiplayer.md](multiplayer.md)。
 - スタック: docs → E4／T1（#192〜#194）→ AI X2（#195〜#197）→ 実島 X2（本変更）。
 
 ---

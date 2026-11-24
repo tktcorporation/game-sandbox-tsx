@@ -25,7 +25,7 @@ import { sfx } from "./sfx";
 import { nodeRow } from "./row";
 import { currentStep, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
 import type { World } from "./world";
-import { FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
+import { FINALE, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
@@ -513,14 +513,6 @@ export class Hud {
         // The raid's momentum rose: that many marks, and what the next node pays.
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
         break;
-      case "fortified": {
-        this.toast(
-          `${coreIcon(SIDE.own)}${TERM.fortify}た · ${esc(NODES[e.node].name)}<span class="toast-sub">${TERM.incomingExpedition}をはねる</span>`,
-          1,
-          4000,
-        );
-        break;
-      }
       case "coreTaken": {
         // e.node is a NODES index; s.hold is per POI. Rival at raid start → loot in 倉庫へ届いた.
         const holdAt = s.hold ? rivalOf(s.hold[poiIndex(NODES[e.node].id)] ?? "foe") !== null : false;
@@ -1271,13 +1263,6 @@ export class Hud {
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {
       const n = NODES[t.node];
-      // A node of the player's that an expedition is sent at: the use key fortifies it.
-      if (s.nodes[t.node] === "own") {
-        if (s.fortify?.node === t.node) {
-          return tip(`${coreIcon(SIDE.own)}${TERM.fortifyCore} ${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
-        }
-        return tip(`${key("E")}${coreIcon(SIDE.own)}${flagIcon(SIDE.rival)}${TERM.fortifyCore} ${esc(n.name)}`);
-      }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return tip(`${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`);
       if (s.capture?.node === t.node) return tip(`${coreIcon(c)}${TERM.captureCore} ${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
@@ -1369,7 +1354,7 @@ export class Hud {
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
     // 来る遠征の予告 UI は削除済み: Profile.incoming を地図に載せない
-    const end = islandScene({ ...settled.profile, incoming: [] });
+    const end = islandScene(settled.profile);
     // The player's nodes after each beat, from the day's end back.
     const after = (ids: Set<string>, c: { gained: readonly string[]; lost: readonly string[] }, back: boolean) => {
       const out = new Set(ids);

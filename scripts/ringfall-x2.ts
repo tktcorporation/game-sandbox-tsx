@@ -7,7 +7,6 @@
  * Full start-point matrix: `npx tsx scripts/ringfall-depart-bruteforce.ts`.
  */
 import { assaultAcked, assaultNoticeSec, assaultOf, assaultReady, assaultWinRejected, assaultWon, scheduleAssault } from "../src/ringfall/meta/assault";
-import { fortifiable } from "../src/ringfall/sim/front";
 import { planIncursion, planShortRaid, SHORT_RAID_EXTRA, shortRaidTarget, stageNodes } from "../src/ringfall/meta/incursion";
 import { aiIsland, aiNodes, aiView, aiNextId } from "../src/ringfall/meta/ai-islands";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
@@ -191,15 +190,14 @@ check(fullRival, "full plan still mirrors all owner nodes");
   check(settled.profile.expeditions.some((e) => e.code === a.code && e.x2Pending), "settle: x2 win not pending confirm");
 }
 
-// Defender battle: X2 noticed enables 固める without lending robots (Codex #199 P1).
+// Defender battle with no X2 rivals: a home raid without lent robots stays empty of side-3 squads.
 {
   const home = newRun(31, starterKit(), "reservoir", {
     island: { [target]: "own" },
-    battle: { factory: 0, noticed: [target] },
+    battle: { factory: 0 },
   });
-  check(!!home.battle?.noticed.includes(nodeIndex(target)), "noticed: battle missing X2 target");
-  check(fortifiable(home, nodeIndex(target)), "noticed: fortifiable false for X2 target");
-  check(!home.battle?.rivals.length, "noticed: X2 spawned rival robots");
+  check(!home.battle?.rivals.length, "home: empty battle still had rivals");
+  check(!home.battle?.squads.some((q) => q.side === 3), "home: empty battle spawned rival robots");
 }
 
 // Pending win rejection rolls back trophies (Codex #199 P2).

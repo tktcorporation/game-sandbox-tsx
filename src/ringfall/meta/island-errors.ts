@@ -38,7 +38,6 @@ export const API_ERRORS = [
   // X2 short-raid assault report.
   "not-assault",
   "assault-not-ready",
-  "fortified",
   "already-resolved",
 ] as const;
 
@@ -75,7 +74,6 @@ export const ERROR_TEXT: Record<ApiError | NetError, string> = {
   "no-expedition": "その遠征隊はもういません",
   "not-assault": "その遠征は短いレイドの予告ではありません",
   "assault-not-ready": "来る遠征の予告が終わるまで待つ",
-  fortified: "その拠点は固められていて攻められない",
   "already-resolved": "その短いレイドの結果はもう決まっています",
   network: "つながりませんでした",
   "bad-response": "サーバーの答えが読めませんでした",

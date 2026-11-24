@@ -22,7 +22,7 @@ import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { PHRASE, TERM, assaultFortified, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
+import { PHRASE, TERM, assaultUnavailable, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -847,13 +847,13 @@ export class Hub {
       let node: NodeId;
       if (ai) {
         const pick = this.aiShortRaidNode(neighbourFront.code, neighbourFront.shore, now);
-        if (!pick) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+        if (!pick) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
         node = pick;
       } else {
         const view = await readView(neighbourFront.code);
         if (!view.ok) return { t: "waiting", toast: errorText(view.error) };
         const pick = shortRaidTarget(view.body, neighbourFront.shore, now);
-        if (!pick) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+        if (!pick) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
         node = pick;
         const sent = await sendAssault(neighbourFront.code, node, units);
         if (!sent.ok) return { t: "waiting", toast: errorText(sent.error) };
@@ -862,7 +862,7 @@ export class Hub {
       const { list, created } = scheduleAssault(this.profile.expeditions, { code: neighbourFront.code, node, units, id, now });
       if (created) this.set({ ...this.profile, expeditions: list });
       existing = assaultOf(this.profile.expeditions, neighbourFront.code);
-      if (!existing) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+      if (!existing) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
     }
     let plan = await this.shortRaidPlan(neighbourFront.code, existing.node, ai);
     // 過去の予告が旧ショアノードを指している場合、再選定して試行
@@ -870,7 +870,7 @@ export class Hub {
       const retry = ai ? this.aiShortRaidNode(neighbourFront.code, neighbourFront.shore, now) : await this.realShortRaidNode(neighbourFront.code, neighbourFront.shore, now);
       if (retry && retry !== existing.node) plan = await this.shortRaidPlan(neighbourFront.code, retry, ai);
     }
-    if (!plan) return { t: "waiting", toast: assaultFortified(neighbourFront.name) };
+    if (!plan) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
     return { t: "ready", plan };
   }
 
