@@ -7,7 +7,7 @@ import { modScale, threatOf } from "./mods";
 import { hypot2, hypot3 } from "./hypot";
 import { squadMembers } from "./members";
 
-/** How far a robot answers shots from afar (see RETURN): further at a higher threat, less in a storm. */
+/** How far a robot answers shots from afar (see RETURN): further at a higher threat. */
 const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range;
 
 /** Scratch ends for `sense()`'s line of sight: rewritten each call, never retained. */

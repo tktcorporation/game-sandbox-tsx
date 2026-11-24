@@ -46,14 +46,14 @@ assert.equal(clampTrophies(99999), TROPHY.max);
 
 {
   const p = newProfile(1);
-  assert.equal(p.v, 34);
+  assert.equal(p.v, 35);
   assert.equal(p.trophies, TROPHY.start);
   const raw = JSON.parse(JSON.stringify(p));
   raw.v = 31;
   delete raw.trophies;
   const old = parseProfile(raw, 1);
   assert.ok(old);
-  assert.equal(old.v, 34);
+  assert.equal(old.v, 35);
   assert.equal(old.trophies, TROPHY.start);
 }
 

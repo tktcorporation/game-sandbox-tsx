@@ -2178,6 +2178,10 @@ function checkSaveCompat(): string | null {
   const v13 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 13, board: { day: 3, contracts: [{ t: "fetch", id: "x" }] }, taken: "x", records: ["tether"], stash: [{ t: "weapon", kind: "talon", rarity: 3 }, { t: "key", poi: "yard" }], quests: { progress: { drones: 2, heavies: 1, parts: 0 }, done: ["grunts", "drones", "quarry", "relay", "power"] } })));
   if (!v13 || v13.v !== 35 || stashUsed(v13) !== 2 || "quests" in v13 || "board" in v13 || "taken" in v13 || "records" in v13)
     return `save compat: a v13 save with old quest/board fields loaded as ${JSON.stringify(v13 && { v: v13.v, stash: stashUsed(v13), keys: Object.keys(v13) })}`;
+  // Old island-events field on a v34 save is dropped; Profile is v35 without events.
+  const v34 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 34, events: [{ t: "storm" }, { t: "crews" }] })));
+  if (!v34 || v34.v !== 35 || "events" in v34)
+    return `save compat: a v34 save with events loaded as ${JSON.stringify(v34 && { v: v34.v, hasEvents: "events" in v34 })}`;
   return null;
 }
 
