@@ -8,17 +8,19 @@
 export type RivalHold = `rival:${string}`;
 
 /** Who holds a POI: the enemy (red on the maps), the player (blue), or another player (`RivalHold`). */
-export type PoiHold = "held" | "freed" | RivalHold;
+export type PoiHold = "own" | "foe" | RivalHold;
 
 /** The standing of a POI held by the player with id `owner`. */
 export const rivalHold = (owner: string): RivalHold => `rival:${owner}`;
 
 /** The id of the other player holding a POI of standing `h`, or null when the enemy or the player holds it. */
-export const rivalOf = (h: PoiHold): string | null => (h === "held" || h === "freed" ? null : h.slice(6));
+export const rivalOf = (h: PoiHold): string | null => (h === "foe" || h === "own" ? null : h.slice(6));
 
-/** A saved standing; null for anything unreadable. An owner's id is 1 to 64 letters, digits, `-` or `_`. */
+/** A saved standing; null for anything unreadable. Accepts legacy "freed" -> "own" and "held" -> "foe". An owner's id is 1 to 64 letters, digits, `-` or `_`. */
 export function parseHold(raw: unknown): PoiHold | null {
-  if (raw === "held" || raw === "freed") return raw;
+  if (raw === "own" || raw === "foe") return raw;
+  if (raw === "freed") return "own";
+  if (raw === "held") return "foe";
   return typeof raw === "string" && /^rival:[A-Za-z0-9_-]{1,64}$/.test(raw) ? (raw as RivalHold) : null;
 }
 

@@ -130,7 +130,7 @@ export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSour
 
 /** Neighbours drawn on maps / horizon: empty until a sea route opens (序盤のお隣ノイズを出さない). */
 export function neighboursOnMap(p: Pick<Profile, "day" | "poiState">): Neighbour[] {
-  const holds = (id: NodeId) => p.poiState[id]?.state === "freed";
+  const holds = (id: NodeId) => p.poiState[id]?.state === "own";
   return pvpSeaOpen(holds) ? neighboursFor(p) : [];
 }
 

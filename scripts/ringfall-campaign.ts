@@ -49,7 +49,7 @@ export interface Campaign {
 const work = (p: Profile, r: RegionId, gun: number) => {
   const front = frontNodes(islandHolds(p));
   const tierOf = (id: string) => TIER[id as NodeId] ?? 0;
-  return NODES.reduce((sum, n, i) => sum + (front[i] && n.region === r && TIER[n.id] <= gun ? 100 + 50 * TIER[n.id] : 0), 0) + regionOf(r).pois.filter((id) => !unfreeable(id) && p.poiState[id].state === "held" && tierOf(id) <= gun).length;
+  return NODES.reduce((sum, n, i) => sum + (front[i] && n.region === r && TIER[n.id] <= gun ? 100 + 50 * TIER[n.id] : 0), 0) + regionOf(r).pois.filter((id) => !unfreeable(id) && p.poiState[id].state === "foe" && tierOf(id) <= gun).length;
 };
 
 /** The guns the bot carries, in this order: a rifle for the fight and the scoped rifle for its opening shots. */
@@ -159,7 +159,7 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     if (came) scouted = true;
     p = spend(settled.profile);
     const h = islandHolds(p);
-    const mine = NODES.filter((_, i) => h[i] === "freed");
+    const mine = NODES.filter((_, i) => h[i] === "own");
     out.days.push({
       gun: Math.max(-1, ...taken.kit.weapons.map((w) => w.rarity)),
       cash: p.cash,

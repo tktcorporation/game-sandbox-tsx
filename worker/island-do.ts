@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import { advance, islandOp, nextAlarm, type IslandOp, type IslandState } from "./island";
+import { advance, islandOp, migrateIslandState, nextAlarm, type IslandOp, type IslandState } from "./island";
 
 /*
  * One island's Durable Object (docs/ringfall/multiplayer.md, 戦いの解き方): the only writer of that
@@ -19,7 +19,8 @@ export class IslandDO implements DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const { op, now } = (await request.json()) as { op: IslandOp; now: number };
-    const state = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
+    const raw = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
+    const state = raw ? migrateIslandState(raw) : null;
     const r = islandOp(state, op, now);
     if (r.state && r.changed) await this.ctx.storage.put(KEY, r.state);
     await this.scheduleNextAlarm(r.state, now);
@@ -27,8 +28,9 @@ export class IslandDO implements DurableObject {
   }
 
   async alarm(): Promise<void> {
-    const state = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
-    if (!state) return;
+    const raw = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
+    if (!raw) return;
+    const state = migrateIslandState(raw);
     const now = Date.now();
     const { behind, moved } = advance(state, now);
     if (moved) await this.ctx.storage.put(KEY, state);

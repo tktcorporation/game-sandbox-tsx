@@ -15,6 +15,19 @@ import type { ApiError } from "../src/ringfall/meta/island-errors";
  * Nothing draws on chance: the same state and the same time give the same island.
  */
 
+/** Normalizes a hold string to "own" | "foe" | RivalHold, accepting legacy "freed" / "held". */
+export function normalizeHold(raw: unknown): PoiHold {
+  return parseHold(raw) ?? "foe";
+}
+
+/** Migrates an IslandState loaded from storage/network, ensuring holds are normalized to "own" | "foe" | RivalHold. */
+export function migrateIslandState(s: IslandState): IslandState {
+  if (Array.isArray(s.holds)) {
+    s.holds = s.holds.map((h) => normalizeHold(h));
+  }
+  return s;
+}
+
 /** The rules of expeditions and the server's pace. */
 export const EXPEDITION = {
   /** Days an island is shielded from expeditions after it was claimed (新しいプレイヤーの保護). */
@@ -260,7 +273,7 @@ function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, b
  */
 function expeditionRefusal(s: IslandState, i: number, now: number): { status: number; error: ApiError } | null {
   if (ISLAND_TABLE.campNext.includes(NODE_IDS[i])) return { status: 403, error: "closed-node" };
-  if (s.holds[i] !== "held" && s.holds[i] !== "freed") return { status: 409, error: "node-not-open" };
+  if (s.holds[i] !== "foe" && s.holds[i] !== "own") return { status: 409, error: "node-not-open" };
   if (now - s.since < EXPEDITION.protectDays * DAY_MS) return { status: 403, error: "protected" };
   if (s.expeditions.some((e) => e.target === i)) return { status: 409, error: "node-busy" };
   if (s.expeditions.length >= EXPEDITION.perIsland) return { status: 409, error: "island-full" };
@@ -316,8 +329,8 @@ function spendAid(s: IslandState, i: number, n = EXPEDITION.aidPerFight) {
 
 /** A fight begins at node `i`: a node of the enemy's stands its whole garrison (as it stands since the last report), one of the owner's its turrets. */
 function startFight(s: IslandState, i: number) {
-  if (s.holds[i] === "held") s.guards[i] ??= garrisonGuards(s.owner.code, i);
-  if (s.holds[i] === "freed" && !s.defenders.some((d) => d.to === i && d.task === "post")) {
+  if (s.holds[i] === "foe") s.guards[i] ??= garrisonGuards(s.owner.code, i);
+  if (s.holds[i] === "own" && !s.defenders.some((d) => d.to === i && d.task === "post")) {
     for (let k = 0; k < FACTORY.levels[s.factory].turrets; k++) s.defenders.push({ id: s.nextId++, to: i, units: [unit("heavy")], task: "post" });
     // Aid left at depots (own leave-aid use, or a neighbour's donation) joins this defence.
     spendAid(s, i);
@@ -383,7 +396,7 @@ function tick(s: IslandState, t: number) {
   const fightingExpeditions = s.expeditions.filter((e) => e.arrived && !withheld.has(e));
   // The factory sends a squad to the first of the owner's nodes under attack, as in a raid, while it has room.
   const lv = FACTORY.levels[s.factory];
-  const attacked = fightingExpeditions.find((e) => !e.holding && s.holds[e.target] === "freed");
+  const attacked = fightingExpeditions.find((e) => !e.holding && s.holds[e.target] === "own");
   s.made = Math.min(lv.every, s.made + CONQUEST.tick);
   if (attacked && s.made >= lv.every && s.defenders.filter((d) => d.task !== "post").length < lv.max) {
     s.defenders.push({ id: s.nextId++, to: attacked.target, units: lv.kinds.map(unit), task: "defend" });
@@ -439,7 +452,7 @@ function tick(s: IslandState, t: number) {
     appendLog(s, t, "wiped", e.target, e.by);
     // Holders lost: the node goes back to the enemy (取った拠点の維持).
     if (rivalOf(s.holds[e.target]) === e.by.code) {
-      s.holds[e.target] = "held";
+      s.holds[e.target] = "foe";
       appendLog(s, t, "released", e.target, e.by);
     }
     return false;
@@ -483,6 +496,7 @@ function idleUntil(s: IslandState, t: number): number {
  * the tick before the next thing that happens, which comes out as ticking through it would.
  */
 export function advance(s: IslandState, now: number, maxTicks = EXPEDITION.maxTicks): { behind: boolean; moved: boolean } {
+  migrateIslandState(s);
   prunePings(s, now);
   const every = FACTORY.levels[s.factory].every;
   let n = 0;
@@ -526,7 +540,7 @@ export function nextAlarm(s: IslandState | null, now: number): number | null {
 function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState {
   return {
     owner: { id: op.player.id, name: op.player.name, code: op.code },
-    holds: NODE_IDS.map(() => "held"),
+    holds: NODE_IDS.map(() => "foe"),
     factory: 0,
     day: 0,
     since: now,
@@ -558,12 +572,12 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
   op.holds.forEach((h, i) => {
     const cur = s.holds[i];
     if (rivalOf(cur) !== null) {
-      if (h !== "freed" || !op.retaken.includes(NODE_IDS[i])) return;
-      s.holds[i] = "freed";
+      if (h !== "own" || !op.retaken.includes(NODE_IDS[i])) return;
+      s.holds[i] = "own";
       const gone = s.expeditions.filter((e) => e.target === i);
       s.expeditions = s.expeditions.filter((e) => e.target !== i);
       appendLog(s, now, "retaken", i, gone[0]?.by ?? { code: rivalOf(cur)!, name: "" });
-    } else if (h === "held" || h === "freed") s.holds[i] = h;
+    } else if (h === "foe" || h === "own") s.holds[i] = h;
   });
   // What the raid made of the expeditions it took in, while its lease stands; a report after it ran out says nothing of them.
   const live = s.lease && now < s.lease.until ? s.lease.ids : [];
@@ -581,16 +595,16 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
       s.expeditions = s.expeditions.filter((x) => x !== e);
       appendLog(s, now, "wiped", i, e.by);
       if (theirs) {
-        s.holds[i] = op.holds[i] === "freed" ? "freed" : "held";
+        s.holds[i] = op.holds[i] === "own" ? "own" : "foe";
         appendLog(s, now, "released", i, e.by);
       }
       continue;
     }
     e.units = e.units.slice(0, r.left);
     const told = op.holds[i];
-    if (e.holding && theirs && told === "held") {
+    if (e.holding && theirs && told === "foe") {
       // The enemy took the node from its holders, who are at it again.
-      s.holds[i] = "held";
+      s.holds[i] = "foe";
       e.holding = false;
       appendLog(s, now, "released", i, e.by);
     } else if (!e.holding && rivalOf(told) === e.by.code && takenOn(s, now) < EXPEDITION.perDay && fortifiedUntil(s, i) <= now) {
@@ -617,7 +631,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
   // The nodes fortified in the raid are shut to expeditions for a day: only the owner's, and only one an expedition is at or coming to.
   for (const id of op.fortified ?? []) {
     const i = NODE_IDS.indexOf(id);
-    if (i < 0 || s.holds[i] !== "freed" || !s.expeditions.some((e) => e.target === i && !e.holding)) continue;
+    if (i < 0 || s.holds[i] !== "own" || !s.expeditions.some((e) => e.target === i && !e.holding)) continue;
     s.fort ??= NODE_IDS.map(() => 0);
     s.fort[i] = now + EXPEDITION.fortify * 1000;
   }
@@ -681,7 +695,7 @@ function assault(s: IslandState, from: string, id: number, won: boolean, now: nu
     appendLog(s, now, "wiped", e.target, e.by);
     return { status: 200, body: { ok: true, id, won: false } };
   }
-  if (s.holds[e.target] !== "freed") return { status: 409, body: fail("node-not-open") };
+  if (s.holds[e.target] !== "own") return { status: 409, body: fail("node-not-open") };
   if (takenOn(s, now) >= EXPEDITION.perDay) return { status: 409, body: fail("day-limit") };
   e.holding = true;
   delete e.waiting;
@@ -701,7 +715,7 @@ function recall(s: IslandState, from: string, id: number, now: number): boolean 
   if (!e) return false;
   s.expeditions = s.expeditions.filter((x) => x !== e);
   if (rivalOf(s.holds[e.target]) === from) {
-    s.holds[e.target] = "held";
+    s.holds[e.target] = "foe";
     appendLog(s, now, "released", e.target, e.by);
   } else appendLog(s, now, "recalled", e.target, e.by);
   return true;
@@ -709,7 +723,7 @@ function recall(s: IslandState, from: string, id: number, now: number): boolean 
 
 /** Applies `op` to the island at `now` (reckoned to `now` first). The state passed in is changed in place. */
 export function islandOp(state: IslandState | null, op: IslandOp, now: number): OpResult {
-  const s = state;
+  const s = state ? migrateIslandState(state) : null;
   const moved = s ? advance(s, now).moved : false;
   const done = (status: number, body: unknown, wrote = false): OpResult => ({ status, body, state: s, changed: moved || wrote });
   // The server draws the code (worker/api.ts): one already claimed answers 409 and it draws again.
@@ -717,6 +731,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (!s) return done(404, fail("no-island"));
   if (op.t === "report") {
     if (s.owner.id !== op.player.id) return done(403, fail("not-owner"));
+    op.holds = op.holds.map(normalizeHold);
     report(s, op, now);
     return done(200, { ok: true, holds: s.holds }, true);
   }
@@ -744,7 +759,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const since = now - ANSWER_MS;
     const attackers = [...new Set([...s.expeditions.map((e) => e.by.code), ...s.log.filter((e) => e.at >= since && (e.t === "noticed" || e.t === "landed" || e.t === "taken")).map((e) => e.by.code)])];
-    return done(200, { ok: true, factory: s.factory, name: s.owner.name, held: NODE_IDS.filter((_, i) => s.holds[i] === "freed"), attackers });
+    return done(200, { ok: true, factory: s.factory, name: s.owner.name, held: NODE_IDS.filter((_, i) => s.holds[i] === "own"), attackers });
   }
   if (op.t === "log") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
@@ -774,8 +789,8 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (ISLAND_TABLE.closed.includes(op.target)) return done(403, fail("closed-node"));
   const i = NODE_IDS.indexOf(op.target);
   if (i < 0 || !op.kinds.length) return done(400, fail("bad-request"));
-  // X2 only takes a node the owner holds (freed) — the short raid's 核 · 制圧 target.
-  if (op.x2 && s.holds[i] !== "freed") return done(409, fail("node-not-open"));
+  // X2 only takes a node the owner holds (own) — the short raid's 核 · 制圧 target.
+  if (op.x2 && s.holds[i] !== "own") return done(409, fail("node-not-open"));
   const why = expeditionRefusal(s, i, now);
   if (why) return done(why.status, fail(why.error));
   const e: Expedition = {

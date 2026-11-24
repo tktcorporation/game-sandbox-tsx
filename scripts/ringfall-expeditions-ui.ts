@@ -60,7 +60,7 @@ const ID_B = "1b4e28ba-2fa1-41d2-883f-0016d3cca427";
 function island(freed: string[], rival: string[] = []): Profile {
   const p = newProfile(3);
   const poiState = { ...p.poiState };
-  for (const id of freed) poiState[id as keyof typeof poiState] = { state: "freed" };
+  for (const id of freed) poiState[id as keyof typeof poiState] = { state: "own" };
   for (const id of rival) poiState[id as keyof typeof poiState] = { state: rivalHold(B) };
   return { ...p, poiState };
 }
@@ -68,13 +68,13 @@ function island(freed: string[], rival: string[] = []): Profile {
 // --- merge
 {
   const p = island(["supply", "quarry"], ["relay"]);
-  const server = NODES.map((n) => ({ id: n.id, hold: n.id === "wreck" ? rivalHold(A) : "held" as const }));
+  const server = NODES.map((n) => ({ id: n.id, hold: n.id === "wreck" ? rivalHold(A) : "foe" as const }));
   const m = mergeHolds(p.poiState, server);
   console.log(`merge: supply ${m.supply.state}, quarry ${m.quarry.state}, relay ${m.relay.state}, wreck ${m.wreck.state}, pad ${m.pad.state}`);
-  check(m.supply.state === "freed" && m.quarry.state === "freed", "merge: the player's own nodes did not stay the player's");
-  check(m.relay.state === "held", "merge: a node the server no longer gives another player stayed theirs");
+  check(m.supply.state === "own" && m.quarry.state === "own", "merge: the player's own nodes did not stay the player's");
+  check(m.relay.state === "foe", "merge: a node the server no longer gives another player stayed theirs");
   check(m.wreck.state === rivalHold(A), "merge: a node the server gives another player is not theirs");
-  check(m.pad.state === "held", "merge: the titan's pad changed");
+  check(m.pad.state === "foe", "merge: the titan's pad changed");
   check(mergeHolds(m, server) === m, "merge: a merge that changes nothing made a new island");
   check(p.poiState.relay.state === rivalHold(B), "merge: the profile's island was changed in place");
 }
@@ -95,7 +95,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   const kept = reportedHolds(say(retakenNodes(stale, stale, [])).body)?.find((n) => n.id === "quarry")?.hold;
   const back = reportedHolds(say(["quarry"]).body)?.find((n) => n.id === "quarry")?.hold;
   console.log(`retaken: a stale profile's report leaves the quarry ${kept}; one naming it ${back}`);
-  check(kept === rivalHold(B) && back === "freed", "retaken: the server's answer to a report does not follow what it names as taken back");
+  check(kept === rivalHold(B) && back === "own", "retaken: the server's answer to a report does not follow what it names as taken back");
 }
 
 // --- retaken at the settle: by the island the raid started with
@@ -119,8 +119,8 @@ function island(freed: string[], rival: string[] = []): Profile {
   const mid = settle(merged, b);
   const naive = retakenNodes(merged, mid.profile, []);
   console.log(`retaken at the settle: a captured relay -> pending ${won.profile.retaken.join() || "none"}; mid-raid merge: quarry after ${mid.profile.poiState.quarry.state}, pending ${mid.profile.retaken.join() || "none"} (by the profile at the settle it would be ${naive.join() || "none"})`);
-  check(won.profile.retaken.join() === "relay" && won.profile.poiState.relay.state === "freed", "retaken at the settle: the relay taken back is not pending");
-  check(mid.profile.poiState.quarry.state === "freed" && naive.includes("quarry"), "retaken at the settle: the mid-raid case does not end with the quarry the player's (the check below would prove nothing)");
+  check(won.profile.retaken.join() === "relay" && won.profile.poiState.relay.state === "own", "retaken at the settle: the relay taken back is not pending");
+  check(mid.profile.poiState.quarry.state === "own" && naive.includes("quarry"), "retaken at the settle: the mid-raid case does not end with the quarry the player's (the check below would prove nothing)");
   check(!mid.profile.retaken.includes("quarry"), "retaken at the settle: a sync during the raid made the report name a node that was the player's at its start");
   check(settle(won.profile, newRun(7, starterKit(), "reservoir", { island: holds(won.profile) })).profile.retaken.join() === "relay", "retaken at the settle: a pending node was dropped by the next settle");
 }
@@ -137,9 +137,9 @@ function island(freed: string[], rival: string[] = []): Profile {
   const rep = islandOp(own, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(panel.profile), retaken: [...panel.profile.retaken], factory: 0, day: 2 }, t0 + 2000);
   const landed = applySync(panel.profile, { reported: [...panel.profile.retaken], holds: reportedHolds(rep.body)! });
   console.log(`pending: after a failed report a panel sync leaves the quarry ${panel.profile.poiState.quarry.state}, pending ${panel.profile.retaken.join()}; the next report ${rep.status} -> server ${own.holds[Q]}, pending ${landed.profile.retaken.join() || "none"}`);
-  check(panel.profile.poiState.quarry.state === "freed" && panel.profile.retaken.join() === "quarry", "pending: a sync turned a node taken back, its report not landed, back to another player's");
-  check(rep.status === 200 && own.holds[Q] === "freed", "pending: the next report did not take the pending node back on the server");
-  check(landed.profile.retaken.length === 0 && landed.profile.poiState.quarry.state === "freed", "pending: the report's answer did not clear the pending node");
+  check(panel.profile.poiState.quarry.state === "own" && panel.profile.retaken.join() === "quarry", "pending: a sync turned a node taken back, its report not landed, back to another player's");
+  check(rep.status === 200 && own.holds[Q] === "own", "pending: the next report did not take the pending node back on the server");
+  check(landed.profile.retaken.length === 0 && landed.profile.poiState.quarry.state === "own", "pending: the report's answer did not clear the pending node");
 }
 
 // --- log
@@ -169,7 +169,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   const p = island(["supply", "quarry"]);
   const rep = islandOp(a, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(p), retaken: [], factory: 2, day: 4 }, t0 + 1000);
   const back = reportedHolds(rep.body);
-  check(!!back && back.find((n) => n.id === "supply")?.hold === "freed" && back.length === NODES.length, `answers: a report's holds read back as ${JSON.stringify(back)}`);
+  check(!!back && back.find((n) => n.id === "supply")?.hold === "own" && back.length === NODES.length, `answers: a report's holds read back as ${JSON.stringify(back)}`);
   const now = t0 + EXPEDITION.protectDays * DAY + 1000;
   const view = parseView(JSON.parse(JSON.stringify(publicView(a, now))));
   const open = view?.nodes.filter((n) => n.open).map((n) => n.id) ?? [];
@@ -246,7 +246,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   const held = played(true);
   console.log(`lease: unfortified, the raid left the relay ${taken.mine} (server ${taken.server}, ${taken.left} left, holding ${taken.holding}); fortified, ${held.mine} (server ${held.server}, ${held.left} left, shut ${held.shut})`);
   check(taken.status === 200 && taken.mine === rivalHold(B) && taken.server === rivalHold(B) && taken.left === 3 && taken.holding, "lease: a node the expedition took in the raid is not its on the server");
-  check(held.mine === "freed" && held.server === "freed" && held.left === 3 && held.there === 1 && !held.holding && held.fortified.join() === "relay" && held.shut, "lease: a node fortified in the raid fell, or is not shut on the server");
+  check(held.mine === "own" && held.server === "own" && held.left === 3 && held.there === 1 && !held.holding && held.fortified.join() === "relay" && held.shut, "lease: a node fortified in the raid fell, or is not shut on the server");
   check(fortifiedNodes({ fortified: [2], noticed: [] }).length === 0, "lease: a night's target fortified was reported as shut to expeditions");
   // Two expeditions of one sender, one sent through the other's node: a squad only passing through a node is not the expedition sent at it.
   const QUARRY = NODES.findIndex((n) => n.id === "quarry");
@@ -272,7 +272,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   const kept = lateRaid(true, true);
   console.log(`lease late: given at the start ${JSON.stringify(atStart)}, taken in after it ${JSON.stringify(joined)}, with the relay shut from before ${JSON.stringify(kept)}`);
   check(JSON.stringify(atStart) === JSON.stringify(joined) && atStart.relay === rivalHold(B), "lease: expeditions taken in after the raid began did not play as those given at its start");
-  check(kept.relay === "freed" && kept.left === 3 && lateRaid(false, true).relay === "freed", "lease: a node shut from an earlier raid fell in the next");
+  check(kept.relay === "own" && kept.left === 3 && lateRaid(false, true).relay === "own", "lease: a node shut from an earlier raid fell in the next");
   check(parseLease({ until: 1, expeditions: [], shut: ["relay", "nowhere", 3] })?.shut.join() === "relay" && parseLease({ until: 1, expeditions: [] })?.shut.length === 0, "lease: the nodes shut were not read back");
 
   // Called home: the squad is back at once, the entry leaves when the island answers; one still being sent stays.
@@ -365,7 +365,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   globalThis.fetch = (async () => new Response(JSON.stringify({ ok: false, error: "no-island-server" }), { status: 202 })) as typeof fetch;
   const base = { ...island(["supply"]), retaken: ["quarry"] } as Profile;
   globalThis.fetch = real;
-  const server = NODES.map((n) => ({ id: n.id, hold: n.id === "supply" ? rivalHold(A) : ("held" as const) }));
+  const server = NODES.map((n) => ({ id: n.id, hold: n.id === "supply" ? rivalHold(A) : ("foe" as const) }));
   const log = { entries: [{ seq: 99, at: 0, t: "taken", node: "supply", by: { code: A, name: "x" } }], next: 99 } as never;
   // Tickets as syncOwn hands them out: an older one (100) and a later one (101).
   const older = { code: A, view: null, ticket: 100, synced: { holds: server, reported: ["quarry"] as never, log } };
@@ -379,7 +379,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   takeSync(base, later);
   const old = takeSync(base, older);
   console.log(`stale sync: supply ${old.profile.poiState.supply.state}, pending ${old.profile.retaken.join(",") || "none"}, news ${old.news.length}`);
-  check(old.profile.poiState.supply.state === "freed" && old.profile.retaken.length === 0 && old.news.length === 0, "stale sync: an answer a later sync superseded took its older holds or log");
+  check(old.profile.poiState.supply.state === "own" && old.profile.retaken.length === 0 && old.news.length === 0, "stale sync: an answer a later sync superseded took its older holds or log");
 }
 
 // --- trimming a long list drops expeditions that are gone before live ones
@@ -455,9 +455,9 @@ function island(freed: string[], rival: string[] = []): Profile {
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(current?.v === 32 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
-  check(v27?.v === 32 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
-  check(v26?.v === 32 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(current?.v === 33 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
+  check(v27?.v === 33 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
+  check(v26?.v === 33 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");

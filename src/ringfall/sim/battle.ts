@@ -350,7 +350,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
     away: Math.max(0, Math.round(start.away ?? 0)),
   };
   NODES.forEach((_, i) => {
-    if (s.nodes[i] !== "freed") return;
+    if (s.nodes[i] !== "own") return;
     for (let k = 0; k < FACTORY.levels[factory].turrets + heldUnlocks(s.nodes, "turret").reduce((n, id) => n + (UNLOCKS[id].turret ?? 0), 0); k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
   addRivals(s, b, start.rivals ?? [], start.shut ?? []);
@@ -547,7 +547,7 @@ function walkOn(s: State, q: BattleSquad): boolean {
 /** The node the player attacks: the core of the capture under way, else a node on the front whose core the player is near; -1 for none. */
 function rallyNode(s: State): number {
   if (s.phase !== "play") return -1;
-  if (s.capture && s.nodes[s.capture.node] !== "freed") return s.capture.node;
+  if (s.capture && s.nodes[s.capture.node] !== "own") return s.capture.node;
   const front = frontNodes(s.nodes);
   let best = -1;
   let bestD: number = CONQUEST.rally.near;
@@ -693,7 +693,7 @@ function toNumbers(s: State, q: BattleSquad) {
 /* ---------- making squads ---------- */
 
 /** The player's nodes and the camp: where the factory's squads come out. */
-const playerGround = (s: State) => [-1, ...NODES.map((_, i) => i).filter((i) => s.nodes[i] === "freed")];
+const playerGround = (s: State) => [-1, ...NODES.map((_, i) => i).filter((i) => s.nodes[i] === "own")];
 
 /** The nodes next to node `i`, the camp -1 included for the supply depot. */
 const nextTo = (i: number): number[] => (i < 0 ? CAMP_NEXT : [...NEIGHBOURS[i], ...(CAMP_NEXT.includes(i) ? [-1] : [])]);
@@ -724,7 +724,7 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
   let worst = -1;
   let worstN = 0;
   NODES.forEach((_, i) => {
-    if (s.nodes[i] !== "freed") return;
+    if (s.nodes[i] !== "own") return;
     // The units coming at it, against those holding it: defended only while outmatched.
     const n = b.squads.filter((q) => q.side !== 0 && attacking(q, i)).reduce((k, q) => k + q.units.length, 0) - unitsAt(s, b, i, 0);
     if (n > worstN) {
@@ -734,7 +734,7 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
   });
   if (worst >= 0) return { from: worst, to: worst, task: "defend" };
   // A node of the player's where the enemy comes ashore or next to the enemy's, with none of the player's squads there or going: one goes to hold it.
-  const bare = NODES.map((_, i) => i).filter((i) => s.nodes[i] === "freed" && !b.squads.some((q) => q.side === 0 && q.to === i && q.task !== "rally") && (NET_EDGE.includes(NODES[i].id) || NEIGHBOURS[i].some((k) => s.nodes[k] !== "freed")));
+  const bare = NODES.map((_, i) => i).filter((i) => s.nodes[i] === "own" && !b.squads.some((q) => q.side === 0 && q.to === i && q.task !== "rally") && (NET_EDGE.includes(NODES[i].id) || NEIGHBOURS[i].some((k) => s.nodes[k] !== "own")));
   if (bare.length) {
     // The night's targets first: a squad standing there as the battle ends halves the night's chance (`NIGHT.guarded`).
     const want = (k: number) => +(b.targets.includes(k) && !b.fortified.includes(k)) * 2 + +NET_EDGE.includes(NODES[k].id);
@@ -824,7 +824,7 @@ function landingPlan(s: State, b: Battle, target = -1): { from: number; to: numb
 }
 
 /** The nodes the player holds now that open `key` (`UNLOCKS`): it lasts while they are held. */
-export const heldUnlocks = (nodes: State["nodes"], key: keyof NodeUnlock): NodeId[] => NODES.filter((n, i) => nodes[i] === "freed" && UNLOCKS[n.id][key]).map((n) => n.id);
+export const heldUnlocks = (nodes: State["nodes"], key: keyof NodeUnlock): NodeId[] => NODES.filter((n, i) => nodes[i] === "own" && UNLOCKS[n.id][key]).map((n) => n.id);
 
 /**
  * The rarity the factory's robots' guns count as against plates: the best the trader sells for the
@@ -874,7 +874,7 @@ function produce(s: State, b: Battle, dt: number) {
     // The enemy works from the ground it never gives up too (the titan's pad, the north shore, `NET_EDGE`).
     const theirs = NODES.reduce((n, _, i) => n + (sideOf(s.nodes[i]) === 1 ? 1 : 0), 0);
     // The enemy answers the player's ground: each node of theirs works for it as one of its own would. Another player's nodes count for neither.
-    const mine = NODES.reduce((n, _, i) => n + (s.nodes[i] === "freed" ? 1 : 0), 0);
+    const mine = NODES.reduce((n, _, i) => n + (s.nodes[i] === "own" ? 1 : 0), 0);
     const shore = heldUnlocks(s.nodes, "shore").length ? CONQUEST.net.shore : 0;
     const node = CONQUEST.net.work / NODES.length;
     const work = side === 1 ? (theirs + CONQUEST.net.answer * mine) * node + CONQUEST.net.edge - shore : 1;
@@ -906,7 +906,7 @@ function produce(s: State, b: Battle, dt: number) {
 function counterAttack(s: State, b: Battle) {
   for (const c of b.counters.filter((k) => k.at <= b.now)) {
     b.counters.splice(b.counters.indexOf(c), 1);
-    if (s.nodes[c.node] !== "freed") continue;
+    if (s.nodes[c.node] !== "own") continue;
     const plan = landingPlan(s, b, c.node);
     if (!plan) continue;
     const q = addSquad(b, 1, [...COUNTER.kinds[s.strength], ...Array<EnemyKind>(momentum(s)).fill("grunt")], plan.from, plan.to, "attack");
@@ -982,13 +982,13 @@ const boundFor = (q: BattleSquad) => (q.via.length ? q.via[q.via.length - 1] : q
 export function atRisk(s: { battle: Battle | null | undefined; nodes: readonly NodeHold[] }): boolean[] {
   const b = s.battle;
   const foe = (side: Side | undefined) => side === 1 || side === 3;
-  return NODES.map((_, i) => !!b && s.nodes[i] === "freed" && (b.threat[i] || foe(b.meter[i]?.side) || b.squads.some((q) => foe(q.side) && q.task === "attack" && boundFor(q) === i)));
+  return NODES.map((_, i) => !!b && s.nodes[i] === "own" && (b.threat[i] || foe(b.meter[i]?.side) || b.squads.some((q) => foe(q.side) && q.task === "attack" && boundFor(q) === i)));
 }
 
 /** The node an enemy's counter-attack squad is bound for, for each node of the player's (the view's defend arrow). */
 export function countered(s: { battle: Battle | null | undefined; nodes: readonly NodeHold[] }): boolean[] {
   const b = s.battle;
-  return NODES.map((_, i) => !!b && s.nodes[i] === "freed" && b.squads.some((q) => q.counter && q.ashore <= 0 && boundFor(q) === i));
+  return NODES.map((_, i) => !!b && s.nodes[i] === "own" && b.squads.some((q) => q.counter && q.ashore <= 0 && boundFor(q) === i));
 }
 
 /** The nodes the player's squads stand at, holding them, as the battle stands: those the night finds guarded. */
@@ -1066,7 +1066,7 @@ const guardOf = (e: Enemy): Guard => ({ side: robotSide(e), kind: e.kind, hp: e.
  */
 function fightAndTake(s: State, b: Battle, dt: number) {
   // The whole garrison of each node not the player's: it holds it wherever it stands.
-  const garrisons = NODES.map((_, i) => (s.nodes[i] === "freed" ? [] : garrisonAt(s, i)));
+  const garrisons = NODES.map((_, i) => (s.nodes[i] === "own" ? [] : garrisonAt(s, i)));
   const fought = reckonFights({ holds: s.nodes, squads: b.squads.map(reckonSquad), guards: garrisons.map((g) => g.map(guardOf)), watched: NODES.map((n) => nearPlayer(s, n.core, CONQUEST.near)), rarity: b.rarity }, dt);
   const gone = new Set<Enemy>();
   garrisons.forEach((g, i) =>
@@ -1217,7 +1217,7 @@ export function marchSquad(s: State, side: Side, kinds: readonly EnemyKind[], fr
 export function departNow(s: State) {
   const b = s.battle;
   if (!b) return;
-  sendOut(s, b, { from: -1, to: CAMP_NEXT[0], task: s.nodes[CAMP_NEXT[0]] === "freed" ? "defend" : "attack" });
+  sendOut(s, b, { from: -1, to: CAMP_NEXT[0], task: s.nodes[CAMP_NEXT[0]] === "own" ? "defend" : "attack" });
 }
 
 /** The squads of the battle as the maps show them: each squad's side, where it is, whether it is robots in the world, and its members. */
@@ -1250,7 +1250,7 @@ export function battleFocus(s: State): { node: number; kind: "defend" | "attack"
   let defend = -1;
   let defendD = Infinity;
   NODES.forEach((n, i) => {
-    if (s.nodes[i] !== "freed") return;
+    if (s.nodes[i] !== "own") return;
     const m = b.meter[i];
     // Another player's squad passing through on its way to another node comes at nothing here.
     const coming = b.squads.some((q) => q.side !== 0 && attacking(q, i) && (arrived(q) || dist2d(q, n.core) < 120));
@@ -1266,7 +1266,7 @@ export function battleFocus(s: State): { node: number; kind: "defend" | "attack"
   let attack = -1;
   let attackD = Infinity;
   NODES.forEach((n, i) => {
-    if (s.nodes[i] === "freed" || !b.squads.some((q) => q.side === 0 && attacking(q, i))) return;
+    if (s.nodes[i] === "own" || !b.squads.some((q) => q.side === 0 && attacking(q, i))) return;
     const d = dist2d(n.core, p);
     if (d < attackD) {
       attack = i;

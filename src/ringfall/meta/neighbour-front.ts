@@ -23,7 +23,7 @@ export type NeighbourFront = {
 };
 
 /** Node holds in NODES order from an island save. */
-export const holdsOf = (poiState: Island): PoiHold[] => NODES.map((n) => poiState[n.id]?.state ?? "held");
+export const holdsOf = (poiState: Island): PoiHold[] => NODES.map((n) => poiState[n.id]?.state ?? "foe");
 
 /** Whether `v` is a holds array (NODES order), not an Island record. */
 const isHolds = (v: readonly PoiHold[] | Island): v is readonly PoiHold[] => Array.isArray(v);
@@ -55,7 +55,7 @@ export function neighbourFronts(
   from?: { x: number; z: number },
 ): NeighbourFront[] {
   const holds: readonly PoiHold[] = isHolds(holdsOrIsland) ? holdsOrIsland : holdsOf(holdsOrIsland);
-  const mine = (id: NodeId) => holds[nodeIndex(id)] === "freed";
+  const mine = (id: NodeId) => holds[nodeIndex(id)] === "own";
   const owners = footholdOwners(holds);
   const out: NeighbourFront[] = [];
   for (const n of neighbours) {

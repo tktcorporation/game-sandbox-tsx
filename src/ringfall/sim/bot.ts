@@ -749,7 +749,7 @@ export class Bot {
    * `CORE_GIVE_UP` seconds is left for the raid.
    */
   private nextCore(s: State): number {
-    if (s.capture && s.nodes[s.capture.node] !== "freed") {
+    if (s.capture && s.nodes[s.capture.node] !== "own") {
       const c = s.capture;
       if (c.t > (this.coreT.get(c.node)?.t ?? -1)) this.coreT.set(c.node, { t: c.t, at: s.time });
       if (s.time - (this.coreT.get(c.node)?.at ?? s.time) < CORE_GIVE_UP) return c.node;

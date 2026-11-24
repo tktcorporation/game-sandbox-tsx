@@ -169,7 +169,7 @@ export function aiView(
   // A node one of the player's expeditions is on or holds takes no other (`node-busy` on the server).
   const busy = new Set<string>(sent.filter((o) => o.code === a.code && aiBusy(a, salt, o, now)).map((o) => o.node));
   const near = new Set<string>(FRONT_LINKS.flatMap((l) => (l[0] === "camp" ? [] : own.has(l[0]) && !own.has(l[1]) ? [l[1]] : own.has(l[1]) && !own.has(l[0]) ? [l[0]] : [])));
-  const nodes = NODES.map((n) => ({ id: n.id as string, hold: (own.has(n.id) ? "freed" : "held") as PoiHold, open: (own.has(n.id) || near.has(n.id)) && !busy.has(n.id) }));
+  const nodes = NODES.map((n) => ({ id: n.id as string, hold: (own.has(n.id) ? "own" : "foe") as PoiHold, open: (own.has(n.id) || near.has(n.id)) && !busy.has(n.id) }));
   const expeditions = sent
     .filter((o) => o.code === a.code && o.id > 0)
     .flatMap((o) => {
@@ -237,7 +237,7 @@ type Seen = { day: number; poiState: Island; expeditions: readonly Outgoing[] };
  * browser keeps it), the first island the player's ground faces sends its scout (`AI.scout`) at once.
  */
 export function aiAttack(p: Seen, salt: number, taken: readonly number[], scouted = true): { island: AiIsland; node: NodeId; scout?: true } | null {
-  const holds = (id: NodeId) => p.poiState[id]?.state === "freed";
+  const holds = (id: NodeId) => p.poiState[id]?.state === "own";
   // The first time the player's ground reaches the sea facing one of them, that island sends a scout at once (from day 2 on).
   if (!scouted && p.day >= AI.scoutDay) {
     const a = aiIslands(salt, taken).find((x) => routeOpen(x.slot, holds));
@@ -271,13 +271,13 @@ export function aiIncoming(p: Seen, salt: number, taken: readonly number[], scou
 export function aiLent(p: Seen, salt: number, taken: readonly number[], scouted = true): LentIn[] {
   const out: LentIn[] = [];
   for (const n of NODES) {
-    const owner = rivalOf(p.poiState[n.id]?.state ?? "held");
+    const owner = rivalOf(p.poiState[n.id]?.state ?? "foe");
     // Every slot's: an island whose slot a player's island has since taken still holds what it took, and stands its squad there.
     const a = aiByOwner(salt, owner);
     if (a) out.push({ id: 0, by: { code: aiOwner(a.code), name: a.name }, target: n.id, kinds: aiKinds(p.day), state: "holding" });
   }
   const x = aiAttack(p, salt, taken, scouted);
-  if (x && p.poiState[x.node]?.state === "freed") out.push({ id: 0, by: { code: aiOwner(x.island.code), name: x.island.name }, target: x.node, kinds: x.scout ? [...AI.scout] : aiKinds(p.day), state: "coming" });
+  if (x && p.poiState[x.node]?.state === "own") out.push({ id: 0, by: { code: aiOwner(x.island.code), name: x.island.name }, target: x.node, kinds: x.scout ? [...AI.scout] : aiKinds(p.day), state: "coming" });
   return out;
 }
 
@@ -297,12 +297,12 @@ export function aiRaidNews(before: Seen, after: { poiState: Island }, salt: numb
   const out: IslandLogEntry[] = [];
   const by = (a: AiIsland) => ({ code: a.code, name: a.name });
   for (const n of NODES) {
-    const was = rivalOf(before.poiState[n.id]?.state ?? "held");
-    const is = rivalOf(after.poiState[n.id]?.state ?? "held");
+    const was = rivalOf(before.poiState[n.id]?.state ?? "foe");
+    const is = rivalOf(after.poiState[n.id]?.state ?? "foe");
     const a = aiByOwner(salt, is);
     if (a && is !== was) out.push({ seq: 0, at: now, t: "taken", node: n.id, by: by(a) });
   }
   const x = aiAttack(before, salt, taken, scouted);
-  if (x && before.poiState[x.node]?.state === "freed" && !out.some((e) => e.node === x.node)) out.push({ seq: 0, at: now, t: "wiped", node: x.node, by: by(x.island) });
+  if (x && before.poiState[x.node]?.state === "own" && !out.some((e) => e.node === x.node)) out.push({ seq: 0, at: now, t: "wiped", node: x.node, by: by(x.island) });
   return out;
 }

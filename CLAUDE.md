@@ -150,7 +150,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 31), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 33), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -160,7 +160,7 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v31 that already finished another intro counts the front intro done) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v31 that already finished another intro counts the front intro done; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -199,7 +199,7 @@ changes. With every route closed the terrain, the map's boxes and the walkers' g
 before routes existed, and the obstacles stand in cliffs and on a deck where path finding does not
 go (its grids and its sight checks, `los(a, b, true)`, leave them out).
 The island has a state between raids (`docs/ringfall/island-v2.md`): one settled raid is one
-day (`Profile.day`), and each POI is the enemy's (`held`), the player's (`freed`) or another
+day (`Profile.day`), and each POI is the enemy's (`foe`), the player's (`own`) or another
 player's (`rival:` and that player's id, `RivalHold` in `sim/holds.ts`; docs/ringfall/multiplayer.md)
 (`Profile.poiState`). Another player's node is not the player's: it is on the front and taken by its
 core as the enemy's is, stands no garrison of the enemy's, counts as neither side's for the enemy's
@@ -210,9 +210,9 @@ battle takes every node as the battle ended (`RaidDay.battle`), then the night's
 the player's depots on, and pays `FRONT.income` a node (`frontIncome()`). Each node a raid takes by its core after the first raises its momentum (`MOMENTUM`, `momentum()` in `front.ts`): the factory's squads come sooner, the reinforcements' and raiders' clocks are cut as the node is taken, its counter-attack gains a grunt, and a raid that gets off alive is paid `Settlement.spoils`. A node is lost only to the
 enemy's squads in a battle or to the night; nothing goes thin and nothing lapses. The titan's pad is never the player's. A
 raid reads the standings through `newRun(seed, kit, region, { island })` (`State.hold`):
-`garrison()` in `sim/island.ts` stands every squad of a held POI and none of a freed one, which
+`garrison()` in `sim/island.ts` stands every squad of a foe POI and none of an own one, which
 starts cleared, its vault open without the key (`canOpen()` in `world.ts`) and its depot on. With
-no `island` every POI is held, which the sim gate plays.
+no `island` every POI is foe, which the sim gate plays.
 The enemy's strength (`STRENGTH` in `config.ts`, `State.strength`, `strengthLevel()`) follows the
 share of the nodes the player holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `ownNodes()` in
 `front.ts`): the island wakes as it is taken, quiet on the first days and at its hardest once the player holds half; it sets the reinforcement and raider times, the hunting parties per region, the drone

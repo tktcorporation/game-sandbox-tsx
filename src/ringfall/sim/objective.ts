@@ -93,20 +93,20 @@ function buildObjective(title: string, steps: Step[]): Objective {
 function captureSteps(s: State, i: number, title: string): Objective {
   const n = NODES[i];
   const core = ground(n.core.x, n.core.z, n.core.y);
-  const freed = s.nodes[i] === "freed";
+  const owned = s.nodes[i] === "own";
   const under = s.capture?.node === i;
   const c = under ? s.capture : null;
   const front = frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
   return buildObjective(title, [
-    { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: freed || under || dist2d(s.player.pos, core) < ARRIVE },
-    { kind: "start", label: "核を起動する", until: front || freed ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: freed || under, near: "核に触れて制圧を始める" },
+    { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: owned || under || dist2d(s.player.pos, core) < ARRIVE },
+    { kind: "start", label: "核を起動する", until: front || owned ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: owned || under, near: "核に触れて制圧を始める" },
     {
       kind: "hold",
       label: "核を守り抜く",
       until: `核の ${FRONT.radius} m 以内にとどまる・ロボットがいないこと`,
       progress: c ? `${Math.floor(c.t)}/${FRONT.capture} 秒${c.held ? "" : "（止まっている）"}` : `0/${FRONT.capture} 秒`,
       at: core,
-      done: freed,
+      done: owned,
       near: `核の ${FRONT.radius} m 以内にとどまる`,
     },
     extractStep(s),
@@ -123,16 +123,16 @@ function defendSteps(s: State, i: number): Objective {
   const m = s.battle ? meterOf(s.battle, i) : null;
   const near = s.enemies.filter((e) => e.battle && dist2d(e.pos, n.core) < CONQUEST.zone * 2).length;
   const coming = !!s.battle && s.battle.squads.some((q) => q.side !== 0 && attacking(q, i));
-  const held = s.nodes[i] === "freed";
+  const owned = s.nodes[i] === "own";
   return buildObjective(`陣取り戦：${n.name}を守る`, [
-    { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: !held || !coming || dist2d(s.player.pos, core) < ARRIVE },
+    { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: !owned || !coming || dist2d(s.player.pos, core) < ARRIVE },
     {
       kind: "act",
       label: "攻めてくる部隊を追い払う",
       until: `核の ${CONQUEST.zone} m 以内に立ち、近づくロボットを倒す`,
-      progress: !held ? "取られた" : m ? `${m.side === 3 ? "他のプレイヤーが" : "敵が"}制圧中 ${Math.round(m.share * 100)}%` : near ? `敵 ${near} 体` : undefined,
+      progress: !owned ? "取られた" : m ? `${m.side === 3 ? "他のプレイヤーが" : "敵が"}制圧中 ${Math.round(m.share * 100)}%` : near ? `敵 ${near} 体` : undefined,
       at: core,
-      done: !held || !coming,
+      done: !owned || !coming,
       near: `核の ${CONQUEST.zone} m 以内で守る`,
     },
     extractStep(s),
@@ -147,7 +147,7 @@ function defendSteps(s: State, i: number): Objective {
  * or else to explore and get off.
  */
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
-  if (s.capture && s.nodes[s.capture.node] !== "freed") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
+  if (s.capture && s.nodes[s.capture.node] !== "own") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
   if (task) return taskSteps(s, task);
   // The decisive battle: the titan, before anything else the island asks.
   if (s.finale) {

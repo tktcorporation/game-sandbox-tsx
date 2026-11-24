@@ -1019,16 +1019,16 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   // The hunters' fields kept from an earlier raid would steer this one's hunters near the
   // same spots: a raid starts with none, so it plays the same whatever was played before it.
   forgetFields();
-  const hold = POIS.map((p): PoiHold => (p.boss ? "held" : (start.island?.[p.id] ?? "held")));
+  const hold = POIS.map((p): PoiHold => (p.boss ? "foe" : (start.island?.[p.id] ?? "foe")));
   const nodes = nodeHolds((id) => hold[poiIndex(id)]);
   // A raid whose start names no island is the one the balance tables are played on.
   const strength = start.island ? strengthFor(ownNodes(nodes)) : STRENGTH.play;
   const threat = Math.max(0, Math.min(THREAT.max, Math.round(start.threat ?? 0)));
   const clock = raidClock(strength, threat);
-  const freed = (poi: PoiId) => hold[poiIndex(poi)] === "freed";
-  // A freed POI's depot is on, so a raid may start from it too.
-  const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || freed(d.poi));
-  const from = start.from && (start.depots?.includes(start.from) || freed(start.from)) ? DEPOTS[depotIndex(start.from)] : null;
+  const owned = (poi: PoiId) => hold[poiIndex(poi)] === "own";
+  // An owned POI's depot is on, so a raid may start from it too.
+  const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || owned(d.poi));
+  const from = start.from && (start.depots?.includes(start.from) || owned(start.from)) ? DEPOTS[depotIndex(start.from)] : null;
   if (from) region = poiRegion(from.poi).id;
   const ways = regionOf(region).entries;
   const entry = entryOf(start.entry && ways.includes(start.entry) ? start.entry : ways[0]);
@@ -1118,9 +1118,9 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     bins,
     care: null,
     visited: POIS.map(() => false),
-    // A freed POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
+    // An owned POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
     // A POI with no garrison standing (the player's, or another player's) starts cleared.
-    cleared: hold.map((h) => h !== "held"),
+    cleared: hold.map((h) => h !== "foe"),
     hold,
     reinforceT: clock.first,
     reinforceN: 0,
@@ -1191,7 +1191,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   useZones(s);
   // What the nodes held give a raid at its start (`UNLOCKS`): the leap's charge, and one mod part the profile knows, picked from the seed.
   NODES.forEach((n, i) => {
-    if (s.nodes[i] !== "freed") return;
+    if (s.nodes[i] !== "own") return;
     const u = UNLOCKS[n.id];
     if (u.ult) s.player.ult = Math.min(1, s.player.ult + u.ult);
     if (u.mod && s.modOdds > 0 && s.known.length && !s.player.mods.length) s.player.mods.push(s.known[(mix(Math.imul(seed + 7, 0x9e3779b1)) >>> 0) % s.known.length]);

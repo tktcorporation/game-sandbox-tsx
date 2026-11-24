@@ -32,7 +32,7 @@ export const SHORT_RAID_EXTRA = 2;
  */
 export function shortRaidTarget(view: Pick<IslandView, "nodes" | "protectedUntil">, prefer: NodeId, now = Date.now()): NodeId | null {
   if (islandProtected(view, now)) return null;
-  const open = view.nodes.filter((n) => n.hold === "freed" && n.open && nodeIndex(n.id) >= 0);
+  const open = view.nodes.filter((n) => n.hold === "own" && n.open && nodeIndex(n.id) >= 0);
   if (!open.length) return null;
   if (open.some((n) => n.id === prefer)) return prefer;
   const t = NODES[nodeIndex(prefer)];
@@ -51,7 +51,7 @@ export interface IncursionPlan {
   target: NodeId;
   region: RegionId;
   entry: EntryId;
-  /** コピー上の各拠点状態: ステージノードは rival:…、その他は解放済み（freed）。 */
+  /** コピー上の各拠点状態: ステージノードは rival:…、その他は自分側（own）。 */
   island: Partial<Record<PoiId, PoiHold>>;
   /** コピー上に配置された防衛物資（制圧時に「倉庫へ届いた」として獲得）。 */
   parcels: Parcel[];
@@ -72,7 +72,7 @@ export const incursionOwnerId = (code: string, ai: boolean): string => (ai ? `ai
  */
 export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extra = SHORT_RAID_EXTRA, forceOpen?: NodeId): NodeId[] {
   const ownerHeld = new Set(
-    view.nodes.filter((n) => n.hold === "freed" && (n.open || n.id === forceOpen)).map((n) => n.id),
+    view.nodes.filter((n) => n.hold === "own" && (n.open || n.id === forceOpen)).map((n) => n.id),
   );
   if (!ownerHeld.has(target)) return [];
   const t = NODES[nodeIndex(target)];
@@ -92,18 +92,18 @@ export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extr
 
 /**
  * 短いレイド用コピー島の拠点占有マップを生成する。
- * `stage` ノードのみを相手保持（rival:owner）とし、他の非ボスノードは解放済み（freed = 敵なし）にして
- * 数拠点のみに絞った戦場を形成する。タイタン発射台（pad）は敵保持のまま。
+ * `stage` ノードのみを相手保持（rival:owner）とし、他の非ボスノードは自分側（own = 敵なし）にして
+ * 数拠点のみに絞った戦場を形成する。タイタン発射台（pad）は敵（foe）のまま。
  */
 export function shortRaidIsland(ownerId: string, stage: readonly NodeId[]): Partial<Record<PoiId, PoiHold>> {
   const on = new Set(stage);
   const out: Partial<Record<PoiId, PoiHold>> = {};
   for (const p of POIS) {
     if (p.boss) {
-      out[p.id] = "held";
+      out[p.id] = "foe";
       continue;
     }
-    out[p.id] = on.has(p.id as NodeId) ? rivalHold(ownerId) : "freed";
+    out[p.id] = on.has(p.id as NodeId) ? rivalHold(ownerId) : "own";
   }
   return out;
 }
@@ -159,7 +159,7 @@ export function planShortRaid(
   const node = NODES.find((n) => n.id === target);
   if (!node) return null;
   const slot = view.nodes.find((n) => n.id === target);
-  if (!slot || slot.hold !== "freed") return null;
+  if (!slot || slot.hold !== "own") return null;
   // 相手島ノードは遠征中（自身の襲撃含む）に閉鎖されるため、ignoreBusy で自身の分を許可できる
   if (!slot.open && !opts.ignoreBusy) return null;
   const stage = stageNodes(view, node.id, opts.extra ?? SHORT_RAID_EXTRA, opts.ignoreBusy ? node.id : undefined);
@@ -212,11 +212,11 @@ export function viewToRaidIsland(view: Pick<IslandView, "code" | "nodes">, owner
   const out: Partial<Record<PoiId, PoiHold>> = {};
   for (const p of POIS) {
     if (p.boss) {
-      out[p.id] = "held";
+      out[p.id] = "foe";
       continue;
     }
     const n = view.nodes.find((x) => x.id === p.id);
-    out[p.id] = n?.hold === "freed" ? rivalHold(ownerId) : "held";
+    out[p.id] = n?.hold === "own" ? rivalHold(ownerId) : "foe";
   }
   return out;
 }

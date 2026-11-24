@@ -14,7 +14,7 @@ import type { PoiHold } from "./holds";
 export const isVaultGuard = (sq: Squad) => sq.members.some((m) => m.plate !== undefined);
 
 /** The squads of POI `poi` that stand in a raid: all of them while the enemy holds it, none once it is the player's or another player's. */
-export const garrison = (poi: number, hold: PoiHold): Squad[] => (hold === "held" ? POIS[poi].squads : []);
+export const garrison = (poi: number, hold: PoiHold): Squad[] => (hold === "foe" ? POIS[poi].squads : []);
 
 /** A hash of the raid's seed and a salt, for choices that must not draw on the raid's random numbers. */
 const seeded = (seed: number, salt: number, k: number) => mix(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(salt, 0x85ebca6b) ^ Math.imul(k + 1, 0xc2b2ae35));

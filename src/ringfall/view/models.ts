@@ -132,8 +132,8 @@ export const PAL = {
   /** The band on health items, apart from the enemy red and the ring orange. */
   healRed: 0xe0475a,
   /** A node's core in the colour of who holds it: the enemy's red, the player's blue, another player's green (view/map.ts `RIVAL_CSS`). */
-  held: 0xff3b30,
-  freed: 0x3d8cff,
+  foe: 0xff3b30,
+  own: 0x3d8cff,
   rivalHeld: 0x3fae6e,
   /** The flag the player raises by a core they hold. */
   flag: 0x2f7fe0,
@@ -2032,7 +2032,7 @@ export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] }
  */
 export function buildCore(height: number, half: number): { root: THREE.Group; band: THREE.Mesh; halo: THREE.Sprite; flag: THREE.Group; cloth: THREE.Mesh; shield: THREE.Mesh } {
   const root = new THREE.Group();
-  const lit = glow(PAL.held);
+  const lit = glow(PAL.foe);
   const band = mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.5, half * 2 + 0.12), lit, 0, height - 0.6, 0, false);
   root.add(band);
   // The low ring shares the band's material, so it turns with the band to the holder's colour.
@@ -2040,7 +2040,7 @@ export function buildCore(height: number, half: number): { root: THREE.Group; ba
   // Dark steel collars frame the band above and below, so it reads as a lit ring set in the pillar.
   const { box } = parts(root);
   for (const y of [height - 0.92, height - 0.28]) box(flat(PAL.gun), half * 2 + 0.3, 0.14, half * 2 + 0.3, 0, y, 0);
-  const halo = haloSprite(PAL.held, 7, 0.75);
+  const halo = haloSprite(PAL.foe, 7, 0.75);
   halo.position.y = height + 0.6;
   root.add(halo);
   const flag = new THREE.Group();

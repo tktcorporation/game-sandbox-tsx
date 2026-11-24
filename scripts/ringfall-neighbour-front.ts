@@ -26,7 +26,7 @@ const neighbours: Neighbour[] = [
 {
   const island = newIsland();
   const shore = NEIGHBOUR_SLOTS[0].shore;
-  island[shore] = { state: "freed" };
+  island[shore] = { state: "own" };
   const fronts = neighbourFronts(island, neighbours);
   assert.equal(fronts.length, 1);
   assert.equal(fronts[0].name, "となりの前線");
@@ -39,7 +39,7 @@ const neighbours: Neighbour[] = [
 {
   const island = newIsland();
   const shore = NEIGHBOUR_SLOTS[0].shore;
-  island[shore] = { state: "freed" };
+  island[shore] = { state: "own" };
   const other = NODES.find((n) => n.id !== shore)!;
   island[other.id] = { state: rivalHold("AAAAAA") };
   assert.equal(neighbourFronts(island, neighbours).length, 0);
@@ -49,7 +49,7 @@ const neighbours: Neighbour[] = [
 {
   const island = newIsland();
   const shore = NEIGHBOUR_SLOTS[1].shore;
-  island[shore] = { state: "freed" };
+  island[shore] = { state: "own" };
   assert.equal(neighbourFronts(island, neighbours).some((f) => f.code === "BBBBBB"), true);
   const other = NODES.find((n) => n.id !== shore && nodeIndex(n.id) >= 0)!;
   island[other.id] = { state: rivalHold(aiOwner("BBBBBB")) };
@@ -60,13 +60,13 @@ const neighbours: Neighbour[] = [
 {
   const island = newIsland();
   const shore = NEIGHBOUR_SLOTS[0].shore;
-  island[shore] = { state: "freed" };
-  const nodes = NODES.map((n) => island[n.id]?.state ?? ("held" as const));
+  island[shore] = { state: "own" };
+  const nodes = NODES.map((n) => island[n.id]?.state ?? ("foe" as const));
   const right = neighbourFronts(nodes, neighbours);
   assert.equal(right.length, 1);
   assert.equal(right[0].code, "AAAAAA");
   // POIS order includes `pad` before coastal nodes — holding station opens waterworks' slot instead.
-  const poisOrder = POIS.map((o) => island[o.id]?.state ?? ("held" as const));
+  const poisOrder = POIS.map((o) => island[o.id]?.state ?? ("foe" as const));
   assert.notEqual(poisOrder.length, nodes.length);
   const wrong = neighbourFronts(poisOrder as typeof nodes, neighbours);
   assert.equal(wrong.length, 1);

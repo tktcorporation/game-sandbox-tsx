@@ -762,8 +762,8 @@ function swapInto(s: State, l: Loot) {
   s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k.kind].label).join("・")}を捨てた）` });
 }
 
-/** Whether the player may search a bin: a vault takes its POI's key, unless the POI is freed. */
-export const canOpen = (s: State, b: Bin) => !b.vault || s.player.keys.includes(b.poi) || s.hold[b.poi] === "freed";
+/** Whether the player may search a bin: a vault takes its POI's key, unless the POI is owned. */
+export const canOpen = (s: State, b: Bin) => !b.vault || s.player.keys.includes(b.poi) || s.hold[b.poi] === "own";
 
 function startSearch(s: State, bin: number) {
   const p = s.player;
@@ -868,7 +868,7 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
   // Every reachable core, nearest-facing first (not `NODES` order).
   const coreReach = PLAYER.interactRange + FRONT.half + 0.5;
   NODES.forEach((n, i) => {
-    if (s.nodes[i] === "freed" && !fortifiable(s, i)) return;
+    if (s.nodes[i] === "own" && !fortifiable(s, i)) return;
     const d = dist2d(n.core, p.pos);
     if (d >= coreReach) return;
     if (p.pos.y <= n.core.y - 1.5 || p.pos.y >= n.core.y + 2) return;

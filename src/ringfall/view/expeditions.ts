@@ -285,7 +285,7 @@ export class ExpeditionPanel {
     if (t) {
       const open = t.nodes.filter((n) => n.open && nodeIndex(n.id) >= 0);
       const nodes = open.length
-        ? `<div class="exp-nodes">${open.map((n) => `<span class="exp-node">${coreIcon(n.hold === "freed" ? SIDE.rival : SIDE.enemy)}${esc(nodeName(n.id))}</span>`).join("")}</div>`
+        ? `<div class="exp-nodes">${open.map((n) => `<span class="exp-node">${coreIcon(n.hold === "own" ? SIDE.rival : SIDE.enemy)}${esc(nodeName(n.id))}</span>`).join("")}</div>`
         : `<p class="lock-note">${lockIcon()}公開の拠点なし</p>`;
       pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}</div>`;
     }

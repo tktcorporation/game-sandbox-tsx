@@ -117,7 +117,7 @@ export function makeBoard(p: BoardBasis): Board {
 
   // Free: a POI on the front (only those can be taken), paid by the garrison that stands there in the next raid.
   const front = frontNodes(nodes);
-  const frees = shuffle(near(POIS.filter((o) => !o.boss && p.poiState[o.id].state !== "freed" && front[nodeIndex(o.id)]).map((o) => o.id), poiRegionOf), 1);
+  const frees = shuffle(near(POIS.filter((o) => !o.boss && p.poiState[o.id].state !== "own" && front[nodeIndex(o.id)]).map((o) => o.id), poiRegionOf), 1);
   const freeOf = (poi: PoiId): Contract => {
     const robots = garrison(poiIndex(poi), p.poiState[poi].state).reduce((n, sq) => n + sq.members.length, 0);
     return { t: "free", id: id(), poi, reward: { cash: round50(robots * CONTRACT.freePerRobot * factor(poiRegionOf(poi))), items: [] } };
@@ -202,7 +202,7 @@ export function contractProgress(c: Contract, s: State): { line: string; met: bo
       const i = poiIndex(c.poi);
       const name = POIS[i].name;
       const node = nodeIndex(c.poi);
-      if (s.nodes[node] === "freed") return { line: `${name}：核を制圧した`, met: true };
+      if (s.nodes[node] === "own") return { line: `${name}：核を制圧した`, met: true };
       if (s.capture?.node === node) return { line: `${name}の核を制圧中 ${Math.floor(s.capture.t)}/${FRONT.capture} 秒`, met: false };
       return { line: `${name}：核を制圧する`, met: false };
     }

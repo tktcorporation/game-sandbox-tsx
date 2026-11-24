@@ -35,20 +35,20 @@ export const NEIGHBOURS: number[][] = NODES.map((_, i) =>
 /** The nodes linked to the camp, which is the player's from the start. */
 export const CAMP_NEXT: number[] = FRONT_LINKS.filter(([a]) => a === "camp").map(([, b]) => nodeIndex(b));
 
-/** Whether node `i` touches the player's ground: the camp, or a node freed. */
-const touchesPlayer = (holds: readonly NodeHold[], i: number) => CAMP_NEXT.includes(i) || NEIGHBOURS[i].some((k) => holds[k] === "freed");
+/** Whether node `i` touches the player's ground: the camp, or an own node. */
+const touchesPlayer = (holds: readonly NodeHold[], i: number) => CAMP_NEXT.includes(i) || NEIGHBOURS[i].some((k) => holds[k] === "own");
 
 /** The nodes on the front: not the player's, and next to the player's ground. Only these can be taken. */
-export const frontNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((_, i) => holds[i] !== "freed" && touchesPlayer(holds, i));
+export const frontNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((_, i) => holds[i] !== "own" && touchesPlayer(holds, i));
 
 /** Each node's standing, from the POIs'. */
 export const nodeHolds = (poi: (id: PoiId) => PoiHold): NodeHold[] => NODES.map((n) => poi(n.id));
 
 /** How many nodes the enemy holds: another player's are neither the enemy's nor the player's, and count for neither (the enemy's strength, `strengthFor()`). */
-export const enemyNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h === "held").length;
+export const enemyNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h === "foe").length;
 
 /** How many nodes the player holds: what the enemy's strength follows (`strengthFor()`). */
-export const ownNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h === "freed").length;
+export const ownNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h === "own").length;
 
 /** The node of POI `poi` (a place in `POIS`), or -1 for the titan's pad. */
 export const poiNode = (poi: number) => nodeIndex(POIS[poi].id);
@@ -67,17 +67,17 @@ export function garrisonOf(s: State, i: number, squad: number): boolean {
  * (`inZone()`). Set from the raid's nodes by `useZones()`, as `useRoutes()` sets the world's routes.
  */
 let zones: { x: number; z: number }[] = [];
-/** 1 when node i is freed in the zones last put in place; compared in place so a tick allocates none. */
+/** 1 when node i is owned in the zones last put in place; compared in place so a tick allocates none. */
 const zoneBits = new Uint8Array(NODES.length);
 let zonesReady = false;
 
-/** Puts the raid's freed nodes in place as the zones robots keep out of. */
+/** Puts the raid's owned nodes in place as the zones robots keep out of. */
 export function useZones(s: Pick<State, "nodes">) {
   const nodes = s.nodes;
   let changed = !zonesReady;
   if (!changed) {
     for (let i = 0; i < NODES.length; i++) {
-      if (zoneBits[i] !== (nodes[i] === "freed" ? 1 : 0)) {
+      if (zoneBits[i] !== (nodes[i] === "own" ? 1 : 0)) {
         changed = true;
         break;
       }
@@ -87,7 +87,7 @@ export function useZones(s: Pick<State, "nodes">) {
   zonesReady = true;
   zones = [];
   for (let i = 0; i < NODES.length; i++) {
-    const bit = nodes[i] === "freed" ? 1 : 0;
+    const bit = nodes[i] === "own" ? 1 : 0;
     zoneBits[i] = bit;
     if (bit) zones.push({ x: NODES[i].core.x, z: NODES[i].core.z });
   }
@@ -107,12 +107,12 @@ export function inZone(x: number, z: number, r = 0): boolean {
 }
 
 /** Whether node `i` is the player's, marked by the enemy for the night or by another player's expedition sent at it, and not fortified yet: its core takes the use key (`FORTIFY`). */
-export const fortifiable = (s: Pick<State, "nodes" | "battle">, i: number) => s.nodes[i] === "freed" && !!s.battle && (s.battle.targets.includes(i) || s.battle.noticed.includes(i)) && !s.battle.fortified.includes(i);
+export const fortifiable = (s: Pick<State, "nodes" | "battle">, i: number) => s.nodes[i] === "own" && !!s.battle && (s.battle.targets.includes(i) || s.battle.noticed.includes(i)) && !s.battle.fortified.includes(i);
 
-/** The core within reach of the use key, as a place in `NODES`, or -1. A freed node's core does nothing, but for one to fortify. */
+/** The core within reach of the use key, as a place in `NODES`, or -1. An owned node's core does nothing, but for one to fortify. */
 export function coreInReach(s: State): number {
   const p = s.player;
-  return NODES.findIndex((n, i) => (s.nodes[i] !== "freed" || fortifiable(s, i)) && dist2d(n.core, p.pos) < PLAYER.interactRange + FRONT.half + 0.5 && p.pos.y > n.core.y - 1.5 && p.pos.y < n.core.y + 2);
+  return NODES.findIndex((n, i) => (s.nodes[i] !== "own" || fortifiable(s, i)) && dist2d(n.core, p.pos) < PLAYER.interactRange + FRONT.half + 0.5 && p.pos.y > n.core.y - 1.5 && p.pos.y < n.core.y + 2);
 }
 
 /**
@@ -128,7 +128,7 @@ export const capturable = (s: Pick<State, "nodes" | "incursion">, i: number) =>
  * sends the node's garrison to the core.
  */
 export function useCore(s: State, i: number) {
-  if (s.nodes[i] === "freed") {
+  if (s.nodes[i] === "own") {
     if (fortifiable(s, i) && s.fortify?.node !== i) {
       s.fortify = { node: i, t: 0, held: false };
       s.events.push({ t: "fortifyStart", node: i });
@@ -207,7 +207,7 @@ export function stepFront(s: State) {
   stepFortify(s);
   const c = s.capture;
   if (!c || s.phase !== "play") return;
-  if (s.nodes[c.node] === "freed") {
+  if (s.nodes[c.node] === "own") {
     s.capture = null;
     return;
   }
@@ -243,7 +243,7 @@ export function stepFront(s: State) {
 function consumeSiegeWaveSlot(s: State, i: number, wave: SiegeWave, k: number, of: number): boolean {
   const n = NODES[i];
   const c = s.capture!;
-  const from = NEIGHBOURS[i].filter((j) => s.nodes[j] === "held").sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core));
+  const from = NEIGHBOURS[i].filter((j) => s.nodes[j] === "foe").sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core));
   if (!from.length) return true;
   const src = NODES[from[k % from.length]];
   const field = fieldTo(n.core.x, n.core.z);
@@ -286,7 +286,7 @@ function landWave(s: State, i: number) {
  */
 export function takeNode(s: State, i: number) {
   const n = NODES[i];
-  s.nodes[i] = "freed";
+  s.nodes[i] = "own";
   s.capture = null;
   s.stats.captured.push(n.id);
   // A second node and on in one raid: the enemy's clocks run down faster (`MOMENTUM`).
@@ -320,7 +320,7 @@ export function takeNode(s: State, i: number) {
  */
 export function garrisonLeaves(s: State, i: number) {
   const n = NODES[i];
-  const away = NEIGHBOURS[i].filter((k) => s.nodes[k] !== "freed").sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core))[0];
+  const away = NEIGHBOURS[i].filter((k) => s.nodes[k] !== "own").sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core))[0];
   s.squads.forEach((sq, k) => {
     // The siege's waves give the node up with its garrison: a squad left hunting would stand at the edge of ground it may not enter.
     if (!garrisonOf(s, i, k) && sq.siege !== i) return;

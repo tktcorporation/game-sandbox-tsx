@@ -34,7 +34,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 32;
+  v: 33;
   cash: number;
   stash: Item[];
   raids: number;
@@ -173,7 +173,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 32, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [], trophies: TROPHY.start };
+  const p: Omit<Profile, "board"> = { v: 33, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [], trophies: TROPHY.start };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -758,7 +758,7 @@ export function settle(p: Profile, s: State): Settlement {
   for (const n of NODES) {
     const before = p.poiState[n.id]?.state;
     const after = night.poiState[n.id]?.state;
-    if (before === "freed" && after !== "freed") nightParcels = nightParcels.filter((q) => q.poi !== n.id);
+    if (before === "own" && after !== "own") nightParcels = nightParcels.filter((q) => q.poi !== n.id);
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   // The nodes the player holds once the night is over pay their day's credits.
@@ -780,7 +780,7 @@ export function settle(p: Profile, s: State): Settlement {
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
   // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
-  const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "held" }])) as Island };
+  const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
   // Lead-incursion captures are on the copy — never pending retakes on the home island.
   fresh.retaken = s.incursion ? [...p.retaken] : addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
@@ -870,7 +870,7 @@ export function seizeRivalLoot(
   const taken = new Set<number>();
   for (const id of capturedIds(s)) {
     const i = poiIndex(id);
-    if (i < 0 || rivalOf(hold[i] ?? "held") === null) continue;
+    if (i < 0 || rivalOf(hold[i] ?? "foe") === null) continue;
     const kinds: ValuableKind[] = [];
     for (const q of stock) {
       if (q.poi !== id || taken.has(q.id)) continue;
@@ -1044,11 +1044,12 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * Before v31 the front intro quest did not exist: such a profile that already finished another
  * intro counts front done (`withFrontMigrated()`). v31+ keeps front progress as saved.
  * Before v32 no trophies: such a profile starts at `TROPHY.start`.
+ * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized to "own" | "foe" via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1102,7 +1103,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const v32 = typeof o.v === "number" && o.v >= 32;
   const trophies = v32 && Number.isFinite(o.trophies) ? Math.max(TROPHY.min, Math.min(TROPHY.max, Math.floor(o.trophies as number))) : TROPHY.start;
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 32,
+    v: 33,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,

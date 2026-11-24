@@ -95,7 +95,7 @@ for (const m of ["infirmary", "workbench", "storage", "radio", "pouch"] as const
 const tipBase = {
   ...newProfile(),
   cash: HIDEOUT.storage.levels[0]!.cash,
-  poiState: { ...newProfile().poiState, supply: { state: "freed" as const } },
+  poiState: { ...newProfile().poiState, supply: { state: "own" as const } },
   quests: { progress: {}, done: ["front"] },
   taken: null as string | null,
   board: { ...newProfile().board, contracts: [] },
