@@ -18,6 +18,7 @@ import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
 import { activePacks, garrison, netPlated, poiTier, tierPlated } from "./island";
+import { rivalOf } from "./holds";
 import { modScale } from "./mods";
 import { mix, rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 import { hypot2, hypot3 } from "./hypot";
@@ -139,26 +140,32 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
 
 /** Put every squad on the island at the start of a run (the hunting parties come after, see `placeParties()`). */
 export function populate(s: State) {
-  const add = (sq: Squad, poi: number, rogue = false) => {
+  const add = (sq: Squad, poi: number, rogue = false, rival?: string) => {
     const index = s.squads.length;
-    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 }, rogue: rogue || undefined });
+    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 }, rogue: rogue || undefined, ...(rival !== undefined && { rival }) });
     // A POI's own squads wear its node's plates; its vault guard wears one of at least that tier.
-    const tier = poi >= 0 ? poiTier(poi) : 0;
-    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate === undefined ? undefined : (Math.max(m.plate, tier) as Rarity), tier, rogue });
+    // Contested defence (工場 + 島の守り) wears no authored plate; factory rarity is the fight.
+    const tier = poi >= 0 && !rival ? poiTier(poi) : 0;
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: rival !== undefined ? 0 : m.plate === undefined ? undefined : (Math.max(m.plate, tier) as Rarity), tier, rogue, rival });
   };
   const walker = (st: State, kind: EnemyKind, x: number, z: number, squad: number, face: number, rogue: boolean) => void spawnEnemy(st, kind, x, z, -1, squad, { face, hashed: true, rogue });
   // A garrison's squad out on its beat still wears its node's plates.
   const beatWalker = (tier: number) => (st: State, kind: EnemyKind, x: number, z: number, squad: number, face: number, rogue: boolean) => void spawnEnemy(st, kind, x, z, -1, squad, { face, hashed: true, rogue, tier });
   // A POI stands with the garrison its standing on the island gives it (`garrison()`); the squads
-  // of it that walk a beat (`MOBILES`) are out on it, no longer the POI's.
+  // of it that walk a beat (`MOBILES`) are out on it, no longer the POI's. Contested hubs another
+  // player holds stand that owner's 工場の部隊 + 島の守り when `State.defence` names them.
   const beats: { m: Mobile; kinds: EnemyKind[]; tier: number }[] = [];
-  POIS.forEach((p, i) =>
-    garrison(i, s.hold[i]).forEach((sq) => {
+  POIS.forEach((p, i) => {
+    const who = rivalOf(s.hold[i]);
+    const factory = who !== null ? s.defence[who] : undefined;
+    const aid = who !== null && factory !== undefined ? (s.defenceAid[i] ?? 0) : undefined;
+    const def = factory !== undefined ? { factory, aid } : undefined;
+    garrison(i, s.hold[i], def).forEach((sq) => {
       const beat = beatOf(p.id, sq.name);
       if (beat) beats.push({ m: beat, kinds: sq.members.map((m) => m.kind), tier: poiTier(i) });
-      else add(sq, i);
-    }),
-  );
+      else add(sq, i, false, who ?? undefined);
+    });
+  });
   ROAMERS.forEach((sq) => add(sq, -1));
   for (const b of beats) placeMobile(s, b.m, b.kinds, beatWalker(b.tier));
   for (const m of MOBILES) if (mobileWalks(s, m)) placeMobile(s, m, m.members ?? [], walker);

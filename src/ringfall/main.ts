@@ -22,6 +22,7 @@ import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultRep
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
+import { contestedDefence, contestedParcels } from "./meta/contested-defence";
 import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import type { IncursionPlan } from "./meta/incursion";
 import { Hub, type Launch } from "./view/hub";
@@ -888,6 +889,9 @@ function start(go: Launch, from?: State) {
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
   const shortRaid = go.incursion;
+  const neigh = neighboursFor(hub.profile);
+  const defence = shortRaid ? [] : contestedDefence(hub.profile.poiState, hub.profile.day, neigh, aiSalt());
+  const defenceParcels = shortRaid ? shortRaid.parcels : contestedParcels(hub.profile.parcels ?? []);
   state = newRun(go.seed, kit, region, {
     depots: shortRaid ? [] : hub.profile.depots,
     seen: hub.profile.seen,
@@ -906,6 +910,9 @@ function start(go: Launch, from?: State) {
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
         },
     finale: shortRaid ? false : finaleOpen(hub.profile),
+    // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
+    ...(defence.length ? { defence } : {}),
+    ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
     ...(shortRaid
       ? { incursion: { code: shortRaid.code, owner: shortRaid.owner, target: shortRaid.target, parcels: shortRaid.parcels } }
       : {}),

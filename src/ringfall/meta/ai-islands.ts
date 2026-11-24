@@ -18,7 +18,7 @@ import { CODE_ALPHABET, CODE_LENGTH } from "./island-code";
 import { lentRivals, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Outgoing } from "./expeditions";
 import { aiDefenceParcels } from "./incursion";
 import type { RivalExpedition } from "../sim/battle";
-import { NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
+import { CONTESTED_SHORES, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
 import type { Island } from "./island";
 
 /** The numbers of the game's islands. */
@@ -272,6 +272,8 @@ export function aiLent(p: Seen, salt: number, taken: readonly number[], scouted 
   const out: LentIn[] = [];
   for (const n of NODES) {
     const owner = rivalOf(p.poiState[n.id]?.state ?? "foe");
+    // Contested coastal hubs stand 工場 + 島の守り as POI garrison (`Start.defence`), not a battle holding squad.
+    if (CONTESTED_SHORES.includes(n.id)) continue;
     // Every slot's: an island whose slot a player's island has since taken still holds what it took, and stands its squad there.
     const a = aiByOwner(salt, owner);
     if (a) out.push({ id: 0, by: { code: aiOwner(a.code), name: a.name }, target: n.id, kinds: aiKinds(p.day), state: "holding" });

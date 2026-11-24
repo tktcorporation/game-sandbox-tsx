@@ -283,6 +283,8 @@ export interface Neighbour {
   held: number;
   total: number;
   day: number;
+  /** Factory level last reported (守備隊 = 工場の部隊). */
+  factory: number;
   /** When its owner last settled a raid (epoch ms). */
   seen: number;
   /** That raid's cores captured and how it ended; null with no raid recorded. */
@@ -347,7 +349,7 @@ async function neighbours(env: ApiEnv, player: string, now: number): Promise<Res
     const live = (
       await db
         .prepare(
-          "SELECT i.code AS code, p.name AS name, s.held AS held, s.held + s.enemy + s.rival AS total, s.day AS day, s.updated_at AS seen, " +
+          "SELECT i.code AS code, p.name AS name, s.held AS held, s.held + s.enemy + s.rival AS total, s.day AS day, s.factory AS factory, s.updated_at AS seen, " +
             "(SELECT r.captured FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS captured, " +
             "(SELECT r.outcome FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS outcome " +
             `FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id WHERE i.code IN (${picks.map((_, k) => `?${k + 1}`).join(", ")})`,

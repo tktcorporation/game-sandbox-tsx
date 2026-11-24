@@ -14,7 +14,8 @@
  * Run `npx tsx scripts/ringfall-ai-islands.ts`; it exits 1 on the first failure.
  */
 import { TICK } from "../src/ringfall/sim/config";
-import { NODES, nodeIndex, type NodeId } from "../src/ringfall/sim/map";
+import { NODES, nodeIndex, poiIndex, type NodeId } from "../src/ringfall/sim/map";
+import { contestedDefence } from "../src/ringfall/meta/contested-defence";
 import { aiOwner, parseHold, rivalHold, rivalOf } from "../src/ringfall/sim/holds";
 import { finishBattle } from "../src/ringfall/sim/battle";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
@@ -118,12 +119,23 @@ if (news.length !== 1 || news[0].t !== "taken" || news[0].by.code !== first.code
 if (reportHolds(after)[NODES.findIndex((n) => n.id === shore)] !== "foe") fail("the report gives the server the island's node");
 const synced = mergeHolds(after.poiState, NODES.map((n) => ({ id: n.id, hold: n.id === shore ? "foe" : after.poiState[n.id].state })));
 if (synced[shore].state !== after.poiState[shore].state) fail("a sync from the server undid the island's node");
+// Contested coastal hubs (方向 A): defence is 工場 + 島の守り as POI garrison, not a battle holding squad.
+const owner = aiOwner(first.code);
 const next = aiLent(after, SALT, []);
-if (!next.some((l) => l.target === shore && l.state === "holding")) fail("the next raid stands no squad of the island at the station");
-// A player's island the server offers in that slot later: the node stays the AI island's, and its squad still stands there.
-if (!aiLent(after, SALT, [0]).some((l) => l.target === shore && l.state === "holding")) fail("the island's squad leaves the station once a player's island takes its slot");
-const ns = newRun(22, starterKit(), "reservoir", { island: holds(after), battle: { factory: 0, rivals: aiRivals(next) } });
-if (!ns.battle!.squads.some((q) => q.side === 3 && q.owner === aiOwner(first.code) && q.to === STATION && q.task === "hold")) fail("the island's squad does not hold the station in the next raid");
+if (next.some((l) => l.target === shore && l.state === "holding")) fail("contested shore still gets a battle holding lent");
+const def = contestedDefence(after.poiState, after.day, [], SALT);
+if (!def.some((d) => d.owner === owner)) fail(`contestedDefence missed ${owner}: ${JSON.stringify(def)}`);
+const ns = newRun(22, starterKit(), "reservoir", {
+  island: holds(after),
+  battle: { factory: 0, rivals: aiRivals(next) },
+  defence: def,
+});
+const poi = poiIndex(shore);
+if (ns.cleared[poi]) fail("the contested station starts cleared despite defence");
+if (!ns.enemies.some((e) => e.poi === poi && e.rival === owner)) fail("the island's 工場 defence does not stand at the station in the next raid");
+// A player's island the server offers in that slot later: the node stays the AI island's, and defence still stands.
+const defKept = contestedDefence(after.poiState, after.day, [], SALT);
+if (!defKept.some((d) => d.owner === owner)) fail("the island's defence leaves the station once a player's island takes its slot");
 console.log("battle: kept overnight, reported as the enemy's, kept through a sync, held in the next raid");
 
 // sent: the player's expedition on its way, fighting, then holding or gone; the view shows it while it is out.

@@ -17,6 +17,8 @@ export interface Neighbour {
   day: number;
   /** The slot at sea it stands in (`NEIGHBOUR_SLOTS`), which sets the sea route to it. */
   slot: number;
+  /** Factory level last reported (島の守り／守備隊). Optional on older answers. */
+  factory?: number;
   /** What its owner did last, for a sign of life: when they last played, and that raid's cores taken and whether they got home. */
   last?: { at: number; captured: number; home: boolean };
   /** An island the game runs itself (meta/ai-islands.ts), filling a slot the server left free: marked AI wherever it is shown. */
@@ -74,7 +76,8 @@ export function parseNeighbours(raw: unknown): Neighbour[] | null {
     // An answer from before slots were kept places each in the slot of its place in the list.
     const slot = Number.isInteger(n.slot) && (n.slot as number) >= 0 && (n.slot as number) < NEIGHBOUR_MAX ? (n.slot as number) : k;
     if (out.some((o) => o.slot === slot)) continue;
-    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(last ? { last } : {}) });
+    const factory = Number.isInteger(n.factory) && (n.factory as number) >= 0 && (n.factory as number) <= 64 ? (n.factory as number) : undefined;
+    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(factory !== undefined ? { factory } : {}), ...(last ? { last } : {}) });
   }
   return out;
 }
