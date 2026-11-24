@@ -9,11 +9,12 @@
 import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
-import { parseNeighbours, type Neighbour } from "./meta/neighbours";
+import { parseNeighbours, pvpSeaOpen, type Neighbour } from "./meta/neighbours";
 import { aiBusy, aiByCode, aiChanges, aiIncoming, aiLent, aiNextId, aiRefresh, aiView, withAi } from "./meta/ai-islands";
 import { assaultAcked, assaultWinRejected } from "./meta/assault";
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
+import { reactiveDefenseOn } from "./meta/features";
 import { clampTrophies, TROPHY } from "./meta/trophies";
 import type { NodeId } from "./sim/map";
 
@@ -127,8 +128,23 @@ export const neighboursFor = (p: Pick<Profile, "day">): Neighbour[] => withAi(ca
 /** The neighbours now, of the profile the page plays (`useAi()`); the server's alone before it is named. */
 export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSource()) : cachedNeighbours());
 
+/** Neighbours drawn on maps / horizon: empty until a sea route opens (序盤のお隣ノイズを出さない). */
+export function neighboursOnMap(p: Pick<Profile, "day" | "poiState">): Neighbour[] {
+  const holds = (id: NodeId) => p.poiState[id]?.state === "freed";
+  return pvpSeaOpen(holds) ? neighboursFor(p) : [];
+}
+
+/** Raid / live map neighbours for the page's profile (`useAi`), gated like `neighboursOnMap`. */
+export const neighboursNowOnMap = (): Neighbour[] => (aiSource ? neighboursOnMap(aiSource()) : []);
+
 /** The expeditions coming at this island: the server's warnings, and the game's islands' for the next raid. */
 export const incomingFor = (p: Profile): Incoming[] => [...p.incoming, ...aiIncoming(p, aiSalt(), serverSlots(), aiScouted())];
+
+/**
+ * Incoming list for player-facing UI. Empty while `FEATURES.reactiveDefense` is off
+ * (守りは自動・予告は見せない). Sync / AI / lease still use `incomingFor`.
+ */
+export const incomingShown = (p: Profile): Incoming[] => (reactiveDefenseOn() ? incomingFor(p) : []);
 
 /** What the game's islands bring to the next raid of `p` (their expedition, their squads holding nodes of this island). */
 export const aiLentFor = (p: Profile): LentIn[] => aiLent(p, aiSalt(), serverSlots(), aiScouted());

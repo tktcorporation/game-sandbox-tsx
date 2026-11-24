@@ -1,5 +1,5 @@
 import { PLAYER } from "../sim/config";
-import { aiSalt, incomingFor, isAi, neighboursFor, readView, sendAssault } from "../island-net";
+import { aiSalt, incomingShown, isAi, neighboursFor, neighboursOnMap, readView, sendAssault } from "../island-net";
 import { errorText } from "../meta/island-errors";
 import { assaultLeft, assaultOf, assaultReady, scheduleAssault } from "../meta/assault";
 import { aiByCode, aiNextId, aiView } from "../meta/ai-islands";
@@ -15,7 +15,7 @@ import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBui
 import { CONTRACT_NAME, contractMark, contractRegion, targetName, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
-import { questBoardOn } from "../meta/features";
+import { questBoardOn, reactiveDefenseOn } from "../meta/features";
 import { introFrontOpen, need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
 import { departDepots, eventName, finaleOpen, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
@@ -90,10 +90,11 @@ export function playableFrontPick(p: Profile, from: { x: number; z: number } = C
  * and rival holds sit on the same line (defend / attack) — no separate multiplayer mode.
  */
 export function nextHandFor(p: Profile): string {
-  if (incomingFor(p).length) return PHRASE.nextMapFortifyIncoming;
+  // Reactive defence tip only while the flag is on (来る遠征 → 地図の机 · 固める).
+  if (reactiveDefenseOn() && incomingShown(p).length) return PHRASE.nextMapFortifyIncoming;
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
-  // Gap A / X2: AI or real neighbour front on the map.
+  // Gap A / X2: AI or real neighbour front on the map — attack entry via 出撃.
   const gap = playableFrontPick(p);
   if (gap) {
     const ai = isAiFront(gap);
@@ -141,6 +142,8 @@ export function overnightDefence(s: { battle: OvernightBattle }, settled?: Pick<
     const n = NODES[i];
     if (!n || lost.has(n.id)) continue;
     const vsIncoming = !b.targets.includes(i);
+    // While reactive defence is off, skip 来る遠征 fortify lines (night lines stay).
+    if (vsIncoming && !reactiveDefenseOn()) continue;
     lines.push(vsIncoming ? `固めた · ${n.name} · 来る遠征をはねる` : `固めた · ${n.name} · 夜の襲撃をはねる`);
   }
   return lines;
@@ -936,8 +939,9 @@ export class Hub {
   }
 
   /**
-   * Gap A / X2: only when the departure map's assault mark is chosen (`assaultAim`). Schedules a
-   * 来る遠征-shaped notice (AI local / real via island API), then unlocks a short raid.
+   * Gap A / X2: only when the departure map's assault mark is chosen (`assaultAim`).
+   * With reactive defence on: schedules a notice, then unlocks a short raid after it.
+   * With reactive defence off (CoC-style): schedules then starts the short raid at once.
    * Null = ordinary home depart.
    *
    * The home shore that opened the route (`gap.shore`) is only a preference: both AI and real
@@ -947,7 +951,7 @@ export class Hub {
     const gap = this.assaultAim;
     if (!gap || !isPlayableFront(gap)) return null;
     const ai = isAiFront(gap);
-    const existing = assaultOf(this.profile.expeditions, gap.code);
+    let existing = assaultOf(this.profile.expeditions, gap.code);
     if (!existing) {
       const units = Math.max(1, homeSquads(this.profile) || 1);
       let id = aiNextId(this.profile.expeditions, gap.code);
@@ -968,7 +972,11 @@ export class Hub {
       }
       const { list, created } = scheduleAssault(this.profile.expeditions, { code: gap.code, node, units, id, now });
       if (created) this.set({ ...this.profile, expeditions: list });
-      return { t: "scheduled", toast: assaultNoticeTo(gap.name) };
+      existing = assaultOf(this.profile.expeditions, gap.code);
+      // CoC-style: notice length 0 → fall through to the short raid. Otherwise show the wait toast.
+      if (!existing || !assaultReady(existing, ai, now)) {
+        return { t: "scheduled", toast: assaultNoticeTo(gap.name) };
+      }
     }
     if (!assaultReady(existing, ai, now)) {
       const hours = Math.max(1, Math.ceil(assaultLeft(existing, ai, now) / 3600));
@@ -1044,8 +1052,8 @@ export class Hub {
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // Tomorrow's event is announced here a day ahead.
     const coming = p.events[1];
-    // 来る遠征 sits on the map table's mark — same place the tip sends the player to fortify.
-    const incoming = incomingFor(p).length;
+    // 来る遠征 mark only while reactive defence is on.
+    const incoming = incomingShown(p).length;
     const map = [incoming ? `${TERM.incomingExpedition} ${incoming}` : "", coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
@@ -1386,7 +1394,7 @@ export class Hub {
    */
   private islandPanel(): string {
     const p = this.profile;
-    const incoming = incomingFor(p);
+    const incoming = incomingShown(p);
     const taken = takenContract(p);
     const holds = islandHolds(p);
     const front = frontNodes(holds);
@@ -1422,9 +1430,9 @@ export class Hub {
     map.region = this.from ? poiRegion(this.from).id : this.region;
     const c = takenContract(this.profile);
     map.contract = c && contractMark(c);
-    map.neighbours = neighboursFor(this.profile);
+    map.neighbours = neighboursOnMap(this.profile);
     map.bindNav();
-    map.draw(islandScene({ ...this.profile, incoming: incomingFor(this.profile) }));
+    map.draw(islandScene({ ...this.profile, incoming: incomingShown(this.profile) }));
   }
 
   /** The map table's radio report on the next raid, as a slot, or "" without a radio. */
@@ -1507,16 +1515,20 @@ export class Hub {
     const story = takenStory(p) ? currentStory(p.records) : null;
     const front = this.frontPick();
     const teach = !c && !story && teachFrontCapture(p) && front;
-    const goal = c
-      ? this.askLine(c)
-      : esc(story ? `記録：${story.title}` : teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+    // Purpose follows the chosen start: ○○の前線 before PvE front (CoC-style attack entry).
+    const gap = this.assaultAim;
+    const goal = gap
+      ? `${flagIcon(SIDE.rival)}${esc(gap.name)}を${TERM.attack}`
+      : c
+        ? this.askLine(c)
+        : esc(story ? `記録：${story.title}` : teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
       ["目的", goal],
     ];
-    // Other players' expeditions sent at this island land in this raid: where, whose, and what to do about it.
-    const incoming = incomingFor(p);
+    // 来る遠征 row only while reactive defence is on.
+    const incoming = incomingShown(p);
     if (incoming.length) rows.push([TERM.incomingExpedition, `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">${TERM.core}で${TERM.fortify}</em>`]);
     const warn: string[] = [];
 
@@ -1581,8 +1593,8 @@ export class Hub {
       const frontQ = offered(p.quests).find((q) => q.id === "front");
       plan.splice(1, 0, ["依頼", frontQ ? esc(frontQ.text) : c ? this.askLine(c) : esc(story ? `記録：${story.title}` : "—")]);
     }
-    // Other players' expeditions land in the next raid: same marks as the departure / map table.
-    const incoming = incomingFor(p);
+    // 来る遠征 on 今日の作戦 only while reactive defence is on.
+    const incoming = incomingShown(p);
     if (incoming.length) plan.push([TERM.incomingExpedition, `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">${TERM.core}で${TERM.fortify}</em>`]);
     return { head, row: nodeRow(islandHolds(p)), plan };
   }

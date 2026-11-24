@@ -1,6 +1,6 @@
 import { canBuild, canBuildFactory, factoryNeeded, nextFactory, pouchKeep, stashUsed, wanted, type Profile, type Settlement } from "../meta/profile";
 import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
-import { neighboursNow } from "../island-net";
+import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { PHRASE, TERM, moduleRaiseReady, relayOf } from "./copy";
@@ -154,7 +154,7 @@ export class Hud {
     $("hud").classList.toggle("map-open", this.mapOpen);
     if (this.mapOpen) {
       // The neighbours out at sea show on the whole world's view (N), as on the camp's maps.
-      this.map.neighbours = neighboursNow();
+      this.map.neighbours = neighboursNowOnMap();
       this.map.resetCam();
       this.map.bindNav();
       this.showWhole(false);

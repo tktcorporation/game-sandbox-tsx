@@ -22,7 +22,8 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { reactiveDefenseOn } from "./meta/features";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
@@ -373,7 +374,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     const { profile, news } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
     // The sync read the neighbours again: the horizon shows them as they now stand.
-    world.setNeighbours(neighboursFor(hub.profile).map((n) => n.slot));
+    world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
     if (!news.length) return;
     hub.takeNews(news);
     islandNews = [...aiNews, ...news.map(logLine)];
@@ -638,7 +639,7 @@ function openCamp() {
   paused = false;
   fading = false;
   fire = ads = adsLatch = false;
-  world.setNeighbours(neighboursFor(hub.profile).map((n) => n.slot));
+  world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
   unlock();
   world.reset();
   sound.reset();
@@ -680,7 +681,7 @@ function askDepart(walk: boolean) {
     // A newer departure asks for itself, and the island answers it with the same lease.
     if (!r.ok || leaseReq !== req) return;
     if (req.on === "open") lease = r.body;
-    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut, r.body.noticed)) {
+    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut, reactiveDefenseOn() ? r.body.noticed : [])) {
       raidLent = r.body.expeditions;
       hud.addRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
     }
@@ -857,8 +858,10 @@ function start(go: Launch, from?: State) {
           targets: tonight(hub.profile),
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
           shut: lent?.shut,
-          // X2 notices (lease + synced incoming) for 固める without lending robots.
-          noticed: [...new Set([...(lent?.noticed ?? []), ...incomingFor(hub.profile).map((e) => e.node)])],
+          // Noticed nodes enable 核で固める against 来る遠征 — only while reactive defence is on.
+          noticed: reactiveDefenseOn()
+            ? [...new Set([...(lent?.noticed ?? []), ...incomingFor(hub.profile).map((e) => e.node)])]
+            : [],
         },
     finale: x2 ? false : finaleOpen(hub.profile),
     ...(x2
@@ -887,7 +890,7 @@ function start(go: Launch, from?: State) {
   governor.settle();
   acc = hitstop = slowmo = 0;
   running = true;
-  world.setNeighbours(neighboursFor(hub.profile).map((n) => n.slot));
+  world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
   paused = false;
   $("title").hidden = true;
   $("results").hidden = true;
@@ -1666,7 +1669,7 @@ window.ringfallEnd = (how, haul = [], found = []) => {
  * just inside the gate facing out; `use` presses the use key where they stand; `open` and `close`
  * open and close a station's panel.
  */
-/** Tests / revival: flip `FEATURES.questBoard` (docs/ringfall/simplify-candidates.md). */
+/** Tests / revival: flip `FEATURES.questBoard` / `FEATURES.reactiveDefense` (docs). */
 window.ringfallFeatures = FEATURES;
 
 window.ringfallCamp = {

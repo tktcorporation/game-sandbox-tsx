@@ -42,6 +42,12 @@ export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[]
 /** Whether the sea route to neighbour slot `k` is open: the player holds the node facing it. */
 export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);
 
+/**
+ * Whether the player has opened PvP at sea (CoC-style: neighbours stay hidden until then).
+ * True once any coastal route is open.
+ */
+export const pvpSeaOpen = (holds: (id: NodeId) => boolean): boolean => NEIGHBOUR_SLOTS.some((_, k) => routeOpen(k, holds));
+
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const count = (v: unknown, hi: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= hi;
 

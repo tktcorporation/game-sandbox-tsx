@@ -1,5 +1,5 @@
 import { sfx } from "./sfx";
-import { incomingFor, neighboursFor } from "../island-net";
+import { incomingShown, neighboursFor, neighboursOnMap } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
 import { PHRASE } from "./copy";
@@ -102,8 +102,8 @@ export class DepartPicker {
     const p = hub.profile;
     this.map.known = p.entries;
     this.map.contract = null;
-    this.map.neighbours = neighboursFor(p);
-    this.map.draw(islandScene({ ...p, incoming: incomingFor(p) }));
+    this.map.neighbours = neighboursOnMap(p);
+    this.map.draw(islandScene({ ...p, incoming: incomingShown(p) }));
     const pts = hub.startPoints();
     const hint = hub.departHint();
     const peek = hint && pts.every((q) => !(q.on && q.kind === hint.at.kind && q.id === hint.at.id)) ? hint.at : null;
@@ -114,7 +114,7 @@ export class DepartPicker {
     $("depart-start").innerHTML = peek
       ? `${lockIcon()}<b>${esc(hint!.name)}</b>`
       : on
-        ? `${on.kind === "depot" ? depotIcon() : entryIcon()}<b>${esc(on.name)}</b>${on.kind === "depot" ? `<small>Lv${on.level}</small>` : ""}`
+        ? `${on.kind === "depot" ? depotIcon() : on.kind === "assault" ? flagIcon(SIDE.rival) : entryIcon()}<b>${esc(on.name)}</b>${on.kind === "depot" ? `<small>Lv${on.level}</small>` : ""}`
         : "";
     const how = $("depart-hint");
     how.hidden = !hint;

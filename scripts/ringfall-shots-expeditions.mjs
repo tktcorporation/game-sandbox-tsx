@@ -62,10 +62,10 @@ export async function expeditionShots({ browser, port, out, errors }) {
     await pg.keyboard.press("Escape");
     await pg.evaluate(() => window.advanceTime(200));
   };
-  // The map table: who is coming at which node, and how long there is.
+  // CoC-style (FEATURES.reactiveDefense off): map table does not show 来る遠征 warnings.
   await open("map");
   const news = await pg.evaluate(() => document.querySelector(".island-news.incoming")?.textContent ?? "");
-  if (!/となり.*中継塔.*6h/.test(news)) errors.push(`expeditions: the map table's warning reads "${news}"`);
+  if (news) errors.push(`expeditions: the map table still warns of incoming "${news}" (reactive defence is off)`);
   await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
   await close();
   // The island's news as marks (E4: no 遠征に出す answer button).
@@ -114,15 +114,18 @@ export async function expeditionShots({ browser, port, out, errors }) {
       return [...document.querySelectorAll("#hub-exped .exp-out")].map((el) => ({ state: el.className, text: el.textContent, recall: !!el.querySelector(".exp-recall") }));
     });
   const before = await list();
-  if (before.length !== 2 || !before.every((e) => e.recall) || !/保持中/.test(before[0].text) || !/足止め/.test(before[1].text)) errors.push(`expeditions: the factory lists ${JSON.stringify(before)}`);
+  if (before.length !== 2 || !before.every((e) => e.recall) || !/保持中/.test(before[0].text) || !/足止め/.test(before[1].text)) errors.push(`expeditions: the signal station lists ${JSON.stringify(before)}`);
+  // Head must not look like an attack entry (no 「遠征 n/m」).
+  const head = await pg.evaluate(() => document.querySelector("#hub-exped .mod-head")?.textContent ?? "");
+  if (/遠征\s*\d/.test(head)) errors.push(`expeditions: signal head still looks like an attack entry: "${head}"`);
   await pg.waitForTimeout(100);
   await pg.screenshot({ path: `${out}/151-expeditions-signal.png` });
   // Called home: its squad is back at once, and it waits for its island to be told.
   await pg.click("#hub-exped .exp-out .exp-recall");
   await pg.waitForTimeout(200);
   const after = await list();
-  const away = await pg.evaluate(() => document.querySelector("#hub-exped .mod-head b")?.textContent ?? "");
-  if (!/引き上げ中/.test(after[0]?.text ?? "") || after[0].recall || !/遠征 1 \//.test(away.trim())) errors.push(`expeditions: after a recall the factory lists ${JSON.stringify(after)} with ${away} away`);
+  const cost = await pg.evaluate(() => document.querySelector("#hub-exped .exp-cost")?.textContent ?? "");
+  if (!/引き上げ中/.test(after[0]?.text ?? "") || after[0].recall || !/遠征\s*1/.test(cost)) errors.push(`expeditions: after a recall the list is ${JSON.stringify(after)} with cost "${cost}"`);
   await pg.screenshot({ path: `${out}/152-expeditions-recalled.png` });
   // E4: looking up an AI neighbour shows open nodes read-only, with no send button.
   await pg.click("#hub-exped .exp-near button:has(.ai-tag)");
@@ -141,12 +144,13 @@ export async function expeditionShots({ browser, port, out, errors }) {
   for (let i = 0; i < 30 && !st.camp?.depart; i++) st = JSON.parse(await pg.evaluate(() => (window.advanceTime(200), window.render_game_to_text())));
   await pg.keyboard.up("KeyW");
   if (!st.camp?.depart) errors.push("expeditions: the departure did not open");
-  const row = st.camp?.depart?.rows?.find((r) => r[0] === "来る遠征")?.[1] ?? "";
-  if (!/となり/.test(row) || !/固め/.test(row)) errors.push(`expeditions: the departure's warning reads "${row}"`);
-  // The game's own island facing the waterworks sends its first scout (this browser has seen none): it is warned of too.
-  if (!/ツバキ|アサギ|シオン/.test(row)) errors.push(`expeditions: the departure does not warn of the first scout: "${row}"`);
+  // CoC-style: no 来る遠征 row on depart; attack entry is ○○の前線 / 攻める on the map.
+  const incomingRow = st.camp?.depart?.rows?.find((r) => r[0] === "来る遠征");
+  if (incomingRow) errors.push(`expeditions: depart still lists 来る遠征: ${JSON.stringify(incomingRow)}`);
+  const assault = st.camp?.depart?.starts?.find((s) => s.kind === "assault");
+  if (!assault) errors.push("expeditions: depart has no assault start (攻め入口)");
   await pg.screenshot({ path: `${out}/153-expeditions-depart.png` });
-  // Into the raid: the scout comes down by the waterworks, named, a few minutes into the battle.
+  // Into the raid: AI scout still lands (auto defence) — banner is fine; no pre-raid warning.
   await pg.keyboard.press("Enter");
   let raid = null;
   for (let i = 0; i < 40 && !raid?.battle; i++) raid = JSON.parse(await pg.evaluate(() => (window.ringfallStep(200), window.render_game_to_text())));

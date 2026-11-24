@@ -7,13 +7,21 @@
  */
 import { AI } from "./ai-islands";
 import { alive, type Outgoing } from "./expeditions";
+import { reactiveDefenseOn } from "./features";
 import type { NodeId } from "../sim/map";
 
-/** Same seconds as `EXPEDITION.notice` (worker/island.ts) — keep in lockstep. */
+/** Same seconds as `EXPEDITION.notice` (worker/island.ts) — keep in lockstep when reactive defence is on. */
 export const ASSAULT_NOTICE = 12 * 3600;
 
-/** Seconds of advance notice before an X2 short raid may start. */
-export const assaultNoticeSec = (ai: boolean): number => (ai ? AI.coming * 60 : ASSAULT_NOTICE);
+/**
+ * Seconds of advance notice before an X2 short raid may start.
+ * While `FEATURES.reactiveDefense` is off (CoC-style): 0 — pick opponent → short raid at once.
+ * Defender-side auto-resolve on the server is unchanged.
+ */
+export const assaultNoticeSec = (ai: boolean): number => {
+  if (!reactiveDefenseOn()) return 0;
+  return ai ? AI.coming * 60 : ASSAULT_NOTICE;
+};
 
 /** An outbound assault notice still open for a short raid (not holding / gone / recalling). */
 export function assaultOf(list: readonly Outgoing[], code: string): Outgoing | null {
