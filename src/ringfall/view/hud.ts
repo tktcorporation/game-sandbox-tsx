@@ -1569,12 +1569,13 @@ export class Hud {
       nextEl.classList.remove("defence-beat");
     }
     // Outgoing expeditions + お隣を攻めた勝ち負け + 同期の知らせ.
-    this.newsKeep = [...expNews];
+    // incursion 行も newsKeep に入れ、後から setNews されても消えないようにする。
     const inc = settled?.incursion;
     const incLine = inc
       ? newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settled?.trophies?.gained : undefined)
       : null;
-    const allNews = [...this.newsKeep, ...(incLine ? [incLine] : []), ...news];
+    this.newsKeep = [...expNews, ...(incLine ? [incLine] : [])];
+    const allNews = [...this.newsKeep, ...news];
     const tropLine = settled?.trophies
       ? `<p class="trop-line">${TERM.trophy} <b>${settled.trophies.before.toLocaleString()} → ${settled.trophies.after.toLocaleString()}</b></p>`
       : "";

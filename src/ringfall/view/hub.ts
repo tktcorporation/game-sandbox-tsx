@@ -460,11 +460,11 @@ export class Hub {
     if (station === "signal") this.exped.open();
   }
 
-  /** 島の知らせの控えを Profile に足して保存する（リザルトと同じ文・最新 NEWS_KEEP 件）。 */
+  /** 島の知らせの控えを Profile に足して保存する（リザルトと同じ文・最新 NEWS_KEEP 件）。`set` は呼ばない（上書きで消えないように）。 */
   recordNews(lines: readonly string[]) {
     const news = pushNews(this.profile.news ?? [], lines);
     if (news.join("\0") === (this.profile.news ?? []).join("\0")) return;
-    this.set({ ...this.profile, news });
+    this.profile = { ...this.profile, news };
     saveProfile(this.profile);
   }
 
@@ -486,7 +486,8 @@ export class Hub {
    * taken back). One called home, or one never sent, says nothing. The signal station's mark tells
    * of them until it is opened.
    */
-  private noteOutgoing(prev: readonly Outgoing[], next: readonly Outgoing[]) {
+  /** 遠征の結果行。呼び出し側が `p.news` にマージする（代入前に record すると上書きで消える）。 */
+  private noteOutgoing(prev: readonly Outgoing[], next: readonly Outgoing[]): string[] {
     const names = new Map(neighboursFor(this.profile).map((n) => [n.code, n.name]));
     const fresh: ExpNews[] = [];
     for (const o of next) {
@@ -495,12 +496,12 @@ export class Hub {
       const t = o.state === "holding" ? "held" : o.state === "gone" && was.state === "holding" ? "lost" : o.state === "gone" && (was.state === "attacking" || was.state === "coming" || was.state === "waiting") ? "wiped" : null;
       if (t) fresh.push({ t, code: o.code, name: names.get(o.code) ?? o.code, node: o.node });
     }
-    if (!fresh.length) return;
+    if (!fresh.length) return [];
     this.expNews = [...fresh, ...this.expNews].slice(0, NEWS_KEEP);
-    this.recordNews(fresh.map((n) => expLine(n)));
     this.newsSeen = this.station === "signal";
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
     if (el) el.innerHTML = this.signalNews();
+    return fresh.map((n) => expLine(n));
   }
 
   /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
@@ -525,17 +526,18 @@ export class Hub {
   }
 
   private set(p: Profile) {
-    this.noteOutgoing(this.profile.expeditions, p.expeditions);
-    this.profile = p;
-    saveProfile(p);
+    const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
+    this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
+    saveProfile(this.profile);
     this.load = this.fit(this.load);
   }
 
   /** Takes a profile settled after a raid: the last loadout picked again from the stash, the start kept where the profile allows it. */
   reload(p: Profile) {
-    this.noteOutgoing(this.profile.expeditions, p.expeditions);
-    this.profile = p;
-    this.load = recallLoadout(p);
+    const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
+    this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
+    if (extra.length) saveProfile(this.profile);
+    this.load = recallLoadout(this.profile);
     this.fixStart();
   }
 
