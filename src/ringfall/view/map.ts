@@ -1,6 +1,6 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { ZIPS } from "../sim/map";
-import { finaleOpen, tonight } from "../meta/island";
+import { finaleOpen } from "../meta/island";
 import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
@@ -232,7 +232,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
     g.fill();
     cx += s * 2.3;
   }
-  // The smaller gifts, each a mark of its own: a heal's cross in its colour, the leap's wing, a mod part's hexagon, a turret, the night's moon.
+  // The smaller gifts, each a mark of its own: a heal's cross in its colour, the leap's wing, a mod part's hexagon, a turret.
   if (u.heal) {
     plate(s * 1.4);
     g.fillStyle = u.heal === "cell" || u.heal === "battery" ? UI.r1 : UI.foeBright;
@@ -276,16 +276,6 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
     g.fillRect(cx + s * 0.2, y - s * 0.1, s * 1.1, s * 0.9);
     g.fillRect(cx + s * 0.6, y - s * 0.7, s * 1.1, s * 0.35);
     cx += s * 2.3;
-  }
-  if (u.watch) {
-    plate(s * 1.5);
-    g.fillStyle = HOLD_CSS.own;
-    g.beginPath();
-    g.arc(cx + s * 0.75, y, s * 0.75, Math.PI * 0.35, Math.PI * 1.65);
-    g.arc(cx + s * 1.15, y, s * 0.6, Math.PI * 1.42, Math.PI * 0.58, true);
-    g.closePath();
-    g.fill();
-    cx += s * 2.2;
   }
   if (u.shore) {
     plate(s * 2.0);
@@ -337,8 +327,6 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   battle?: Battle | null;
   /** The titan's pad is open to the decisive battle (`FINALE`): a gold ring round it. */
   finale?: boolean;
-  /** The enemy's targets for the coming night and those of them fortified (places in `NODES`), for the camp's maps; a raid's are its battle's. */
-  night?: { targets: readonly number[]; fortified: readonly number[] };
   /** The nodes other players' expeditions are sent at (places in `NODES`), for the camp's maps; a raid's are its battle's. */
   noticed?: readonly number[];
   friends?: readonly Enemy[];
@@ -352,22 +340,6 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   /** The only POIs whose names are written (a small map's), or every POI's when absent. */
   names?: readonly PoiId[];
 };
-
-/** A crescent moon: the mark of a node the enemy means to take in the night. */
-export function drawMoon(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
-  g.save();
-  g.beginPath();
-  g.arc(x, y, r, 0, Math.PI * 2);
-  g.fillStyle = alpha(UI.night, 0.85);
-  g.fill();
-  g.beginPath();
-  g.arc(x, y, r * 0.78, Math.PI * 0.35, Math.PI * 1.65);
-  g.arc(x + r * 0.42, y, r * 0.62, Math.PI * 1.42, Math.PI * 0.58, true);
-  g.closePath();
-  g.fillStyle = fill;
-  g.fill();
-  g.restore();
-}
 
 /** A landing arrow: the mark of a node another player's expedition is sent at. */
 export function drawLanding(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
@@ -408,7 +380,6 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
     finale: finaleOpen(p),
-    ...(p.day !== undefined && { night: { targets: tonight({ poiState: p.poiState, day: p.day, seed: p.seed }).map((id) => nodeIndex(id)), fortified: [] } }),
     ...(p.incoming?.length && { noticed: p.incoming.map((e) => nodeIndex(e.node)) }),
   };
 }
@@ -1391,11 +1362,8 @@ export class IslandMap {
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
         if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "own");
-        // Marked by the enemy for the coming night: a red crescent at its foot; blue once fortified.
-        const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
         const k = nodeIndex(poi.id as NodeId);
-        if (night?.targets.includes(k) && hold(i) === "own") drawMoon(g, p.x - r * 1.25, p.y + r * 0.95, r * 0.62, night.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[1]);
-        // Another player's expedition is sent at it: a green landing arrow at its other foot; blue once fortified.
+        // Another player's expedition is sent at it: a green landing arrow at its foot; blue once fortified.
         const noticed = s.noticed ?? s.battle?.noticed;
         if (noticed?.includes(k) && hold(i) === "own") drawLanding(g, p.x + r * 1.35, p.y + r * 1.05, r * 0.8, s.battle?.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[3]);
       }
@@ -1601,13 +1569,11 @@ export class IslandMap {
 
   /**
    * Chevrons at the canvas edge toward goals that sit off the framed view: the player (when
-   * panned away), night targets, a coming expedition, and a node under threat.
+   * panned away), a coming expedition, and a node under threat.
    */
   private drawEdgeArrows(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number) {
     const goals: { x: number; z: number; color: string }[] = [];
     if (s.player) goals.push({ x: s.player.pos.x, z: s.player.pos.z, color: UI.white });
-    const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
-    if (night) for (const i of night.targets) goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert });
     if (s.noticed) for (const i of s.noticed) goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.rival });
     if (s.battle?.threat) s.battle.threat.forEach((hot, i) => hot && goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert }));
     // Front nodes only once the player has zoomed or panned: the fitted region already shows its own.

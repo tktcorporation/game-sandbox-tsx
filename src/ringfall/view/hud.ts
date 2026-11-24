@@ -4,7 +4,7 @@ import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { PHRASE, TERM, moduleRaiseReady, relayOf } from "./copy";
-import { itemColor, itemName, namedAid, nextHandFor, overnightDefence } from "./hub";
+import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -28,7 +28,7 @@ import type { World } from "./world";
 import { FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
-import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon, nightIcon } from "./icons";
+import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
 import { capturable, momentum, siegeWaves } from "../sim/front";
 import { terrainHeight } from "../sim/terrain";
 
@@ -111,7 +111,7 @@ export class Hud {
   private shieldCells: HTMLElement[] = [];
   private lastCells = -1;
   /**
-   * Lines kept at the head of 島の知らせ on results (overnight defence + outgoing expeditions).
+   * Lines kept at the head of 島の知らせ on results (outgoing expeditions).
    * Late server news via setNews() must not drop these (Option A unified list).
    */
   private newsKeep: string[] = [];
@@ -514,10 +514,8 @@ export class Hud {
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
         break;
       case "fortified": {
-        // Night targets vs 来る遠征: same fortify verb, different why (existing words only).
-        const vsIncoming = !(s.battle?.targets.includes(e.node) ?? false);
         this.toast(
-          `${coreIcon(SIDE.own)}${TERM.fortify}た · ${esc(NODES[e.node].name)}<span class="toast-sub">${vsIncoming ? `${TERM.incomingExpedition}をはねる` : `${TERM.nightRaid}をはねる`}</span>`,
+          `${coreIcon(SIDE.own)}${TERM.fortify}た · ${esc(NODES[e.node].name)}<span class="toast-sub">${TERM.incomingExpedition}をはねる</span>`,
           1,
           4000,
         );
@@ -1273,14 +1271,12 @@ export class Hud {
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {
       const n = NODES[t.node];
-      // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
+      // A node of the player's that an expedition is sent at: the use key fortifies it.
       if (s.nodes[t.node] === "own") {
         if (s.fortify?.node === t.node) {
           return tip(`${coreIcon(SIDE.own)}${TERM.fortifyCore} ${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
         }
-        // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
-        const sent = !s.battle?.targets.includes(t.node);
-        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${TERM.fortifyCore} ${esc(n.name)}`);
+        return tip(`${key("E")}${coreIcon(SIDE.own)}${flagIcon(SIDE.rival)}${TERM.fortifyCore} ${esc(n.name)}`);
       }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return tip(`${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`);
@@ -1323,8 +1319,7 @@ export class Hud {
    * The results' day: the island's map and its tug of war, played in beats. The map is drawn as
    * the day began; then the nodes that changed hands while the player was out turn to the colour
    * they went to (a ring on the map, the bar's boundary sliding); then, under the depot's mark,
-   * those the battle went on to take after the player left; then, under the moon, those the enemy
-   * took overnight (`drawDay()`).
+   * those the battle went on to take after the player left (`drawDay()`).
    */
   private dayResult(s: State, settled?: Settlement): string {
     const holds = settled ? islandHolds(settled.profile) : s.nodes;
@@ -1357,7 +1352,7 @@ export class Hud {
     this.daySkip?.();
   }
 
-  /** Draws the results' map and bar beat by beat: as the day began, after the raid, after the battle the player left, after the night. */
+  /** Draws the results' map and bar beat by beat: as the day began, after the raid, after the battle the player left. */
   private drawDay(settled?: Settlement) {
     const canvas = document.getElementById("day-map") as HTMLCanvasElement | null;
     this.clearDayTimers();
@@ -1382,8 +1377,7 @@ export class Hud {
       for (const id of back ? c.lost : c.gained) out.add(id);
       return out;
     };
-    const night = new Set<string>(NODES.filter((n) => settled.profile.poiState[n.id].state === "own").map((n) => n.id));
-    const battle = after(night, settled.night, true);
+    const battle = new Set<string>(NODES.filter((n) => settled.profile.poiState[n.id].state === "own").map((n) => n.id));
     const left = after(battle, settled.after, true);
     const start = after(left, settled.raid, true);
     // Other players' nodes at each beat (`Settlement.rivals`): as the day began, when the player left, and from the battle's end on.
@@ -1417,11 +1411,10 @@ export class Hud {
     };
     // The nodes whose other player changed between two beats (none with no other player's node all day).
     const rivalMoved = (from: Rivals, to: Rivals) => NODES.filter((n) => from[n.id] !== to[n.id]).map((n) => n.id);
-    // A beat shows when the player's nodes changed in it, or other players' did (they change in the raid and the battle, never in the night).
+    // A beat shows when the player's nodes changed in it, or other players' did.
     const beats: { beat: string; ids: Set<string>; rivals: Rivals; moved: ReturnType<typeof rivalMoved>; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
       { beat: "raid", ids: left, rivals: atLeft, moved: rivalMoved(atStart, atLeft), prev: start, c: settled.raid, icon: "" },
       { beat: "after", ids: battle, rivals: atEnd, moved: rivalMoved(atLeft, atEnd), prev: left, c: settled.after, icon: depotIcon() },
-      { beat: "night", ids: night, rivals: atEnd, moved: [], prev: battle, c: settled.night, icon: nightIcon() },
     ].filter((b) => b.c.gained.length || b.c.lost.length || b.moved.length);
     // Milliseconds between the beats. Automation may set the gap to 0 and step them itself with
     // `window.ringfallBeat()`, so a slow screenshot never misses one.
@@ -1453,15 +1446,15 @@ export class Hud {
         if (beats.length) {
           const last = beats[beats.length - 1];
           map.draw({
-            ...scene(night, atEnd, last.moved.length ? { ...last.c, moved: last.moved } : last.c),
+            ...scene(battle, atEnd, last.moved.length ? { ...last.c, moved: last.moved } : last.c),
             learned,
             names: [...last.c.gained, ...last.c.lost, ...last.moved],
           });
-          bar(night, atEnd, last.prev);
+          bar(battle, atEnd, last.prev);
           mark("done", last.icon);
         } else {
-          map.draw({ ...scene(night, atEnd), learned, names: [] });
-          bar(night, atEnd, night);
+          map.draw({ ...scene(battle, atEnd), learned, names: [] });
+          bar(battle, atEnd, battle);
           mark("done", "");
         }
         dayEl?.classList.remove("skippable");
@@ -1490,7 +1483,7 @@ export class Hud {
         this.dayTimers.push(
           window.setTimeout(() => {
             learn();
-            map.draw({ ...scene(night, atEnd), learned, names: [] });
+            map.draw({ ...scene(battle, atEnd), learned, names: [] });
           }, 900),
         );
       this.dayTimers.push(
@@ -1578,17 +1571,15 @@ export class Hud {
         : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
-    const overnight = overnightDefence(s, settled);
     const tip = next || (settled ? nextHandFor(settled.profile) : "");
     const nextEl = $("next-hand");
     if (nextEl) {
       nextEl.hidden = !tip;
       nextEl.textContent = tip;
-      // One beat when the return closed a defence result (design-direction juice, no new noun).
-      nextEl.classList.toggle("defence-beat", !!overnight.length);
+      nextEl.classList.remove("defence-beat");
     }
-    // Overnight defence + outgoing expeditions close into one 島の知らせ; keep them if late sync updates news.
-    this.newsKeep = [...overnight, ...expNews];
+    // Outgoing expeditions close into 島の知らせ; keep them if late sync updates news.
+    this.newsKeep = [...expNews];
     const allNews = [...this.newsKeep, ...news];
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =

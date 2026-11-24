@@ -44,7 +44,6 @@ export type TermId =
   | "backToCamp"
   | "hideout"
   | "islandNews"
-  | "nightRaid"
   | "wares"
   | "loadout"
   | "seaIslands"
@@ -103,7 +102,6 @@ export const TERM = {
   /** Modules collectively (医務室・作業台…). Not the station name. */
   hideout: "隠れ家",
   islandNews: "島の知らせ",
-  nightRaid: "夜の襲撃",
   wares: "売り物",
   loadout: "持っていく物",
   seaIslands: "海の向こうの島",

@@ -13,7 +13,7 @@ import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, type Profile, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
-import { departDepots, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
+import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
@@ -842,7 +842,6 @@ function start(go: Launch, from?: State) {
       : {
           factory: hub.profile.factory,
           away: squadsAway(hub.profile),
-          targets: tonight(hub.profile),
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
           shut: lent?.shut,
         },
@@ -1131,7 +1130,7 @@ window.render_game_to_text = () => {
     threat: s.threat,
     mods: p.mods,
     modsAround: s.loot.filter((l) => l.kind === "mod").map((l) => ({ mod: l.mod, x: +l.pos.x.toFixed(1), y: +l.pos.y.toFixed(1), z: +l.pos.z.toFixed(1) })),
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,

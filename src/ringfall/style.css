@@ -2905,7 +2905,7 @@ body.touch .map-buttons button {
   color: var(--muted);
   font-size: 14px;
 }
-/* The results' beat: the depot's mark for the battle after the player left, the moon for the night. */
+/* The results' beat: the depot's mark for the battle after the player left. */
 #day-beat {
   display: inline-flex;
   min-width: 22px;

@@ -102,33 +102,6 @@ export function nextHandFor(p: Profile): string {
   return pick ? nextFront(pick.name) : PHRASE.nextVehicleOrGate;
 }
 
-/** Battle fields overnightDefence reads (fortify toast vocabulary). */
-export type OvernightBattle = { fortified: readonly number[]; targets: readonly number[] } | null;
-
-/**
- * Overnight defence closed on return (ux-design Round 7): short 島の知らせ lines.
- * Same words as the fortified toast and the signal station's taken line — no new nouns.
- */
-export function overnightDefence(s: { battle: OvernightBattle }, settled?: Pick<Settlement, "night">): string[] {
-  if (!settled) return [];
-  const lines: string[] = [];
-  const lost = new Set(settled.night.lost);
-  for (const id of settled.night.lost) {
-    const n = NODES[nodeIndex(id)];
-    if (n) lines.push(`${n.name}を取られた · 島の守りが削られた`);
-  }
-  const b = s.battle;
-  if (!b) return lines;
-  for (const i of b.fortified) {
-    const n = NODES[i];
-    if (!n || lost.has(n.id)) continue;
-    // Night fortify only — 来る遠征 fortify lines are gone with reactive defence.
-    if (!b.targets.includes(i)) continue;
-    lines.push(`固めた · ${n.name} · 夜の襲撃をはねる`);
-  }
-  return lines;
-}
-
 /** Whether the camp tip is a defend / attack hand (one beat of juice, no new key). */
 export const tipIsDefence = (tip: string) => tip.includes(TERM.incomingExpedition) || tip.includes(TERM.attack);
 

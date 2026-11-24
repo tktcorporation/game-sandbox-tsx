@@ -2609,7 +2609,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   radar: {
     region: "launch",
     depotOut: 18,
-    front: { tier: 2, unlocks: { watch: true } },
+    front: { tier: 2, unlocks: { scout: true } },
     name: "追跡レーダー",
     x: 0,
     z: 0,
@@ -7142,9 +7142,8 @@ export const TIER = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.tier])) as 
  * direction reinforcements beam in from shown in the raid; `shore`, no enemy boats land on the
  * harbor's north shore; `heal`, one more heal of that kind issued to every raid; `ult`, the
  * leap's charge a raid starts with (summed, to 1); `mod`, a raid starts wearing one mod part the
- * profile knows; `turret`, more turrets at each node held as a battle starts; `watch`, the
- * night's targets fall half as often (`NIGHT.watch`). Every node opens something, so which to
- * take first is a choice and losing one is felt.
+ * profile knows; `turret`, more turrets at each node held as a battle starts. Every node opens
+ * something, so which to take first is a choice and losing one is felt.
  */
 export interface NodeUnlock {
   shop?: Rarity;
@@ -7156,7 +7155,6 @@ export interface NodeUnlock {
   ult?: number;
   mod?: true;
   turret?: number;
-  watch?: true;
 }
 /** What holding each node opens (`POI_DEFS`). */
 export const UNLOCKS = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.unlocks])) as Record<NodeId, NodeUnlock>;

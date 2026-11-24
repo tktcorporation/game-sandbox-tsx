@@ -2075,12 +2075,12 @@ if (part("battle")) for (const phone of [false, true]) {
 
 /*
  * The push and pull (docs/ringfall/island-v2.md, 押し合い), from a profile on day 12 holding the
- * supply depot, the quarry and the weather station (its seed one whose night takes some of them back): a node built on the open ground
+ * supply depot, the quarry and the weather station: a node built on the open ground
  * (the waterworks) seen from its gate; the player takes it, and the enemy's counter-attack lands
  * and walks to it (the arrow at the screen's edge, the HUD's bar pulsing at its blue end, the
  * map's ring); the player leaves at the waterworks' depot with the counter-attack on its way;
- * and the results play the raid's change, the battle after the player left (the depot's mark)
- * and the night's attacks (the moon), the bar sliding at each.
+ * and the results play the raid's change and the battle after the player left (the depot's mark),
+ * the bar sliding at each.
  */
 const pushDay = {
   v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5012, escaped: null,
@@ -2090,7 +2090,7 @@ const pushDay = {
 };
 if (part("push")) for (const phone of [false, true]) {
   const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  // The game's first scout has come in this browser (the expeditions' shots show it): this day is the push and the night's, and the scout would take the observatory the night falls on.
+  // The game's first scout has come in this browser (the expeditions' shots show it).
   await ctx.addInitScript(() => localStorage.setItem("ringfall.ai.scouted.v1", "1"));
   const pg = await withProfile(ctx, pushDay);
   if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
@@ -2179,8 +2179,7 @@ if (part("push")) for (const phone of [false, true]) {
   const r = await readOf(pg);
   const set = r.settled;
   if (r.screen !== "results" || !set || !set.raid.gained.includes("waterworks") || !set.after.lost.includes("waterworks")) errors.push(`push-pull: the results read ${r.screen}, raid ${JSON.stringify(set?.raid)}, after ${JSON.stringify(set?.after)}`);
-  if (!set?.night.lost.length) errors.push(`push-pull: the night took nothing (${JSON.stringify(set?.night)})`);
-  // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, the battle after leaving, the night.
+  // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, then the battle after leaving.
   const beatOf = async (b) => {
     const ready = await pg.waitForFunction(() => typeof window.ringfallBeat === "function", null, { timeout: 25000 }).then(() => true, () => false);
     return ready && (await pg.evaluate(() => window.ringfallBeat())) === b;
@@ -2191,9 +2190,6 @@ if (part("push")) for (const phone of [false, true]) {
   if (!(await beatOf("after")) || !/depot/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' beat after leaving did not show the depot's mark");
   await pg.waitForTimeout(1200);
   await pg.screenshot({ path: tag(6, "results-after-leaving") });
-  if (!(await beatOf("night")) || !/night/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' night beat did not show the moon");
-  await pg.waitForTimeout(1200);
-  await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
   if (bar !== `${held} / 21`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);

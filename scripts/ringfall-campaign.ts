@@ -19,7 +19,7 @@ import "./ringfall-terrain-store";
 import { ENTRIES, HOME_REGION, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, strengthFor } from "../src/ringfall/sim/state";
-import { finaleOpen, holds, islandHolds, tonight, unfreeable } from "../src/ringfall/meta/island";
+import { finaleOpen, holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
 import { frontNodes, ownNodes } from "../src/ringfall/sim/front";
 import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, raidThreat, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { shopRarity } from "../src/ringfall/meta/island";
@@ -37,7 +37,7 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { /** The decisive battle was on (`FINALE`), and the days the round took when the raid won it (0 otherwise). */ finale: boolean; liberated: number; /** One of the game's own islands sent an expedition that day; the nodes they took in its raid; the nodes they held after it. */ aiCame: boolean; aiTook: number; aiHeld: number; cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; city: number; launch: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number; night: number } }[];
+  days: { /** The decisive battle was on (`FINALE`), and the days the round took when the raid won it (0 otherwise). */ finale: boolean; liberated: number; /** One of the game's own islands sent an expedition that day; the nodes they took in its raid; the nodes they held after it. */ aiCame: boolean; aiTook: number; aiHeld: number; cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; city: number; launch: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number } }[];
   errors: string[];
 }
 
@@ -149,7 +149,7 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     p = taken.profile;
     const lent = aiLent(p, seed, [], scouted);
     const came = lent.some((l) => l.state === "coming");
-    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory, targets: tonight(p), rivals: aiRivals(lent) }, finale: finaleOpen(p), threat: raidThreat(p) });
+    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory, rivals: aiRivals(lent) }, finale: finaleOpen(p), threat: raidThreat(p) });
     const res = playState(s, skill, 500 + d);
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
     const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
@@ -186,7 +186,6 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
       turns: {
         raid: s.battle ? s.battle.taken.filter((t) => t.t < (s.battle!.left?.at ?? Infinity)).length : 0,
         after: s.battle ? s.battle.taken.filter((t) => t.t >= (s.battle!.left?.at ?? Infinity)).length : 0,
-        night: settled.night.lost.length + settled.night.gained.length,
       },
     });
   }
@@ -224,9 +223,9 @@ export function campaignLines(runs: Campaign[]): string[] {
     const sum = (f: (d: Campaign["days"][number]) => number) => c.days.reduce((n, d) => n + f(d), 0);
     lines.push([c.skill.padEnd(9), `${sum((d) => d.gained)} / ${sum((d) => d.lost)}`.padEnd(30), med(c.days.map((d) => d.minutes)).toFixed(1)].join(" "));
   }
-  // The push and pull: nodes that changed hands in the raids, in the battles after the player left,
-  // and overnight; the days the player gained a node and lost one; the longest run of days holding every node.
-  lines.push(["push-pull", "changed hands raid / after leaving / night".padEnd(42), "days gained / lost".padEnd(19), "all held (longest run)"].join(" "));
+  // The push and pull: nodes that changed hands in the raids and in the battles after the player left;
+  // the days the player gained a node and lost one; the longest run of days holding every node.
+  lines.push(["push-pull", "changed hands raid / after leaving".padEnd(42), "days gained / lost".padEnd(19), "all held (longest run)"].join(" "));
   for (const c of runs) {
     const sum = (f: (d: Campaign["days"][number]) => number) => c.days.reduce((n, d) => n + f(d), 0);
     let run = 0;
@@ -241,7 +240,7 @@ export function campaignLines(runs: Campaign[]): string[] {
       if (d.nodes < prev) down++;
       prev = d.nodes;
     }
-    lines.push([c.skill.padEnd(9), `${sum((d) => d.turns.raid)} / ${sum((d) => d.turns.after)} / ${sum((d) => d.turns.night)}`.padEnd(42), `${up} / ${down}`.padEnd(19), String(longest)].join(" "));
+    lines.push([c.skill.padEnd(9), `${sum((d) => d.turns.raid)} / ${sum((d) => d.turns.after)}`.padEnd(42), `${up} / ${down}`.padEnd(19), String(longest)].join(" "));
   }
   // The nodes held each day, the harbor's, the city's and the launch site's among them, the deepest tier held (- for none), the strength and the factory.
   lines.push(`nodes by day (base 36: a 10, b 11...): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(36)).join("")}`).join(" / ")}`);

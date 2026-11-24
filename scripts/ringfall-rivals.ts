@@ -3,7 +3,7 @@
  * driven by made-up expeditions: there is no server yet.
  *
  * - **take**: an expedition lands at the pad and takes a node of the player's nobody defends; the
- *   next day the node is that player's, and the night does not come at it.
+ *   next day the node is that player's.
  * - **fortified**: the node an expedition is sent at is announced and can be fortified; fortified, the
  *   expedition stands at its core and takes nothing, in the world and in numbers.
  * - **transit**: an expedition sent two links on walks through a node of the player's without
@@ -13,7 +13,6 @@
  *   theirs: the factory's squads take it back.
  * - **front**: another player's node next to the player's ground is on the front, its core starts a
  *   capture, and it counts as neither the enemy's nor the player's for the enemy's strength.
- * - **night**: a node of the player's whose only foes are other players' nodes never falls in the night.
  * - **world**: near the player an expedition's squad is robots among the enemy's, another player's,
  *   hostile to the network's robots.
  * - **two expeditions**: one takes the node another only passes through; the one passing keeps
@@ -36,7 +35,7 @@ import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { idleInput, newRun, starterKit, strengthFor, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { groundAt } from "../src/ringfall/sim/geom";
-import { holds, nightRaids } from "../src/ringfall/meta/island";
+import { holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 
 const OWNER = "rival-1";
@@ -95,8 +94,6 @@ export interface Rivals {
   retake: number;
   /** The enemy's strength with `at` nodes its own (the fewest for its next level), and with one of them another player's instead. */
   strength: { at: number; level: [number, number] };
-  /** Of 400 nights, those in which a node of the player's fell whose only foe was another player's node, and with the same foes the enemy's. */
-  nights: [number, number];
   /** Calls of the reckoning in numbers that took a node of the player's for another player. */
   pure: number;
   /** The calls at which the first expedition took the node the second passed through, and the second took its own; -1 for none. */
@@ -104,7 +101,7 @@ export interface Rivals {
 }
 
 export function rivalsRun(): { err: string | null; r: Rivals } {
-  const r: Rivals = { take: -1, fortified: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, watched: { node: "", seen: 0, threats: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1, two: [-1, -1] };
+  const r: Rivals = { take: -1, fortified: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, watched: { node: "", seen: 0, threats: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, pure: -1, two: [-1, -1] };
   const fail = (err: string) => ({ err: `rivals: ${err}`, r });
 
   // take: the relay (next to the pad) is the player's, defended by nobody, and an expedition lands for it.
@@ -119,11 +116,11 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   finishBattle(ts);
   const after = settle(tp, ts);
   if (after.profile.poiState.relay.state !== rivalHold(OWNER)) return fail(`the next day the relay is ${after.profile.poiState.relay.state}`);
-  if (after.night.lost.includes("relay") || after.raid.lost.join() !== "relay") return fail(`the day's changes read ${JSON.stringify({ raid: after.raid, night: after.night })}`);
+  if (after.raid.lost.join() !== "relay" || after.front.lost.join() !== "relay") return fail(`the day's changes read ${JSON.stringify({ raid: after.raid, front: after.front })}`);
   if (!frontNodes(NODES.map((n) => after.profile.poiState[n.id].state))[RELAY]) return fail("the relay another player took is not on the front the next day");
 
   // fortified: the same expedition, the relay fortified (`FORTIFY`). The node it is sent at is announced and can be
-  // fortified, as the night's targets are; fortified, its squad stands at the core and takes nothing.
+  // fortified; fortified, its squad stands at the core and takes nothing.
   const ft = raid(tp, { factory: 0, rivals: [{ owner: OWNER, target: "relay", kinds: ["grunt", "grunt", "grunt"], at: 5 }] });
   quiet(ft.battle!);
   if (!ft.battle!.noticed.includes(RELAY) || !fortifiable(ft, RELAY) || fortifiable(ft, SUP)) return fail("the node an expedition is sent at is not the one to fortify");
@@ -226,15 +223,6 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   if (fs.strength !== strengthFor(1)) return fail(`the raid plays at strength ${fs.strength}`);
   if (fs.cleared[POIS.findIndex((p) => p.id === "station")] !== true || fs.enemies.some((e) => e.poi === POIS.findIndex((p) => p.id === "station"))) return fail("another player's node stands a garrison of the enemy's");
 
-  // night: the waterworks (next to the supply depot and the relay only) with both another player's never falls; with both the enemy's it does.
-  const WW = "waterworks" as NodeId;
-  const only = NEIGHBOURS[nodeIndex(WW)].map((k) => NODES[k].id).filter((id) => id !== "supply");
-  for (let seed = 1; seed <= 400; seed++) {
-    if (nightRaids(["supply", WW], [], 0, seed, 3, only).includes(WW)) r.nights[0]++;
-    if (nightRaids(["supply", WW], [], 0, seed, 3).includes(WW)) r.nights[1]++;
-  }
-  if (r.nights[0] || !r.nights[1]) return fail(`the waterworks fell in ${r.nights[0]} of 400 nights with another player's nodes as its foes and in ${r.nights[1]} with the enemy's`);
-
   // world: near the player an expedition's squad is robots, hostile to the network's.
   const ws = raid(island(["supply"]), { factory: 0 });
   quiet(ws.battle!);
@@ -302,7 +290,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
 
   // saves: a v26 save keeps another player's node; a v25 one reads it as the enemy's.
   const kept = parseProfile(JSON.parse(JSON.stringify(after.profile)));
-  if (!kept || kept.v !== 35 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
+  if (!kept || kept.v !== 36 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
   const old = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 25 })));
   if (!old || old.poiState.relay.state !== "foe") return fail(`a v25 save loaded the relay as ${old?.poiState.relay.state}`);
   const bad = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, poiState: { ...after.profile.poiState, relay: { state: "rival:" } } })));
@@ -335,7 +323,6 @@ if (process.argv[1]?.endsWith("ringfall-rivals.ts")) {
   console.log(`turrets on the way: the expedition took ${r.transit.turret} health off the factory's turrets at the nodes it passed`);
   console.log(`retake: the factory's squads took the relay back in ${r.retake} s`);
   console.log(`front: strength ${r.strength.level[0]} with ${r.strength.at} nodes the enemy's, ${r.strength.level[1]} with one of them another player's`);
-  console.log(`night: the waterworks fell in ${r.nights[0]} of 400 nights with another player's nodes its foes, ${r.nights[1]} with the enemy's`);
   console.log(`pure: the reckoning in numbers took the node on call ${r.pure}`);
   console.log(`two expeditions: a took the node b passed through on call ${r.two[0]}, b went on and took its own on call ${r.two[1]}`);
   console.log(err ?? "rivals ok");
