@@ -175,14 +175,16 @@ export interface FrontChange {
 }
 
 /**
- * What moved from one day to the next: the nodes that turned the player's (`gained`, POIs as
- * `freed` too) and those the enemy took (`lost`), all told (`front`), and in turn: in the raid
- * while the player was out (`raid`), in the battle after they left (`after`), and in the night (`night`).
+ * What moved from one day to the next: the nodes that turned the player's (`gained`) and those
+ * the enemy took (`lost`), all told (`front`), and in turn: in the raid while the player was out
+ * (`raid`), in the battle after they left (`after`), and in the night (`night`).
+ * `gained` is the overnight gain of nodes (not POI 掃討's `freed` / `poiState: "freed"`).
  */
 export interface DayChange {
   /** The nodes other players held as the day began, when the player left the battle, and as it ended (the night takes none of them); left out when there were none. */
   rivals?: { start: Partial<Record<NodeId, string>>; left: Partial<Record<NodeId, string>>; end: Partial<Record<NodeId, string>> };
-  freed: PoiId[];
+  /** Nodes that became the player's overnight (same list as `front.gained`). */
+  gained: NodeId[];
   front: FrontChange;
   raid: FrontChange;
   after: FrontChange;
@@ -227,14 +229,11 @@ export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], 
 }
 
 /**
- * Ends the day `p.day` with the raid `r` and starts the next. With a battle, each node stays
- * with whoever held it as the battle ended: the nodes the player took (by their cores or with
- * their robots) and the nodes the enemy's squads took back alike, other players' as well. Without
- * one, a node whose core the raid captured is the player's, and other players keep the rest of
- * theirs. The night never comes at another player's node. Clearing a POI of its robots takes
- * nothing. The titan's pad is the enemy's for good. A node the player holds has its depot on.
+ * What the overnight pass would do to `p` after raid `r`: the next day's island fields and the
+ * nodes that changed hands. `settle()` reads the change first (`dayChange`) while the stash is
+ * still being packed, then applies the same pass once (`advanceDay`) to the settled profile.
  */
-export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P; change: DayChange } {
+function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; change: DayChange } {
   const today = p.day;
   const before = islandHolds(p);
   const was = NODES.filter((_, i) => before[i] === "freed").map((n) => n.id);
@@ -260,7 +259,7 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   return {
     profile: { ...p, day: today + 1, poiState, depots, events },
     change: {
-      freed: gained,
+      gained,
       front: { gained, lost },
       raid: changeOf(r.battle?.start ?? was, r.battle?.left ?? ended),
       after: changeOf(r.battle?.left ?? ended, ended),
@@ -270,12 +269,31 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   };
 }
 
+/**
+ * The overnight change alone: which nodes the player gained or lost after raid `r`, without
+ * writing the next day onto the profile. Used when settle needs the list (contracts, `freedAt`)
+ * before the stash and quests are packed onto today's island.
+ */
+export const dayChange = (p: IslandDay, r: RaidDay): DayChange => reckonOvernight(p, r).change;
+
+/**
+ * Ends the day `p.day` with the raid `r` and starts the next. With a battle, each node stays
+ * with whoever held it as the battle ended: the nodes the player took (by their cores or with
+ * their robots) and the nodes the enemy's squads took back alike, other players' as well. Without
+ * one, a node whose core the raid captured is the player's, and other players keep the rest of
+ * theirs. The night never comes at another player's node. Clearing a POI of its robots takes
+ * nothing. The titan's pad is the enemy's for good. A node the player holds has its depot on.
+ */
+export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P; change: DayChange } {
+  return reckonOvernight(p, r);
+}
+
 /** The day's other players' nodes beat by beat (`DayChange.rivals`), or nothing when there were none. */
 const rivalBeats = (start: Partial<Record<NodeId, string>>, left: Partial<Record<NodeId, string>>, end: Partial<Record<NodeId, string>>): Pick<DayChange, "rivals"> =>
   Object.keys(start).length || Object.keys(left).length || Object.keys(end).length ? { rivals: { start, left, end } } : {};
 
-/** The credits the island pays at the settle for the nodes the player holds: `FRONT.income` each. */
-export const frontIncome = (p: Pick<IslandDay, "poiState">): number => playerNodes(p).length * FRONT.income;
+/** Credits paid at the settle for every node the player holds: `FRONT.income` each (not only the front). */
+export const heldIncome = (p: Pick<IslandDay, "poiState">): number => playerNodes(p).length * FRONT.income;
 
 /** A hash of the seed, the day and a salt: the event schedule draws on nothing else. */
 const dayHash = (seed: number, day: number, k: number) => mix(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(day + 11, 0x85ebca6b) ^ Math.imul(k + 1, 0xc2b2ae35));

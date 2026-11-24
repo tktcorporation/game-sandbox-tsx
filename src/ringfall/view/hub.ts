@@ -8,17 +8,17 @@ import { neighbourFronts, type NeighbourFront } from "../meta/neighbour-front";
 import { squadsRemaining } from "../meta/expeditions";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
-import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { ALLY, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, targetName, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { questBoardOn, reactiveDefenseOn } from "../meta/features";
 import { introFrontOpen, need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { departDepots, eventName, finaleOpen, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
+import { departDepots, eventName, finaleOpen, islandHolds, heldIncome, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
 import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
@@ -647,7 +647,7 @@ export class Hub {
     const st = this.profile.stash;
     const heals = { ...l.heals };
     const weapons = armed(this.profile, { ...l, weapons: l.weapons.filter((n) => st[n]?.t === "weapon") }).weapons;
-    for (const k of HEALS) heals[k] = Math.min(heals[k], healRoom(this.profile, { ...l, weapons }, k));
+    for (const k of HEAL_KINDS) heals[k] = Math.min(heals[k], healRoom(this.profile, k));
     return {
       weapons,
       armor: l.armor !== null && st[l.armor]?.t === "armor" ? l.armor : null,
@@ -719,7 +719,7 @@ export class Hub {
     } else if (act === "heal+" || act === "heal-") {
       sfx.click();
       const k = arg as keyof Loadout["heals"];
-      this.load.heals[k] = Math.max(0, Math.min(healRoom(this.profile, this.load, k), this.load.heals[k] + (act === "heal+" ? 1 : -1)));
+      this.load.heals[k] = Math.max(0, Math.min(healRoom(this.profile, k), this.load.heals[k] + (act === "heal+" ? 1 : -1)));
     } else if (act === "sell") {
       // Sell the last of a group, so the loadout's picks before it keep their indices.
       const n = pick[pick.length - 1];
@@ -1201,7 +1201,7 @@ export class Hub {
       case "infirmary": {
         const at = issuedHeals({ hideout: h });
         const top = issuedHeals({ hideout: { ...h, infirmary: maxLevel("infirmary") } });
-        return HEALS.filter((k) => top[k] > 0).map((k) => ({ key: k, mark: healIcon(HEAL_SPECS[k].shield), label: HEAL_SPECS[k].short, n: at[k], show: num, hideZero: true }));
+        return HEAL_KINDS.filter((k) => top[k] > 0).map((k) => ({ key: k, mark: healIcon(HEAL_SPECS[k].shield), label: HEAL_SPECS[k].short, n: at[k], show: num, hideZero: true }));
       }
       case "workbench": {
         // The rarities lit, then the materials each step adds, in their rarity's colour.
@@ -1373,7 +1373,7 @@ export class Hub {
     const issued = issuedHeals(p);
     const free = [
       ...all.filter((i) => itemCost(i) === 0).map((i) => itemMark(i)),
-      ...HEALS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}${l.heals[k] + issued[k]}</span>`),
+      ...HEAL_KINDS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}${l.heals[k] + issued[k]}</span>`),
     ];
     return `<span class="carry"><span class="boxes">${segs.join("")}${empty.join("")}</span>${free.length ? `<span class="free">${free.join("")}</span>` : ""}</span>`;
   }
@@ -1401,7 +1401,7 @@ export class Hub {
       // Another player only once one holds a node of the island: a colour the row above does not explain.
       (holds.some((h) => rivalOf(h) !== null) ? `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` : "") +
       `<li class="front"><i></i><b class="names">${NODES.filter((_, i) => front[i]).map((n) => `<span>${esc(n.name)}</span>`).join("") || "—"}</b></li>` +
-      (frontIncome(p) ? `<li class="income"><b class="cash">${coinIcon()}${frontIncome(p).toLocaleString()}</b></li>` : "");
+      (heldIncome(p) ? `<li class="income"><b class="cash">${coinIcon()}${heldIncome(p).toLocaleString()}</b></li>` : "");
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
@@ -1455,7 +1455,7 @@ export class Hub {
       const i = n === undefined ? undefined : p.stash[n];
       return i?.t === "weapon" ? `<small class="stat">${weaponStats(i.kind, i.rarity)}</small>` : "";
     };
-    const heal = (k: (typeof HEALS)[number]) =>
+    const heal = (k: (typeof HEAL_KINDS)[number]) =>
       `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>${TERM.warehouse} ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `<span class="issued">${issueIcon()}${issued[k]}</span>` : ""}</small></div>`;
     const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
@@ -1470,7 +1470,7 @@ export class Hub {
       weapons +
       (has("armor") ? slot("アーマー", this.load.armor) : "") +
       (has("key") ? `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` : "") +
-      HEALS.filter((k) => healCount(p, k) + issued[k] > 0)
+      HEAL_KINDS.filter((k) => healCount(p, k) + issued[k] > 0)
         .map(heal)
         .join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
@@ -1496,7 +1496,7 @@ export class Hub {
     const weapons = l.weapons.map((n) => p.stash[n]).map((i) => (i.t === "weapon" ? `<b style="color:${itemColor(i)}">${WEAPONS[i.kind].name}</b>` : ""));
     const worn = l.armor === null ? null : p.stash[l.armor];
     const armor = worn?.t === "armor" ? `<span style="color:${itemColor(worn)}">${armorIcon()}<b>${worn.tier}</b></span>` : `<span class="none">${armorIcon()}</span>`;
-    const heals = HEALS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}<b>${l.heals[k] + issued[k]}</b></span>`);
+    const heals = HEAL_KINDS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}<b>${l.heals[k] + issued[k]}</b></span>`);
     const keys = l.keys.length ? `<span style="color:${RARITY_CSS[3]}">${keyIcon()}<b>${l.keys.length}</b></span>` : "";
     return `<span class="kit">${[...weapons, armor, ...heals, keys].join("")}</span>`;
   }

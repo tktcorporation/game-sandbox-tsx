@@ -236,13 +236,13 @@ export function sentOrigins(s: Pick<State, "sent"> & { sentAt?: number[] }): Fet
 }
 
 /**
- * Whether a settled raid did what a contract asked: the POI the player's overnight, the valuables of
- * its POI's bins come home (`home`), or the squad destroyed (which counts on a wipe too).
+ * Whether a settled raid did what a contract asked: the node the player's overnight (`gained`), the
+ * valuables of its POI's bins come home (`home`), or the squad destroyed (which counts on a wipe too).
  */
-export function contractDone(c: Contract, r: { freed: PoiId[]; home: Fetched[]; wiped: readonly string[] }): boolean {
+export function contractDone(c: Contract, r: { gained: PoiId[]; home: Fetched[]; wiped: readonly string[] }): boolean {
   switch (c.t) {
     case "free":
-      return r.freed.includes(c.poi);
+      return r.gained.includes(c.poi);
     case "fetch":
       return r.home.filter((v) => v.kind === c.kind && v.from === poiIndex(c.poi)).length >= c.n;
     case "intercept":
