@@ -1,6 +1,7 @@
-# The quick guardrails, on every pull request: types, the screens' lint (docs/ringfall/ui.md) and
-# the model rules (docs/ringfall/models.md). The three gates that play the game (build, sim,
-# shots) take minutes to an hour and are run by hand before a change is put up (CLAUDE.md).
+# The quick guardrails, on every pull request: types, the screens' lint (docs/ringfall/ui.md),
+# copy lint, D1 encoding (same as `npm run build` before cf), and the model rules
+# (docs/ringfall/models.md). The three gates that play the game (build, sim, shots) take
+# minutes to an hour and are run by hand before a change is put up (CLAUDE.md).
 name: ringfall-checks
 on:
   pull_request:
@@ -21,4 +22,6 @@ jobs:
       - run: npm ci
       - run: npx tsc -b
       - run: npm run lint:ringfall
+      - run: npm run lint:ringfall-copy
+      - run: npm run test:ringfall-encoding
       - run: npm run models:ringfall
