@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf } from "./copy";
+import { PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -1577,7 +1577,7 @@ export class Hud {
     this.newsKeep = [...expNews, ...(incLine ? [incLine] : [])];
     const allNews = [...this.newsKeep, ...news];
     const tropLine = settled?.trophies
-      ? `<p class="trop-line">${TERM.trophy} <b>${settled.trophies.before.toLocaleString()} → ${settled.trophies.after.toLocaleString()}</b></p>`
+      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost)}</p>`
       : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);

@@ -179,6 +179,20 @@ export function newsIncursion(owner: string, node: string, won: boolean, trop?: 
   return `${owner}の${node}を攻めきれなかった`;
 }
 
+/** トロフィーの前後と内訳（リザルト／信号所）。増減が無い側は出さない。 */
+export function trophyLine(before: number, after: number, gained = 0, lost = 0): string {
+  const parts: string[] = [];
+  if (gained > 0) parts.push(`取った +${gained}`);
+  if (lost > 0) parts.push(`取られた −${lost}`);
+  const mid = parts.length ? `（${parts.join(" · ")}）` : "";
+  return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;
+}
+
+/** 短いレイドの勝ちが相手サーバーに拒否されたときの一行。 */
+export function newsAssaultReversed(node: string, trop: number): string {
+  return trop > 0 ? `${node}の勝ちが取り消された · ${TERM.trophy} −${trop}` : `${node}の勝ちが取り消された`;
+}
+
 /** 島の知らせの控え: 新しい行を先頭に足し、最新 NEWS_KEEP 件だけ残す。 */
 export function pushNews(prev: readonly string[], lines: readonly string[]): string[] {
   const fresh = lines.map((s) => s.trim()).filter(Boolean);

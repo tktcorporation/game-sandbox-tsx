@@ -9,7 +9,7 @@ import { ENEMIES, FACTORY, FACTORY_TOP, FRONT, type EnemyKind } from "../sim/con
 import type { Battle, RivalExpedition } from "../sim/battle";
 import { isAiOwner, parseHold, rivalOf, type PoiHold } from "../sim/holds";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
-import { LOG_WORD as COPY_LOG_WORD, newsRetaken, newsWipedEnemy } from "../view/copy";
+import { LOG_WORD as COPY_LOG_WORD, newsRetaken, newsWipedEnemy, trophyLine } from "../view/copy";
 import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
@@ -203,7 +203,10 @@ export interface Synced {
  * report landed for leave the pending list; the holds are merged around those still pending. The
  * profile itself when nothing changes.
  */
-export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
+export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number }>(
+  p: P,
+  s: Synced,
+): { profile: P; news: IslandLogEntry[]; notes: string[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
   const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
@@ -212,13 +215,19 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   const parcels = s.parcels ? [...s.parcels] : p.parcels;
   // T1: ownership that changed while away (mergeHolds) moves trophies once here — settle will not
   // see the same own→rival transition again because `p.poiState` already matches.
+  // トロフィーは必ず知らせの一行と一緒に動かす（notes）。
   let trophies = p.trophies;
+  const notes: string[] = [];
   if (poiState !== p.poiState && typeof p.trophies === "number") {
-    const next = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState)).next;
-    if (next !== p.trophies) trophies = next;
+    const d = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState));
+    if (d.next !== p.trophies) {
+      trophies = d.next;
+      notes.push(trophyLine(p.trophies, d.next, d.gained, d.lost));
+    }
   }
-  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies) return { profile: p, news };
-  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels, ...(trophies !== p.trophies ? { trophies } : {}) }, news };
+  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies)
+    return { profile: p, news, notes };
+  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels, ...(trophies !== p.trophies ? { trophies } : {}) }, news, notes };
 }
 
 /** The other players' expeditions on an island's view that hold nothing yet, at nodes the game knows: what its owner is warned of. */

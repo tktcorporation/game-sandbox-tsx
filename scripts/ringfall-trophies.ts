@@ -46,28 +46,30 @@ assert.equal(clampTrophies(99999), TROPHY.max);
 
 {
   const p = newProfile(1);
-  assert.equal(p.v, 37);
+  assert.equal(p.v, 40);
   assert.equal(p.trophies, TROPHY.start);
   const raw = JSON.parse(JSON.stringify(p));
   raw.v = 31;
   delete raw.trophies;
   const old = parseProfile(raw, 1);
   assert.ok(old);
-  assert.equal(old.v, 37);
+  assert.equal(old.v, 40);
   assert.equal(old.trophies, TROPHY.start);
 }
 
-// Sync that transfers a freed node to a rival deducts trophies (Codex P2).
+// Sync that transfers a freed node to a rival deducts trophies (Codex P2) and leaves a news note.
 {
   const p = newProfile(3);
   const id = NODES[0].id;
   p.poiState = { ...p.poiState, [id]: { state: "own" } };
   const before = p.trophies;
-  const { profile } = applySync(p, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
+  const { profile, notes } = applySync(p, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
   assert.ok(profile.trophies! < before);
+  assert.ok(notes.length === 1 && notes[0].includes("トロフィー"));
   // A second sync with the same hold does not deduct again.
   const again = applySync(profile, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
   assert.equal(again.profile.trophies, profile.trophies);
+  assert.equal(again.notes.length, 0);
 }
 
 console.log("trophies ok");

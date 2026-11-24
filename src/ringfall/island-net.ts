@@ -15,7 +15,9 @@ import { assaultAcked, assaultWinRejected } from "./meta/assault";
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import { clampTrophies, TROPHY } from "./meta/trophies";
+import { newsAssaultReversed, pushNews } from "./view/copy";
 import type { NodeId } from "./sim/map";
+import { NODES, nodeIndex } from "./sim/map";
 
 /** An answer: the body of a success, or why it failed. */
 export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | NetError };
@@ -286,7 +288,10 @@ export async function flushAssaultReports(get: () => Profile, put: (p: Profile) 
     if (won && ASSAULT_WIN_REJECT.has(r.error)) {
       const { list, tropGain } = assaultWinRejected(p.expeditions, o.code);
       const trophies = tropGain > 0 ? clampTrophies((p.trophies ?? TROPHY.start) - tropGain) : p.trophies;
-      put({ ...p, expeditions: list, ...(trophies !== p.trophies ? { trophies } : {}) });
+      const at = NODES[nodeIndex(o.node)]?.name ?? o.node;
+      const note = newsAssaultReversed(at, tropGain);
+      const news = pushNews(p.news ?? [], [note]);
+      put({ ...p, expeditions: list, news, ...(trophies !== p.trophies ? { trophies } : {}) });
     }
     // network / soft errors: leave pending for the next sync.
   }
@@ -438,7 +443,8 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
 export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }).profile;
 
 export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[] } {
-  if (s.ticket < applied) return applySync(p, { reported: s.synced.reported });
-  applied = s.ticket;
-  return applySync(p, s.synced);
+  const r = s.ticket < applied ? applySync(p, { reported: s.synced.reported }) : ((applied = s.ticket), applySync(p, s.synced));
+  // トロフィーの増減は必ず知らせの一行と一緒に Profile.news へ残す.
+  if (!r.notes.length) return { profile: r.profile, news: r.news };
+  return { profile: { ...r.profile, news: pushNews(r.profile.news ?? [], r.notes) }, news: r.news };
 }
