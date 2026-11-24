@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { AWARE, ENEMIES, HEALS, SIGHT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type Rarity, type WeaponKind } from "../sim/config";
-import { PAL, addPlates, buildAlly, buildBin, buildBoat, buildCare, buildCore, buildDepot, buildDropship, buildEnemy, buildEntryMark, buildGun, buildHands, buildLootItem, buildRingDebris } from "./models";
+import { PAL, addPlates, buildAlly, buildBin, buildBoat, buildCare, buildCore, buildDepot, buildDropship, buildEnemy, buildEntryMark, buildGun, buildHands, buildLootItem } from "./models";
 import { UI } from "./palette";
 import { LIGHT, hipFov } from "./world";
 
@@ -305,7 +305,6 @@ const SHEETS: Sheet[] = [
       [
         worldCell("boat, 30 m", () => buildBoat(), { dist: 30, yaw: 0.9, ground: "salt" }),
         worldCell("dropship, 40 m", () => buildDropship(), { dist: 40, yaw: 0.6, lift: 3, ground: "concrete" }),
-        worldCell("ring debris, 40 m", () => buildRingDebris().root, { dist: 40, yaw: 0.6 }),
       ],
     ],
   },

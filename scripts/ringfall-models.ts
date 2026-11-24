@@ -87,7 +87,6 @@ const entries: Entry[] = [
   { id: "core", group: "world", root: M.buildCore(6, 0.6).root },
   { id: "entry-fire", group: "world", root: M.buildEntryMark().fire },
   { id: "entry-sign", group: "world", root: M.buildEntryMark().sign },
-  { id: "ring-debris", group: "wreck", root: M.buildRingDebris().root },
   { id: "beacon", group: "world", root: M.buildBeacon() },
   { id: "flare-smoke", group: "world", root: M.buildFlareSmoke() },
 ];

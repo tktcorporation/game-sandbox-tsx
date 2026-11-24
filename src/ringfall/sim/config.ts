@@ -690,71 +690,6 @@ export const STRENGTH = {
   play: 2,
 };
 
-/** The island's events (島の出来事): at most one a day, announced the day before (meta/island.ts). */
-export type EventKind = "debris" | "storm" | "crews";
-
-/**
- * How often each event comes: a day has one with `chance`, picked by `weights`. Drawn from the
- * profile's seed and the day alone, so the schedule is fixed as soon as it is announced.
- */
-export const EVENTS = {
-  chance: 0.5,
-  weights: { debris: 3, storm: 2, crews: 2 } satisfies Record<EventKind, number>,
-  names: { debris: "破片の落下", storm: "嵐", crews: "回収部隊の来訪" } satisfies Record<EventKind, string>,
-};
-
-/**
- * A debris fall (破片の落下): a piece of the ring lies at one of `DEBRIS_SPOTS` (map.ts) for the
- * day, with a crate (a bin out on the island) that holds
- * `count` valuables drawn from `valuables` and `heals` heals, guarded by `guards` at its foot.
- */
-export const DEBRIS = {
-  valuables: [["drive", 4], ["gyro", 3], ["core", 2]] as [ValuableKind, number][],
-  count: 3,
-  heals: 1,
-  guards: ["heavy", "drone", "drone"] as EnemyKind[],
-};
-
-/**
- * A storm (嵐): robots see `sight` as far (their kind's `SIGHT`, a pack's sight, and the range
- * they answer from afar, `RETURN`), and the view draws the fog `fog` times as near.
- */
-export const STORM = { sight: 0.6, fog: 0.6 };
-
-/**
- * Salvage crews (回収部隊), one on a crews' visit (`EVENTS`): squads drawn from `squads` that beam in out of the player's sight,
- * `away` metres from them or more, `arrive` seconds into the raid (each crew its own draw), at a
- * stop of the starting region (`PARTY_STOPS`). Most are pairs: a crew met in the open is a
- * fight on top of whatever the player is in, and three of them more often turns it. They walk by
- * the ground's way, at `pace` of their slowest member's speed, to the unopened bin of the region's
- * POIs nearest by that walk that stands on the open ground (not a vault) and lies beyond `wary` of the
- * player, stand `SEARCH.time` within `reach` of it, and take its valuable into their bag (the
- * rest of what it holds is lost). With `bag` valuables, or `leaveAfter` seconds after
- * arriving, or no bin left, they walk to the region's nearest way off and beam out there (or where
- * they stand, held up `stuck.tries` times on the way). The last one of a crew to fall drops the bag. Like a hunting party, it fights
- * what it meets and does not come to distant gunfire. Its choices come from a stream of its own.
- */
-export const CREW = {
-  name: "回収部隊",
-  squads: [
-    ["grunt", "grunt"],
-    ["grunt", "charger"],
-    ["grunt", "grunt"],
-    ["grunt", "grunt", "charger"],
-  ] as EnemyKind[][],
-  arrive: [20, 70] as const,
-  away: 100,
-  /** Metres from the player inside which a crew picking its next bin passes a bin over. */
-  wary: 80,
-  pace: 0.7,
-  reach: 2.2,
-  bag: 4,
-  leaveAfter: 300,
-  /** Metres from its way off at which a leaving crew beams out. */
-  out: 6,
-  stuck: { time: 15, moved: 3, tries: 3 },
-};
-
 /**
  * The ways in on foot (`ENTRIES`) a player has walked to: one reached in a raid that ends with
  * the player off alive can be chosen at the base from then on. A player starts knowing only
@@ -983,7 +918,7 @@ export const MOD_START = MOD_KINDS.filter((k) => MODS[k].start);
 /**
  * Where mod parts come from and how many a body holds. A body wears `slots` of them; they take no
  * bag slots. A bin other than a vault holds one with `bin`, of a kind the profile knows; a robot
- * drops one as it falls with `robot`, a salvage crew's member or a raider with `elite` and the
+ * drops one as it falls with `robot`, a raider with `elite` and the
  * titan always, of any kind, so new kinds are found on robots. Each chance is multiplied by the
  * raid's threat (`THREAT.levels[].mods`). Which bin or robot holds one, and of which kind, is
  * decided from the raid's seed and the bin or robot, never from the raid's random numbers, so a
@@ -1430,9 +1365,8 @@ export const NOISE = {
 
 /**
  * The robots' two factions. The enemy (the network, red on the maps) is the island's own; rogues
- * (野良機) are robots that broke off it: they hold no ground, walk patrols of their own
- * (`MOBILES`), and the salvage crews are theirs. Each is hostile to the other and to the player
- * and the teammate.
+ * (野良機) are robots that broke off it: they hold no ground and walk patrols of their own
+ * (`MOBILES`). Each is hostile to the other and to the player and the teammate.
  *
  * A squad out between the POIs that is not fighting the player looks for the other faction's
  * robots every `scan` seconds, out to `sight` of its members' sight range: a member that sees one

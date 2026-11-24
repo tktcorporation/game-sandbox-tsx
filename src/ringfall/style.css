@@ -92,10 +92,6 @@
   --r2-text-rgb: 201 147 255;
   --pouch: #e8b07a;
   --pouch-rgb: 232 176 122;
-  --debris: #e0a33a;
-  --debris-rgb: 224 163 58;
-  --crews: #c86f3a;
-  --crews-rgb: 200 111 58;
   --shut: #ff8a5c;
   --shut-rgb: 255 138 92;
 }
@@ -537,24 +533,6 @@ body.touch #obj-raid .why {
 }
 #obj-raid:empty {
   display: none;
-}
-
-/* The day's island event, under the place: the haze's grey, its icon in its own colour. */
-#obj-event {
-  grid-column: 1 / -1;
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--parch);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-#obj-event[hidden] {
-  display: none;
-}
-#obj-event .ev-icon {
-  vertical-align: -3px;
-  margin-right: 4px;
 }
 
 #obj-stealth {
@@ -2612,11 +2590,6 @@ body.touch .note a {
   display: inline-block;
   padding: 11px 0;
 }
-body.touch #obj-event {
-  order: 3;
-  flex-basis: 100%;
-  font-size: 11px;
-}
 body.touch #obj-exits {
   order: 3;
   flex-basis: 100%;
@@ -3310,37 +3283,6 @@ body.touch.camp #t-use {
 body.touch #camp-prompt {
   bottom: 30%;
   font-size: 16px;
-}
-
-/* The island's events on the map table and the results: today's and tomorrow's, an icon and a line each. */
-.ev {
-  display: block;
-  font-size: 13px;
-  line-height: 1.35;
-}
-.ev .ev-icon {
-  vertical-align: -3px;
-  margin-right: 5px;
-}
-.ev b {
-  margin-right: 6px;
-}
-.ev.quiet {
-  color: var(--muted);
-}
-.hub-island ul.events li {
-  display: grid;
-  grid-template-columns: 2.6em 1fr;
-  align-items: baseline;
-  padding: 3px 0;
-}
-.hub-island ul.events li small {
-  color: var(--muted);
-  font-size: 12px;
-}
-#home .ev {
-  display: inline-block;
-  margin: 2px 8px 2px 0;
 }
 
 /* The camp's 今日の作戦: the node to go for, the contract or record taken, and the kit, under the head. */

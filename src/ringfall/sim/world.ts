@@ -1,13 +1,12 @@
-import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, FRONT, HEALS, HOME, MOD, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, USE, VALUABLES, VAULT, WORLD, type EnemyKind, type HealKind, type ToolKind, type ValuableKind } from "./config";
+import { ALLY, AWARE, BAG, BIN_GEAR, DEPOT, ENEMIES, ENTRY, FRONT, HEALS, HOME, MOD, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, USE, VALUABLES, VAULT, WORLD, type EnemyKind, type HealKind, type ToolKind, type ValuableKind } from "./config";
 import { grabZip, zipInReach, zipPoint } from "./zips";
 import { dist2d, groundAt, los, solidAt, worldVersion } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, poiIndex, REGIONS, regionOf, ZIPS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
-import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
-import type { CrewTrip, SquadState } from "./state";
+import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, crewRand, strengthLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
+import { boosted, callLeft, strengthLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
 import { fortifiable, inZone, useCore } from "./front";
@@ -253,162 +252,6 @@ function sendParty(s: State, slot: PartySlot, appear: boolean): boolean {
   return false;
 }
 
-/**
- * The day's visitors beyond the POIs: salvage crews beam in on their times (`State.crewsDue`) and
- * go about their errand.
- */
-export function stepCrews(s: State) {
-  if (s.phase !== "play") return;
-  if (s.crewsDue.length && s.time >= s.crewsDue[0]) {
-    if (sendCrew(s)) s.crewsDue.shift();
-    else s.crewsDue[0] = s.time + 5; // try again shortly
-  }
-  s.squads.forEach((sq, i) => sq.crew && stepCrew(s, sq, i));
-}
-
-/** Whether a crew can loot bin `b`: one of its region's POIs' ordinary bins, unopened, on the open ground its walkers' field covers. */
-const crewBin = (b: Bin, c: CrewTrip) =>
-  !b.open && !b.vault && !b.outside && regionOf(c.region).pois.includes(POIS[b.poi].id) && onMainGround(b.x, b.z) && Math.abs(b.y - terrainHeight(b.x, b.z)) < 0.6;
-
-/** A salvage crew's errand (see CREW): to the bin nearest by the walk, search it, and with a full bag (or out of time or bins) to its way off. */
-function stepCrew(s: State, sq: SquadState, i: number) {
-  const c = sq.crew!;
-  const members = squadMembers(s, i);
-  const lead = members[0];
-  if (!lead) return;
-  c.t += TICK;
-  // Only a calm crew goes about its errand: a fight, with the player or the other faction, breaks a search off, and the walk resumes after.
-  if (sq.engaged || sq.foe !== undefined || members.some((e) => e.aware !== "idle")) {
-    c.searchT = 0;
-    c.mark = { x: lead.pos.x, z: lead.pos.z };
-    c.markT = 0;
-    return;
-  }
-  if (!c.leaving && ((sq.bag?.length ?? 0) >= CREW.bag || c.t >= CREW.leaveAfter)) leave(s, sq, lead);
-  if (c.leaving) {
-    const x = EXTRACTS.find((o) => o.id === c.leaving)!;
-    const arrived = dist2d(lead.pos, x) < CREW.out;
-    if (arrived || stuck(c, lead, () => c.held++) && c.held >= CREW.stuck.tries) beamOut(s, sq, i, members);
-    return;
-  }
-  if (c.bin < 0 || s.bins[c.bin].open) {
-    c.searchT = 0;
-    // Nearest by the walk: a bin a fence or a cliff puts a long way round is left for later.
-    // The field runs to the crew, so its lengths are the walks from the bins, which on the main
-    // ground are the walks to them.
-    const field = fieldTo(lead.pos.x, lead.pos.z);
-    const pick = s.bins
-      .map((b, n) => ({ b, n, walk: field ? routeLength(field, b.x, b.z) : Infinity, line: dist2d(b, lead.pos) }))
-      // It keeps to bins the player is not at: a crew comes upon the player, it does not walk into their fight.
-      .filter(({ b, n }) => crewBin(b, c) && !c.skip.includes(n) && dist2d(b, s.player.pos) > CREW.wary)
-      .sort((a, b) => (a.walk === b.walk ? a.line - b.line : a.walk - b.walk))[0];
-    if (!pick) {
-      leave(s, sq, lead);
-      return;
-    }
-    c.bin = pick.n;
-    sq.walk = { x: pick.b.x, z: pick.b.z };
-    c.mark = { x: lead.pos.x, z: lead.pos.z };
-    c.markT = 0;
-  }
-  const b = s.bins[c.bin];
-  if (members.some((e) => dist2d(e.pos, b) < CREW.reach + 1 && Math.abs(e.pos.y - b.y) < 1.6)) {
-    // A member stands at the bin for as long as the player would take to search it.
-    c.markT = 0;
-    c.searchT += TICK;
-    if (c.searchT >= SEARCH.time) {
-      crewLoot(s, sq, i, c.bin);
-      c.bin = -1;
-    }
-    return;
-  }
-  // Held up on the way (a corner its body does not fit past): it gives that bin up.
-  stuck(c, lead, () => {
-    c.skip.push(c.bin);
-    c.bin = -1;
-  });
-}
-
-/** Whether a crew walking to its point has moved less than `CREW.stuck.moved` in `CREW.stuck.time` seconds; `then` runs when it has. */
-function stuck(c: CrewTrip, lead: { pos: Point }, then: () => void): boolean {
-  if ((c.markT += TICK) < CREW.stuck.time) return false;
-  const held = dist2d(lead.pos, c.mark) < CREW.stuck.moved;
-  c.mark = { x: lead.pos.x, z: lead.pos.z };
-  c.markT = 0;
-  if (held) then();
-  return held;
-}
-
-/** The crew makes for the nearest way off of its region. */
-function leave(s: State, sq: SquadState, lead: { pos: Point }) {
-  const c = sq.crew!;
-  const x = regionOf(c.region)
-    .exits.map((id) => EXTRACTS.find((o) => o.id === id)!)
-    .sort((a, b) => dist2d(a, lead.pos) - dist2d(b, lead.pos))[0];
-  c.leaving = x.id;
-  c.bin = -1;
-  c.searchT = 0;
-  c.markT = 0;
-  c.mark = { x: lead.pos.x, z: lead.pos.z };
-  sq.walk = { x: x.x, z: x.z };
-}
-
-/** The crew beams out with its bag, which is lost to the island. */
-function beamOut(s: State, sq: SquadState, i: number, members: readonly { pos: Point }[]) {
-  const at = members[0].pos;
-  s.enemies = s.enemies.filter((e) => e.squad !== i);
-  s.stats.crewsOut++;
-  s.events.push({ t: "crewOut", x: at.x, z: at.z, n: sq.bag?.length ?? 0 });
-  sq.walk = undefined;
-}
-
-/** The crew opens bin `n`: its valuable goes into the crew's bag (drawn on the crews' stream), the rest of what it held is lost. */
-function crewLoot(s: State, sq: SquadState, i: number, n: number) {
-  const b = s.bins[n];
-  b.open = true;
-  s.events.push({ t: "binOpen", id: b.id }, { t: "crewLoot", id: b.id, squad: i });
-  const table = POIS[b.poi].loot.valuable;
-  const kinds = b.poi === s.boost.poi ? boosted(table, s.boost.kind) : table;
-  const kind = weighted(s, kinds, crewRand);
-  (sq.bag ??= []).push(kind);
-  (sq.bagAt ??= []).push(b.poi);
-  s.stats.crewBins++;
-}
-
-/**
- * A salvage crew beamed in near a stop of the starting region, out of the player's sight within
- * `PARTY.seen` and at least `CREW.away` from them; false when no such spot turned up.
- */
-function sendCrew(s: State): boolean {
-  const stops = PARTY_STOPS[s.region];
-  const kinds = CREW.squads[Math.floor(crewRand(s) * CREW.squads.length)];
-  for (let k = 0; k < 40; k++) {
-    const stop = stops[Math.floor(crewRand(s) * stops.length)];
-    const a = crewRand(s) * Math.PI * 2;
-    const r = crewRand(s) * PARTY.scatter;
-    const x = stop.x + Math.cos(a) * r;
-    const z = stop.z + Math.sin(a) * r;
-    if (dist2d(s.player.pos, { x, z }) < CREW.away || !onMainGround(x, z)) continue;
-    const spots = hiddenPosts(s, kinds, x, z, PARTY.seen);
-    if (!spots) continue;
-    const squad = s.squads.length;
-    s.squads.push({ name: CREW.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, crew: { region: s.region, bin: -1, searchT: 0, skip: [], leaving: null, t: 0, mark: { x, z }, markT: 0, held: 0 }, bag: [], bagAt: [], sinceSeen: 0, last: { x: 0, z: 0 }, rogue: true });
-    // The salvage crews are the rogues' (see FACTION): they scavenge what the enemy guards.
-    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true, rogue: true }));
-    s.stats.crewsIn++;
-    s.events.push({ t: "crewIn", x, z });
-    return true;
-  }
-  return false;
-}
-
-/** The salvage crews' members the player can see from where they stand (within `PARTY.seen`): only these show on the map. */
-export function crewsInSight(s: State): Point[] {
-  const p = s.player;
-  const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
-  return s.enemies.filter((e) => s.squads[e.squad]?.crew && dist2d(e.pos, p.pos) < PARTY.seen && los(eye, { x: e.pos.x, y: e.pos.y + 1.2, z: e.pos.z })).map((e) => ({ x: e.pos.x, z: e.pos.z }));
-}
-
 /** Half the width of the lane a walking robot needs: the heavy's body radius. */
 const LANE = 1;
 
@@ -462,12 +305,6 @@ function openBin(s: State, binIndex: number) {
   s.events.push({ t: "binOpen", id: b.id });
   // A mod part comes out first, by its own hash and id: the rest of the bin is drawn as without it.
   spillBinMod(s, b);
-  if (b.debris) {
-    // The ring's crate holds its own table, from no POI: no fetch contract counts it.
-    for (let i = 0; i < DEBRIS.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
-    for (let i = 0; i < DEBRIS.count; i++) spillValuable(s, b, weighted(s, DEBRIS.valuables), -1);
-    return;
-  }
   if (b.vault) {
     const [kind, rarity] = VAULT.weapon[Math.floor(rand(s) * VAULT.weapon.length)];
     spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });

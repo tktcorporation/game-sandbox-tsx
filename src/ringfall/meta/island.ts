@@ -1,7 +1,7 @@
-import { EVENTS, FACTORY, FACTORY_TOP, FINALE, FRONT, META, NIGHT, type EventKind, type HealKind, type Rarity } from "../sim/config";
-import type { IslandEvent, PoiHold } from "../sim/island";
+import { FACTORY, FACTORY_TOP, FINALE, FRONT, META, NIGHT, type HealKind, type Rarity } from "../sim/config";
+import type { PoiHold } from "../sim/island";
 import { parseHold, rivalOf } from "../sim/holds";
-import { DEBRIS_SPOTS, debrisIndex, DEPOTS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
+import { DEPOTS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, poiIndex, UNLOCKS, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
 import { capturedIds, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { guardedNodes, type Battle } from "../sim/battle";
 import { mix, type State } from "../sim/state";
@@ -108,10 +108,8 @@ export interface IslandDay {
   day: number;
   poiState: Island;
   depots: PoiId[];
-  /** The next raid's seed: the day after tomorrow's event is drawn from it and the day. */
+  /** The next raid's seed: night targets draw from it and the day. */
   seed?: number;
-  /** The island's events: today's (the next raid's) and tomorrow's, announced a day ahead. */
-  events?: DayEvents;
 }
 
 /** What the maps read of an island day. */
@@ -164,9 +162,6 @@ export const departDepots = (p: Pick<IslandDay, "poiState" | "depots">): PoiId[]
   const may = unlocked(p).depart;
   return p.depots.filter((d) => may.includes(d as NodeId));
 };
-
-/** Today's event and tomorrow's: each null on a quiet day. */
-export type DayEvents = [IslandEvent | null, IslandEvent | null];
 
 /** Nodes that turned the player's and nodes the enemy took. */
 export interface FrontChange {
@@ -254,10 +249,8 @@ function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; c
   const gained = NODES.filter((_, i) => before[i] !== "own" && after[i] === "own").map((n) => n.id);
   const lost = NODES.filter((_, i) => before[i] === "own" && after[i] !== "own").map((n) => n.id);
   const depots = DEPOTS.map((d) => d.poi).filter((id) => p.depots.includes(id) || poiState[id].state === "own");
-  // Yesterday's forecast becomes today's event, and tomorrow's is drawn.
-  const events: DayEvents = [p.events?.[1] ?? null, eventFor(p.seed ?? 0, today + 2)];
   return {
-    profile: { ...p, day: today + 1, poiState, depots, events },
+    profile: { ...p, day: today + 1, poiState, depots },
     change: {
       gained,
       front: { gained, lost },
@@ -295,53 +288,8 @@ const rivalBeats = (start: Partial<Record<NodeId, string>>, left: Partial<Record
 /** Credits paid at the settle for every node the player holds: `FRONT.income` each (not only the front). */
 export const heldIncome = (p: Pick<IslandDay, "poiState">): number => playerNodes(p).length * FRONT.income;
 
-/** A hash of the seed, the day and a salt: the event schedule draws on nothing else. */
+/** A hash of the seed, the day and a salt: the night's targets draw on nothing else. */
 const dayHash = (seed: number, day: number, k: number) => mix(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(day + 11, 0x85ebca6b) ^ Math.imul(k + 1, 0xc2b2ae35));
-
-/** The event of day `day`, drawn from `seed` and the day: one day in `1 / EVENTS.chance` or so has one, picked by `EVENTS.weights`. */
-export function eventFor(seed: number, day: number): IslandEvent | null {
-  if ((dayHash(seed, day, 0) % 10_000) / 10_000 >= EVENTS.chance) return null;
-  const weights = (Object.keys(EVENTS.weights) as EventKind[]).map((k): [EventKind, number] => [k, EVENTS.weights[k]]).filter(([, w]) => w > 0);
-  let r = ((dayHash(seed, day, 1) % 10_000) / 10_000) * weights.reduce((n, [, w]) => n + w, 0);
-  const kind = weights.find(([, w]) => (r -= w) < 0)?.[0] ?? weights[weights.length - 1][0];
-  switch (kind) {
-    case "debris":
-      return { t: "debris", spot: DEBRIS_SPOTS[dayHash(seed, day, 2) % DEBRIS_SPOTS.length].id };
-    case "storm":
-      return { t: "storm" };
-    case "crews":
-      return { t: "crews" };
-  }
-}
-
-/** The schedule of a profile before the first raid: a quiet first day, and the second's drawn. */
-export const firstEvents = (seed: number): DayEvents => [null, eventFor(seed, 2)];
-
-/** A saved event; null for anything unreadable. */
-export function parseEvent(raw: unknown): IslandEvent | null {
-  if (!raw || typeof raw !== "object") return null;
-  const x = raw as Record<string, unknown>;
-  if (x.t === "storm" || x.t === "crews") return { t: x.t };
-  if (x.t === "debris" && typeof x.spot === "string" && debrisIndex(x.spot as DebrisId) >= 0) return { t: "debris", spot: x.spot as DebrisId };
-  return null;
-}
-
-/** An event's name. */
-export const eventName = (ev: IslandEvent) => EVENTS.names[ev.t];
-
-/** What an event does, in a line. */
-export function eventText(ev: IslandEvent): string {
-  switch (ev.t) {
-    case "debris": {
-      const d = DEBRIS_SPOTS[debrisIndex(ev.spot)];
-      return `${d.place}に輪の破片が落ちる。珍しい回収品の箱を、ヘビーとドローン 2 機が守る`;
-    }
-    case "storm":
-      return "自分の視界も、ロボットの見える距離も 6 割になる。近づいてから撃つ日";
-    case "crews":
-      return "回収部隊が 1 組来て、箱を先に漁る。迎撃の依頼が出る";
-  }
-}
 
 /** Each POI's standing for a raid's start (`Start.island`). */
 export const holds = (p: Pick<IslandDay, "poiState">): Partial<Record<PoiId, PoiHold>> => Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id].state]));

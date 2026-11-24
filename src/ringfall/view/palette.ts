@@ -92,9 +92,6 @@ export const UI = {
   /** The pouch: what comes home even from a wipe. */
   pouch: "#e8b07a",
 
-  // The island's day.
-  debris: "#e0a33a",
-  crews: "#c86f3a",
   /** A route still shut. */
   shut: "#ff8a5c",
 } as const;

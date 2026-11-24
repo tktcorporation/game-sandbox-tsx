@@ -3,8 +3,7 @@
  * consecutive days on one profile, so the six nodes' holders carry from raid to raid. Each day
  * the bot starts in the region with the most nodes on the front (then the most POIs the enemy
  * still holds, the reservoir on a tie), at one of its ways in in turn, plays its normal raid with
- * the best guns and armour of its stash, and the raid is settled as a player's would be. The day's island event (a debris
- * fall, a storm, a crews' visit) comes as announced. Each raid is the day's battle (陣取り戦,
+ * the best guns and armour of its stash, and the raid is settled as a player's would be. Each raid is the day's battle (陣取り戦,
  * sim/battle.ts) with the factory the profile has built: whoever holds each node when the battle
  * ends holds it the next day. It takes no contract. Before the first day and after each it buys
  * gear (`gearUp()`), sells everything in the stash but that kit, the starter weapons (not for
@@ -38,7 +37,7 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { /** The decisive battle was on (`FINALE`), and the days the round took when the raid won it (0 otherwise). */ finale: boolean; liberated: number; /** One of the game's own islands sent an expedition that day; the nodes they took in its raid; the nodes they held after it. */ aiCame: boolean; aiTook: number; aiHeld: number; cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; city: number; launch: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number; night: number } }[];
+  days: { /** The decisive battle was on (`FINALE`), and the days the round took when the raid won it (0 otherwise). */ finale: boolean; liberated: number; /** One of the game's own islands sent an expedition that day; the nodes they took in its raid; the nodes they held after it. */ aiCame: boolean; aiTook: number; aiHeld: number; cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; city: number; launch: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number; night: number } }[];
   errors: string[];
 }
 
@@ -150,7 +149,7 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     p = taken.profile;
     const lent = aiLent(p, seed, [], scouted);
     const came = lent.some((l) => l.state === "coming");
-    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], event: p.events[0], battle: { factory: p.factory, targets: tonight(p), rivals: aiRivals(lent) }, finale: finaleOpen(p), threat: raidThreat(p) });
+    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory, targets: tonight(p), rivals: aiRivals(lent) }, finale: finaleOpen(p), threat: raidThreat(p) });
     const res = playState(s, skill, 500 + d);
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
     const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
@@ -175,9 +174,6 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
       front: NODES.filter((_, i) => frontNodes(h)[i]).map((n) => n.id),
       alive: s.outcome === "extracted",
       region,
-      event: s.event?.t ?? null,
-      crewsIn: s.stats.crewsIn,
-      crewsOut: s.stats.crewsOut,
       factory: p.factory,
       gained: settled.front.gained.length,
       lost: settled.front.lost.length,
@@ -202,7 +198,7 @@ export function campaignLines(runs: Campaign[]): string[] {
   const deepest = Math.max(...Object.values(TIER));
   const lines = [
     `${runs[0]?.days.length ?? 0} consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the ${NODES.length} the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of ${FACTORY_TOP})`,
-    ["skill    ", ...MARKS.map((m) => `day ${m}`.padEnd(10)), "alive".padEnd(6), "n(mean)".padEnd(8), "n(max)".padEnd(7), `tier 0-${deepest}: first day held`.padEnd(24), "days in".padEnd(39), "events d/s/c".padEnd(13), "crews in/out"].join(" "),
+    ["skill    ", ...MARKS.map((m) => `day ${m}`.padEnd(10)), "alive".padEnd(6), "n(mean)".padEnd(8), "n(max)".padEnd(7), `tier 0-${deepest}: first day held`.padEnd(24), "days in".padEnd(39)].join(" "),
   ];
   for (const c of runs) {
     const at = (m: number) => c.days[m - 1];
@@ -216,9 +212,7 @@ export function campaignLines(runs: Campaign[]): string[] {
       return k < 0 ? "-" : String(k + 1);
     }).join("/");
     const regions = REGIONS.map((r) => `${r.id} ${c.days.filter((d) => d.region === r.id).length}`).join(" ");
-    const ev = (k: string) => c.days.filter((d) => d.event === k).length;
-    const sum = (f: (d: Campaign["days"][number]) => number) => c.days.reduce((n, d) => n + f(d), 0);
-    lines.push([c.skill.padEnd(9), ...cells, `${Math.round(alive * 100)}%`.padEnd(6), mean.toFixed(1).padEnd(8), String(most).padEnd(7), tiers.padEnd(24), regions.padEnd(39), `${ev("debris")}/${ev("storm")}/${ev("crews")}`.padEnd(13), `${sum((d) => d.crewsIn)}/${sum((d) => d.crewsOut)}`].join(" "));
+    lines.push([c.skill.padEnd(9), ...cells, `${Math.round(alive * 100)}%`.padEnd(6), mean.toFixed(1).padEnd(8), String(most).padEnd(7), tiers.padEnd(24), regions.padEnd(39)].join(" "));
   }
   // The nodes that changed hands overnight, all told, and how long the raids were.
   lines.push(["front    ", "nodes gained / lost overnight".padEnd(30), "raid min (med)"].join(" "));
@@ -265,7 +259,6 @@ export function campaignLines(runs: Campaign[]): string[] {
   lines.push(`ai islands (came days, first day / nodes taken / most held): ${runs.map((c) => `${c.skill} ${c.days.filter((d) => d.aiCame).length}, ${c.days.findIndex((d) => d.aiCame) + 1 || "-"} / ${c.days.reduce((n, d) => n + d.aiTook, 0)} / ${Math.max(0, ...c.days.map((d) => d.aiHeld))}`).join(" / ")}`);
   lines.push(`ai islands by day (. none, o came, X took): ${runs.map((c) => `${c.skill} ${c.days.map((d) => (d.aiTook ? "X" : d.aiCame ? "o" : ".")).join("")}`).join(" / ")}`);
   lines.push(`rounds: ${runs.map((c) => `${c.skill} fought the titan on ${c.days.filter((d) => d.finale).length} days, freed the island ${c.days.map((d, k) => (d.liberated ? `on day ${k + 1} (${d.liberated} days)` : "")).filter(Boolean).join(", ") || "never"}`).join(" / ")}`);
-  lines.push("events: days with a debris fall / storm / crews' visit; crews in/out: salvage crews that came and got off");
   return lines;
 }
 

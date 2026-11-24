@@ -5,8 +5,8 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, poiIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
-import type { IslandEvent, PoiHold } from "../sim/island";
+import { BOXES, CAMP, NODES, nodeIndex, poiIndex, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import type { PoiHold } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
@@ -324,10 +324,6 @@ export const ROGUE_CSS = UI.rogue;
 export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "routes" | "found"> & {
   player?: Pick<Player, "pos" | "yaw">;
   ally?: Pick<Ally, "active" | "pos" | "down">;
-  /** The debris crate of the day's debris fall, or null. */
-  debris?: { x: number; z: number; open: boolean } | null;
-  /** The salvage crews' members in the player's sight. */
-  crews?: readonly { x: number; z: number }[];
   /** The highest threat each POI was freed at (by POI index), shown by its mark when above 0. */
   best?: readonly number[];
   /** The squads the player has seen or heard out between the POIs, and the raid's clock they are timed by. */
@@ -401,10 +397,7 @@ type Rect = { x0: number; y0: number; x1: number; y1: number };
 export const SIDE_CSS: Record<Side, string> = { 0: UI.ownBright, 1: UI.alert, 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number; incoming?: readonly { node: NodeId }[] }): MapScene {
-  // Today's debris fall is marked on the map table where the piece will lie.
-  const ev = p.events?.[0];
-  const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number; incoming?: readonly { node: NodeId }[] }): MapScene {
   return {
     seen: decodeSeen(p.seen),
     cleared: POIS.map(() => false),
@@ -412,7 +405,6 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     depots: DEPOTS.map((d) => p.depots.includes(d.poi)),
     routes: [...p.routes],
     found: [],
-    debris: spot && { x: spot.x, z: spot.z, open: false },
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
     finale: finaleOpen(p),
@@ -1317,40 +1309,6 @@ export class IslandMap {
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
-    // The debris crate: a gold shard, grey once opened.
-    if (s.debris && !plain) {
-      const p = at(s.debris.x, s.debris.z);
-      const d = 7 * dpr;
-      g.save();
-      g.lineWidth = 2.5 * dpr;
-      g.strokeStyle = alpha(UI.night, 0.9);
-      g.fillStyle = s.debris.open ? UI.slateDim : UI.debris;
-      g.beginPath();
-      g.moveTo(p.x + d * 0.2, p.y - d);
-      g.lineTo(p.x + d * 0.8, p.y - d * 0.1);
-      g.lineTo(p.x - d * 0.1, p.y + d);
-      g.lineTo(p.x - d * 0.7, p.y + d * 0.05);
-      g.closePath();
-      g.fill();
-      g.stroke();
-      g.restore();
-      const text = "破片";
-      const spot = box(text, p.x, p.y + 14 * dpr, 9);
-      if (free(spot)) {
-        taken.push(spot);
-        label(text, p.x, p.y + 14 * dpr, s.debris.open ? UI.parchDim : UI.hotLight, 9);
-      }
-    }
-    // Salvage crew members in sight: small rust squares.
-    for (const c of plain ? [] : (s.crews ?? [])) {
-      const p = at(c.x, c.z);
-      const r = 3 * dpr;
-      g.fillStyle = UI.crews;
-      g.strokeStyle = alpha(UI.night, 0.9);
-      g.lineWidth = 1.5 * dpr;
-      g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
-      g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
-    }
     // The outposts: a small grey square, a place to loot that is no node of the front.
     for (const o of plain ? [] : OUTPOST_SITES) {
       const p = at(o.x, o.z);

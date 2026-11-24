@@ -4,7 +4,7 @@ import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awar
 import { POIS } from "./map";
 import { terrainHeight } from "./terrain";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
-import { bodyY, forward, mix, rand, squadKey, weakY, type Enemy, type SquadState, type State, type Vec3, type Weapon } from "./state";
+import { bodyY, forward, mix, rand, squadKey, weakY, type Enemy, type State, type Vec3, type Weapon } from "./state";
 import { hypot2, hypot3 } from "./hypot";
 
 /*
@@ -301,21 +301,6 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
   }
 }
 
-/**
- * A salvage crew's last member is down: its bag falls at its feet, each valuable as from the bin
- * it was taken out of, so a fetch contract counts it. Thrown round in a ring, drawing nothing.
- */
-function dropBag(s: State, sq: SquadState, at: Vec3, byPlayer = true) {
-  if (byPlayer) s.stats.crewsDown++;
-  const bag = sq.bag ?? [];
-  bag.forEach((v, n) => {
-    const a = (n / Math.max(1, bag.length)) * Math.PI * 2;
-    s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: VALUABLES[v].rarity, from: sq.bagAt?.[n] ?? -1, pos: { ...at }, vel: { x: Math.cos(a) * 1.8, y: 4.5, z: Math.sin(a) * 1.8 }, age: 0 });
-  });
-  sq.bag = [];
-  sq.bagAt = [];
-}
-
 const SHARDS = { drone: 1, grunt: 1, charger: 1, heavy: 3, titan: 0 } as const;
 
 export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = "player") {
@@ -323,7 +308,6 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
   const sq = s.squads[e.squad];
   if (sq && !s.enemies.some((o) => o.squad === e.squad)) {
     s.stats.wiped.push(squadKey(sq));
-    if (sq.crew) dropBag(s, sq, bodyCenter(e));
   }
   s.stats.kills++;
   if (by === "ally") s.stats.allyKills++;
@@ -346,14 +330,12 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
 
 /**
  * A robot destroyed by the other faction's fire (see FACTION): it drops what it would for the
- * player, and a salvage crew's last its bag, for whoever comes by after the fight; none of it
- * counts as the player's (no kill, no squad destroyed for a contract).
+ * player, for whoever comes by after the fight; none of it counts as the player's (no kill, no
+ * squad destroyed for a contract).
  */
 export function fall(s: State, e: Enemy, by: Enemy | null) {
   s.enemies = s.enemies.filter((o) => o !== e);
-  const sq = s.squads[e.squad];
   const c = bodyCenter(e);
-  if (sq?.crew && !s.enemies.some((o) => o.squad === e.squad)) dropBag(s, sq, c, false);
   spoils(s, e, c);
   const from = by?.pos ?? e.pos;
   s.events.push({ t: "fall", id: e.id, kind: e.kind, pos: c, rogue: !!e.rogue, ...(e.rival !== undefined && { rival: true as const }), fromX: from.x, fromZ: from.z });

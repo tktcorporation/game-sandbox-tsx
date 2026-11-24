@@ -58,7 +58,6 @@ function raid(p: Profile, battle: BattleStart, seed = 21): State {
   const s = newRun(seed, starterKit(), "reservoir", { island: holds(p), battle });
   s.reinforceT = s.raiderT = 1e9;
   s.parties = [];
-  s.crewsDue = [];
   s.ally.active = false;
   s.player.hp = 1e7;
   return s;

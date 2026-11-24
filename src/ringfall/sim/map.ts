@@ -3731,46 +3731,6 @@ export const MOBILES: Mobile[] = [
   { name: "渓谷の野良機", kind: "patrol", faction: "rogue", region: "launch", rank: 2, members: ["grunt", "charger"], nodes: [[-760, 330], [-820, 450], [-900, 515]] },
 ];
 
-export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
-
-/**
- * Where a piece of the ring can come down on a debris fall's day (`DEBRIS`): open, flat ground
- * between the POIs, clear of boxes, away from the ways in and the stops, so the wreck
- * (drawn by the view only) and its guards stand alone in the open. `region` is the region it
- * lies in; `place` words where it is for the event's line.
- */
-export interface DebrisSpot {
-  id: DebrisId;
-  region: RegionId;
-  place: string;
-  x: number;
-  z: number;
-  guards: Squad;
-}
-
-/** The debris crate's guards at (x, z): a heavy beside it, two drones over it. */
-const debrisGuards = (place: string, x: number, z: number): Squad => ({
-  name: `${place}の破片の守り`,
-  members: [
-    { kind: "heavy", x: x + 4, z: z + 3, face: E },
-    { kind: "drone", x: x - 5, z: z - 2, face: W },
-    { kind: "drone", x: x + 1, z: z - 6, face: N },
-  ],
-});
-
-export const DEBRIS_SPOTS: DebrisSpot[] = (
-  [
-    ["southwest", "reservoir", "南西の野", -200, 400],
-    ["easthill", "reservoir", "東の丘", 275, 145],
-    ["quarryeast", "reservoir", "採掘場の東の野", -160, 60],
-    ["townwest", "harbor", "港町の西の野", -110, -580],
-    ["eastshore", "harbor", "東の浜の野", 290, -670],
-    ["saltwest", "harbor", "塩田の西", -200, -880],
-  ] as const
-).map(([id, region, place, x, z]) => ({ id, region, place, x, z, guards: debrisGuards(place, x, z) }));
-
-export const debrisIndex = (id: DebrisId) => DEBRIS_SPOTS.findIndex((d) => d.id === id);
-
 export type RegionId = "reservoir" | "harbor" | "city" | "launch";
 
 export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore" | "bridgehead" | "railyard" | "railhead" | "cutting";

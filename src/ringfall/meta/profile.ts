@@ -3,8 +3,7 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, POIS, poiIndex, REGION
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, dayChange, departDepots, unlocked, type DayChange, type FrontChange, eventFor, firstEvents, heldIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
-import type { IslandEvent } from "../sim/island";
+import { advanceDay, dayChange, departDepots, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
@@ -29,7 +28,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 34;
+  v: 35;
   cash: number;
   stash: Item[];
   raids: number;
@@ -57,8 +56,6 @@ export interface Profile {
   day: number;
   /** Who holds each POI (meta/island.ts). */
   poiState: Island;
-  /** The island's events: today's (the next raid's) and tomorrow's, announced a day ahead (meta/island.ts). */
-  events: DayEvents;
   /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
   known: ModKind[];
   /**
@@ -162,7 +159,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 34,
+    v: 35,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -179,7 +176,6 @@ export function newProfile(seed = 1): Profile {
     routes: [],
     day: 1,
     poiState: newIsland(),
-    events: firstEvents(seed & 0xffff),
     known: [...MOD_START],
     threat: 0,
     freedAt: {},
@@ -536,8 +532,6 @@ export interface Settlement {
   spoils?: number;
   /** Credits the nodes this island's expeditions hold on other islands paid at this settle (`awayIncome()`); left out, none. */
   awayIncome?: number;
-  /** The day's island event the raid was played on, or null. */
-  event: IslandEvent | null;
   /** The 強度 the raid was played at. */
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
@@ -755,7 +749,6 @@ export function settle(p: Profile, s: State): Settlement {
     ...(liberated && { liberated }),
     ...(spoils > 0 && { spoils }),
     ...(away > 0 && { awayIncome: away }),
-    event: s.event ?? null,
     threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
     ...(trop.gained || trop.lost
@@ -924,12 +917,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
 /**
  * Accepts a stored profile only if it has the right shape. Older versions migrate forward;
  * v1–v33 fields `quests` / `board` / `taken` / `records` are ignored and dropped (v34).
+ * v1–v34 field `events` is ignored and dropped (v35).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -974,8 +968,9 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const v28 = typeof o.v === "number" && o.v >= 28;
   const v32 = typeof o.v === "number" && o.v >= 32;
   const trophies = v32 && Number.isFinite(o.trophies) ? Math.max(TROPHY.min, Math.min(TROPHY.max, Math.floor(o.trophies as number))) : TROPHY.start;
-  const out: Omit<Profile, "events"> = {
-    v: 34,
+  // Old quests / board / taken / records / events are dropped without reading (save compat).
+  return {
+    v: 35,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1009,10 +1004,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
     freedAt,
   };
-  const events: DayEvents = (o.v === 16 || v17) && Array.isArray(o.events) && o.events.length === 2 ? [parseEvent(o.events[0]), parseEvent(o.events[1])] : [null, null];
-  if (o.v !== 16 && !v17) events[1] = eventFor(out.seed, day + 1);
-  // Old quests / board / taken / records are dropped without reading (save compat).
-  return { ...out, events };
 }
 
 /** A saved `lastKit`: well-formed picks only, at most two weapons and a key per POI; anything unreadable, none. */

@@ -14,8 +14,7 @@ import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UN
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
-import { departDepots, eventName, finaleOpen, islandHolds, heldIncome, playerNodes, shopRarity, unlocked } from "../meta/island";
-import { eventRow } from "./events";
+import { departDepots, finaleOpen, islandHolds, heldIncome, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
 import { IslandMap, islandScene, RIVAL_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
@@ -961,9 +960,7 @@ export class Hub {
   marks(): Record<StationId, string> {
     const p = this.profile;
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    // Tomorrow's event is announced here a day ahead.
-    const coming = p.events[1];
-    const map = [coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
+    const map = [p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
@@ -1234,8 +1231,6 @@ export class Hub {
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
       `<div class="hub-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>` +
       `<div class="hub-row">${nodeRow(holds)}</div>` +
-      // A quiet day and a quiet tomorrow say nothing.
-      (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
       `</div></div>`
     );

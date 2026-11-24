@@ -139,7 +139,7 @@ The quest board (入門／今日の依頼／物語の依頼, `meta/quests.ts` / 
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 34), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 35), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -149,20 +149,11 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`; a save from before v35 drops `events`) and moves its
 start to one it may choose (`allowedStart()`).
-Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
-`advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
-the day (`eventFor()` in `meta/island.ts`), kept in `Profile.events` (today, tomorrow) and passed to
-the raid as `Start.event`. A debris fall puts a crate (`Bin.debris`, `DEBRIS`) and its guards at one
-of `DEBRIS_SPOTS` (`map.ts`; the wreck is drawn by the view only); a storm scales the robots' sight
-(`sightScale()`, `STORM`); a crews' visit brings a salvage crew. Salvage crews (`CREW`, only on a
-crews' visit, `crewsFor()`; `stepCrews()` in `world.ts`) beam into the starting region, walk to
-the unopened ground-level POI bins nearest by the walk, take each one's
-valuable into `SquadState.bag` (dropped with its bins' POIs when the last member dies, in
-`combat.ts`) and leave by the region's nearest way off (`Stats.crewsOut`), the bag lost. Crews and
-the debris guards draw on their
-own stream (`crewRand()`), so the raid's other random numbers are drawn as without them.
+Island day events (破片の落下 / 嵐 / 回収部隊: `EVENTS`, `DEBRIS`, `STORM`, `CREW`, `Profile.events`)
+were removed 2026-11-24 without feature flags (restore from Git history before that PR); night raids
+and the map table itself remain.
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
 leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`) and the explored map (`Profile.seen`);

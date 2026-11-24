@@ -61,7 +61,6 @@ function emptyRun(seed: number, kit: Kit): State {
   s.reinforceT = 1e9;
   s.raiderT = 1e9;
   s.parties = [];
-  s.crewsDue = [];
   s.ally.active = false;
   return s;
 }

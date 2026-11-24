@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, SUPPORT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, CONQUEST, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, SUPPORT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, senseUnseen, stepSquads } from "./awareness";
@@ -19,7 +19,7 @@ import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
 import { activePacks, garrison, netPlated, poiTier, tierPlated } from "./island";
 import { modScale } from "./mods";
-import { crewRand, mix, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { mix, rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 import { hypot2, hypot3 } from "./hypot";
 import { squadMembers } from "./members";
 
@@ -47,8 +47,6 @@ interface SpawnOpts {
   tier?: number;
   /** A drone pack's or a hunting party's: drawn from their own random numbers (`roamRand()`). */
   roam?: boolean;
-  /** A salvage crew's, the retake squad's or the debris guards': drawn from theirs (`crewRand()`). */
-  crew?: boolean;
   /** One of the rogues (see FACTION). */
   rogue?: boolean;
   /** One of another player's robots: that player's id. */
@@ -57,8 +55,8 @@ interface SpawnOpts {
   hashed?: boolean;
 }
 
-/** The random numbers robot `e` draws on: the crews' stream for a crew's, the retake squad's or the debris guards' (`Enemy.own`), else the raid's. */
-const draw = (s: State, e: Enemy) => (e.own ? crewRand(s) : rand(s));
+/** The random numbers robot `e` draws on: the raid's stream. */
+const draw = (s: State, _e?: Enemy) => rand(s);
 
 /** Where a robot asked to appear at (x, z) on `floor` (the ground when omitted) ends up: pushed out of solids, on its floor or at hover height. */
 export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = terrainHeight(x, z)): Vec3 {
@@ -74,7 +72,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   const id = s.nextId++;
   let k0 = 0;
   const hashed = () => mix(Math.imul(s.seed + 1, 0x85ebca6b) ^ Math.imul(id, 0x9e3779b1) ^ Math.imul(++k0, 0xc2b2ae35)) / 4294967296;
-  const pick = o.hashed ? hashed : o.crew ? crewRand : o.roam ? roamRand : rand;
+  const pick = o.hashed ? hashed : o.roam ? roamRand : rand;
   const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? pick(s) * Math.PI * 2;
   // A raised threat plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
@@ -131,7 +129,6 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     sawAt: null,
     finding: 0,
     duck: 0,
-    own: !!o.crew,
     rogue: o.rogue || undefined,
   };
   if (o.rival !== undefined) e.rival = o.rival;
@@ -548,7 +545,7 @@ export function stepEnemies(s: State) {
         // steers where it walks. The teammate is fought within its fighting sight alone.
         const eye = headOf(e);
         const reach = hypot3(tChest.x - eye.x, tChest.y - eye.y, tChest.z - eye.z);
-        const far = atAlly ? SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange : fireRange(s, e);
+        const far = atAlly ? SIGHT[e.kind].range * AWARE.engagedRange : fireRange(s, e);
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : reach < far)) {
           e.mode = "telegraph";
           e.timer = k.telegraph * (e.fired < SHOT.followWindow ? SHOT.follow : 1);
@@ -723,7 +720,7 @@ function friendTarget(s: State, e: Enemy) {
       best = "ally";
     }
   }
-  const far = SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
+  const far = SIGHT[e.kind].range * AWARE.engagedRange;
   const near = s.friends
     .filter((o) => o.mode !== "spawning" && hostile(e, o) && dist2d(e.pos, o.pos) < far)
     .sort((x, y) => dist2d(e.pos, x.pos) - dist2d(e.pos, y.pos))
@@ -799,7 +796,7 @@ function fightFoe(s: State, e: Enemy, foe: Enemy) {
       }
       const eye = headOf(e);
       const reach = hypot3(at.x - eye.x, at.y - eye.y, at.z - eye.z);
-      if (e.cooldown <= 0 && sees && reach < SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange) {
+      if (e.cooldown <= 0 && sees && reach < SIGHT[e.kind].range * AWARE.engagedRange) {
         e.mode = "telegraph";
         e.timer = k.telegraph;
         leadAim(e, at, foe.vel);
@@ -1117,12 +1114,12 @@ function calm(s: State, e: Enemy) {
   }
   const sq = s.squads[e.squad];
   if (sq?.walk) {
-    // A salvage crew or the retake squad walks to its point as a party walks to its stop, and
-    // stands there looking round until the raid gives it another (world.ts).
+    // A squad on a walk (siege walk-off) goes to its point as a party walks to its stop, and
+    // stands there looking round until the raid gives it another.
     const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const to = { x: sq.walk.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: sq.walk.z + slot * 1.4 };
-    const pace = slowest(members) * (sq.crew ? CREW.pace : PARTY.pace);
+    const pace = slowest(members) * (PARTY.pace);
     if (dist2d(e.pos, to) > 0.8) walkTo(e, tripStep(e, to), pace);
     else {
       moveBody(e, 0, 0);

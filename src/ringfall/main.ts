@@ -834,7 +834,6 @@ function start(go: Launch, from?: State) {
     entry: go.entry,
     routes: hub.profile.routes,
     island: shortRaid ? shortRaid.island : holds(hub.profile),
-    event: hub.profile.events[0],
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
     // 短いレイド: 自島バトルなし（ステージは他島コピーの数拠点）
@@ -1126,17 +1125,13 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt({ ...p.pos, yaw: p.yaw })?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
-    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     strength: s.strength,
     threat: s.threat,
     mods: p.mods,
     modsAround: s.loot.filter((l) => l.kind === "mod").map((l) => ({ mod: l.mod, x: +l.pos.x.toFixed(1), y: +l.pos.y.toFixed(1), z: +l.pos.z.toFixed(1) })),
-    event: s.event,
-    storm: s.storm,
-    debris: s.bins.filter((b) => b.debris).map((b) => ({ x: b.x, y: +b.y.toFixed(1), z: b.z, open: b.open }))[0] ?? null,
-    crews: s.squads.flatMap((q, i) => (q.crew ? [{ squad: i, members: s.enemies.filter((e) => e.squad === i).map((e) => ({ x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z) })), bin: q.crew.bin >= 0 ? { x: s.bins[q.crew.bin].x, y: s.bins[q.crew.bin].y, z: s.bins[q.crew.bin].z } : null, searching: q.crew.searchT > 0, bag: q.bag ?? [], leaving: q.crew.leaving }] : [])),
-    settled: settlement && { event: settlement.event, home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
@@ -1416,7 +1411,6 @@ window.ringfallMove = {
   quiet: () => {
     state.enemies = [];
     state.parties = [];
-    state.crewsDue = [];
     state.reinforceT = state.raiderT = 1e9;
   },
   look: (pitch) => {

@@ -61,7 +61,6 @@ function scene(seed: number, at: { x: number; z: number }) {
   s.visited = POIS.map(() => true);
   s.reinforceT = s.raiderT = 1e9;
   s.parties = [];
-  s.crewsDue = [];
   s.ally.active = false;
   const p = s.player;
   p.pos = { x: at.x, y: groundAt(at.x, at.z, 0.4, terrainHeight(at.x, at.z) + 2), z: at.z };

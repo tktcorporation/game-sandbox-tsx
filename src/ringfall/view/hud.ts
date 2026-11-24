@@ -13,10 +13,10 @@ import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
 import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
-import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
+import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
-import { callLeft, debrisBin, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulAndSentWorth } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
@@ -25,8 +25,7 @@ import { sfx } from "./sfx";
 import { nodeRow } from "./row";
 import { currentStep, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
 import type { World } from "./world";
-import { eventRow, raidEventLine } from "./events";
-import { CREW, FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
+import { FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon, nightIcon } from "./icons";
@@ -557,10 +556,6 @@ export class Hud {
       case "timeUp":
         this.banner("時間切れ");
         break;
-      case "crewOut":
-        // Heard over the radio wherever the player is: the crew has the bag now.
-        this.toast(`${CREW.name}${crossIcon()}${bagIcon()}${e.n}`, 0, 4000);
-        break;
       case "ultReady":
         this.toast(isTouch() ? "離脱ジャンプ" : "<kbd>Z</kbd> 離脱ジャンプ", 3);
         break;
@@ -606,10 +601,8 @@ export class Hud {
     }
     if (this.mapOpen) {
       if (s.phase === "done") this.toggleMap(false);
-      // The debris crate is marked; a salvage crew only while the player can see one of it.
       else {
-        const crate = debrisBin(s);
-        this.map.draw({ ...s, debris: crate && { x: crate.x, z: crate.z, open: crate.open }, crews: crewsInSight(s) });
+        this.map.draw({ ...s });
         // The key names another player only while one holds a node or has a squad on the island.
         const rivals = s.nodes.some((h) => rivalOf(h) !== null) || !!s.battle?.squads.some((q) => q.side === 3);
         document.querySelectorAll<HTMLElement>("#map .map-rival").forEach((el) => {
@@ -640,9 +633,6 @@ export class Hud {
     // The use key's focused target: one ring in the world, matching the prompt.
     view.setUseMark(s.phase === "play" ? useFocusMark(s) : null);
     this.compassMark(s, step?.at ?? null);
-    const oe = $("obj-event");
-    oe.hidden = !s.event;
-    if (s.event) setHtml(oe, raidEventLine(s));
     const bagCells = this.bagCells(p);
     this.bag.frame(s, dt, bagCells);
     // Worth only once something is carried: an empty "回収 0" is noise on a fresh spawn.
@@ -1586,14 +1576,6 @@ export class Hud {
       settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated || settled?.trophies
         ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}${settled.trophies ? `<span>${TERM.trophy}<b>${settled.trophies.before} → ${settled.trophies.after}</b></span>` : ""}</p>`
         : "";
-    // The day's event and how it went: the salvage crews met.
-    const ev = settled?.event ?? s.event;
-    const outcome: string[] = [];
-    if (st.crewsIn)
-      outcome.push(
-        `<span class="contract${st.crewsOut ? " failed" : " done"}">${CREW.name} ${st.crewsIn}・箱 ${st.crewBins}<b>${[st.crewsDown ? `撃破 ${st.crewsDown}` : "", st.crewsOut ? `逃走 ${st.crewsOut}` : ""].filter(Boolean).join("・") || "—"}</b></span>`,
-      );
-    const events = ev || outcome.length ? `<h3>島の出来事</h3><p>${ev ? eventRow(ev) : ""}${outcome.join("")}</p>` : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
     const overnight = overnightDefence(s, settled);
@@ -1614,7 +1596,6 @@ export class Hud {
       growth +
       defence +
       `<div id="island-news">${newsBlock(allNews)}</div>` +
-      events +
       (settled
         ? (sent.length ? `<h3 class="mark">${depotIcon()}${TERM.relayBox}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.
