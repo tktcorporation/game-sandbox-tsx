@@ -135,6 +135,8 @@ RINGFALL の長期の目的を「脱出艇を直して島を出る」から「�
 
 ## 島の出来事
 
+**いまはオフ**（`FEATURES.islandEvents`。理由と復活は [simplify-candidates.md](simplify-candidates.md) §0c）。オン時のみ次のとおり。
+
 毎日 0〜1 件の出来事が起きる。拠点の地図で前日に予告する。
 
 | 出来事 | その日の島 | 遊びへの効き方 |

@@ -26,7 +26,7 @@ import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
 import { NET_EDGE, NODES, FRONT_LINKS, nodeIndex, TIER, type NodeId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type PoiId, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
-import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
+import { campSpotAt, campSpotLive, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
 import { inArea } from "../src/ringfall/sim/areas";
 import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
 import { findPath } from "../src/ringfall/sim/nav";
@@ -49,7 +49,8 @@ import { squadsAway } from "../src/ringfall/meta/expeditions";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, FINALE, FORTIFY, MOMENTUM, NIGHT, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { finaleOpen, heldIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, nightTargets, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { FEATURES } from "../src/ringfall/meta/features";
+import { eventFor, eventsShown, finaleOpen, heldIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, nightTargets, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { activePacks } from "../src/ringfall/sim/island";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
@@ -282,6 +283,8 @@ function checkLayout(): string[] {
   point("camp gate inside", gx, CAMP.gate.z + 2, CAMP.y);
   point("camp gate outside", gx, CAMP.gate.z - 3, terrainHeight(gx, CAMP.gate.z - 3));
   for (const c of CAMP.spots) {
+    // A station off by feature flag (依頼板) is scenery only: campSpotAt skips it.
+    if (!campSpotLive(c.id)) continue;
     let found = false;
     for (let a = 0; a < Math.PI * 2 && !found; a += Math.PI / 16)
       for (const d of [c.reach - 0.3, c.reach - 0.8]) {
@@ -2176,6 +2179,15 @@ function checkStrength(): string | null {
  * is the one under way, and coming home with it moves the story on.
  */
 function checkContracts(): string | null {
+  // Revival path: board / take / settle pay only while 依頼板 is on.
+  FEATURES.questBoard = true;
+  try {
+  return checkContractsOn();
+  } finally {
+    FEATURES.questBoard = false;
+  }
+}
+function checkContractsOn(): string | null {
   const poisOf = (c: Contract) => (c.t === "intercept" ? -1 : poiIndex(c.poi));
   const islands = [
     newIsland(),
@@ -2339,6 +2351,14 @@ function checkContracts(): string | null {
 
 /** Quests open in order, count raids (kills even on a wipe), pay on finishing, and take deliveries. */
 function checkQuests(): string | null {
+  FEATURES.questBoard = true;
+  try {
+  return checkQuestsOn();
+  } finally {
+    FEATURES.questBoard = false;
+  }
+}
+function checkQuestsOn(): string | null {
   let p = newProfile();
   const first = offered(p.quests).map((q) => q.id).join();
   if (first !== "front,grunts,village") return `quest scenario: the first quests offered are ${first}`;
@@ -3632,118 +3652,133 @@ function checkTools(): string | null {
   return null;
 }
 /**
- * The island's events and the salvage crews: the schedule is drawn from the seed and the day and
- * announced a day ahead; a debris fall puts its crate and guards at its spot; the retake squad
- * comes to the freed POI and, left alive, thins it overnight, and the defend contract is done when
- * it falls; a storm cuts the robots' sight to `STORM.sight`; a crew takes a bin's valuable into
- * its bag, drops the bag when destroyed, and raises the network a step when it gets off.
+ * The island's events and the salvage crews. Default play keeps `FEATURES.islandEvents` off
+ * (quiet schedule, no apply); the revival path turns it on and checks the schedule, debris,
+ * storm and crews as before.
  */
 function checkEvents(): string | null {
-  // The schedule: tomorrow's event becomes today's, the same profile gives the same days, and about one day in two has one.
-  const quiet: RaidDay = { alive: true, cleared: [], visited: [], titan: false };
-  const p: Profile = newProfile(23);
-  if (p.events[0] !== null) return "event scenario: the first day has an event";
-  let q: Profile = p;
-  let count = 0;
-  const kinds = new Set<string>();
-  for (let d = 0; d < 80; d++) {
-    const ahead = q.events[1];
-    const next = advanceDay({ ...q, seed: nextSeed(q.seed) }, { ...quiet, visited: POIS.map((o) => o.id) }).profile;
-    const again = advanceDay({ ...q, seed: nextSeed(q.seed) }, { ...quiet, visited: POIS.map((o) => o.id) }).profile;
-    if (JSON.stringify(next.events) !== JSON.stringify(again.events)) return "event scenario: the same day drew two schedules";
-    if (JSON.stringify(next.events[0]) !== JSON.stringify(ahead)) return `event scenario: day ${next.day} has ${JSON.stringify(next.events[0])}, announced as ${JSON.stringify(ahead)}`;
-    if (next.events[0]) {
-      count++;
-      kinds.add(next.events[0].t);
-    }
-    q = next;
-  }
-  if (count < 25 || count > 55 || kinds.size !== 3) return `event scenario: 80 days had ${count} events of kinds ${[...kinds].join()}`;
-  // Debris: each spot has its crate (from no POI) and its guards, and the rest of the raid is drawn as on a quiet day.
-  for (const d of DEBRIS_SPOTS) {
-    const calm = newRun(41, starterKit(), d.region);
-    const s = newRun(41, starterKit(), d.region, { event: { t: "debris", spot: d.id } });
-    const crate = debrisBin(s);
-    if (!crate || dist2d(crate, d) > 0.1 || !crate.outside) return `event scenario: debris at ${d.id} has crate ${JSON.stringify(crate)}`;
-    const guards = s.squads.findIndex((sq) => sq.name === d.guards.name);
-    const kindsAt = s.enemies.filter((e) => e.squad === guards).map((e) => e.kind).sort().join();
-    if (kindsAt !== [...DEBRIS.guards].sort().join()) return `event scenario: debris at ${d.id} is guarded by ${kindsAt}`;
-    if (s.rng !== calm.rng || s.bins.length !== calm.bins.length + 1) return `event scenario: debris at ${d.id} changed the raid's random numbers or bins`;
-    if (regionHere(d).id !== d.region) return `event scenario: debris ${d.id} lies in ${regionHere(d).id}`;
-    s.player.pos = { x: crate.x, y: crate.y, z: crate.z + 1 };
-    s.enemies = [];
-    s.player.search = { bin: s.bins.indexOf(crate), t: 99 };
-    step(s, idleInput(), false);
-    const vals = s.loot.filter((l) => l.kind === "valuable");
-    if (vals.length !== DEBRIS.count || vals.some((l) => l.from !== -1 || !DEBRIS.valuables.some(([k]) => k === l.valuable))) return `event scenario: the debris crate at ${d.id} held ${JSON.stringify(vals.map((l) => [l.valuable, l.from]))}`;
-  }
-  // A crews' visit brings a crew and a crew intercept on the board; no crew comes on another day.
-  const visit = makeBoard({ ...newProfile(9), events: [{ t: "crews" }, null] });
-  if (!visit.contracts.some((c) => c.t === "intercept" && c.target.t === "crew")) return "event scenario: a crews' visit has no intercept of the crew";
-  const due = (event: { t: "crews" } | null) => newRun(77, starterKit(), "reservoir", { event }).crewsDue.length;
-  if (due(null) !== 0 || due({ t: "crews" }) !== 1) return `event scenario: ${due(null)} crews come, ${due({ t: "crews" })} on a crews' visit`;
-  // Storm: a grunt sees the player at 0.8 of its range on a clear day, not in a storm.
-  const spot = openSpot(40, 4, 4);
-  if (!spot) return "event scenario: no open ground for the storm";
-  for (const storm of [false, true]) {
-    const { s: t, foes } = standoff(spot, SIGHT.grunt.range * 0.8, ["grunt"]);
-    const e = foes[0];
-    t.squads[e.squad].engaged = false;
-    e.aware = "idle";
-    t.storm = storm;
-    if (sense(t, e) === storm) return `event scenario: a grunt at ${(SIGHT.grunt.range * 0.8).toFixed(0)} m ${storm ? "saw the player in a storm" : "did not see the player on a clear day"}`;
-    const want = SIGHT.grunt.range * AWARE.engagedRange * (storm ? STORM.sight : 1);
-    if (Math.abs(fireRange(t, e) - want) > 1e-6) return `event scenario: a grunt fires out to ${fireRange(t, e)} m, not ${want}, ${storm ? "in a storm" : "on a clear day"}`;
-  }
-  // A crew that never meets the player draws nothing from the raid's numbers: they stand as on a raid without crews.
-  // The crew of seed 1000 beams in about 200 m of walking from its first bin, and has searched it by 330 s.
-  // The crews are the rogues', and the network's squads out between the POIs would fight them (see
-  // FACTION, checked by checkFactions()): these scenarios are played without those squads.
+  // Off (default): no draw, no apply, UI helper stays quiet even when a save still holds a schedule.
   {
-    const quietRun = (crews: boolean) => {
-      const t = withoutWalkers(newRun(1000, starterKit(), "reservoir", { event: { t: "crews" } }));
-      if (!crews) t.crewsDue = [];
-      for (let k = 0; k < 330 / TICK; k++) step(t, idleInput(), false);
-      return t;
-    };
-    const a = quietRun(true);
-    const b = quietRun(false);
-    if (!a.stats.crewBins) return "event scenario: the quiet crew took no bin in 330 s";
-    if (a.rng !== b.rng || a.roamRng !== b.roamRng) return `event scenario: a crew out of the player's way left the raid's numbers ${a.rng}/${a.roamRng}, not ${b.rng}/${b.roamRng} (${a.stats.crewBins} bins taken)`;
+    if (FEATURES.islandEvents) return "event scenario: islandEvents should default off";
+    if (eventFor(23, 2) !== null) return "event scenario: eventFor drew while islandEvents is off";
+    const p = newProfile(23);
+    if (p.events[0] !== null || p.events[1] !== null) return `event scenario: a new profile drew events while off (${JSON.stringify(p.events)})`;
+    const next = advanceDay({ ...p, seed: nextSeed(p.seed) }, { alive: true, cleared: [], visited: POIS.map((o) => o.id), titan: false }).profile;
+    if (next.events[0] !== null || next.events[1] !== null) return `event scenario: advanceDay drew events while off (${JSON.stringify(next.events)})`;
+    if (eventsShown([{ t: "storm" }, { t: "crews" }])[0] !== null) return "event scenario: eventsShown leaked a saved schedule while off";
+    const forced = newRun(77, starterKit(), "reservoir", { event: { t: "crews" } });
+    if (forced.event || forced.storm || forced.crewsDue.length || debrisBin(forced)) return "event scenario: Start.event was applied while islandEvents is off";
   }
-  // Crews: one comes, takes a bin's valuable into its bag (nothing spills), and drops the bag when destroyed.
-  const c = withoutWalkers(newRun(1000, starterKit(), "reservoir", { event: { t: "crews" } }));
-  c.player.hp = 1e9;
-  let looted = -1;
-  for (let t = 0; t < 400 / TICK && looted < 0; t++) {
-    step(c, idleInput(), false);
+  // On (revival): the schedule, debris, storm and crews as before.
+  FEATURES.islandEvents = true;
+  try {
+    const quiet: RaidDay = { alive: true, cleared: [], visited: [], titan: false };
+    const p: Profile = newProfile(23);
+    if (p.events[0] !== null) return "event scenario: the first day has an event";
+    let q: Profile = p;
+    let count = 0;
+    const kinds = new Set<string>();
+    for (let d = 0; d < 80; d++) {
+      const ahead = q.events[1];
+      const next = advanceDay({ ...q, seed: nextSeed(q.seed) }, { ...quiet, visited: POIS.map((o) => o.id) }).profile;
+      const again = advanceDay({ ...q, seed: nextSeed(q.seed) }, { ...quiet, visited: POIS.map((o) => o.id) }).profile;
+      if (JSON.stringify(next.events) !== JSON.stringify(again.events)) return "event scenario: the same day drew two schedules";
+      if (JSON.stringify(next.events[0]) !== JSON.stringify(ahead)) return `event scenario: day ${next.day} has ${JSON.stringify(next.events[0])}, announced as ${JSON.stringify(ahead)}`;
+      if (next.events[0]) {
+        count++;
+        kinds.add(next.events[0].t);
+      }
+      q = next;
+    }
+    if (count < 25 || count > 55 || kinds.size !== 3) return `event scenario: 80 days had ${count} events of kinds ${[...kinds].join()}`;
+    // Debris: each spot has its crate (from no POI) and its guards, and the rest of the raid is drawn as on a quiet day.
+    for (const d of DEBRIS_SPOTS) {
+      const calm = newRun(41, starterKit(), d.region);
+      const s = newRun(41, starterKit(), d.region, { event: { t: "debris", spot: d.id } });
+      const crate = debrisBin(s);
+      if (!crate || dist2d(crate, d) > 0.1 || !crate.outside) return `event scenario: debris at ${d.id} has crate ${JSON.stringify(crate)}`;
+      const guards = s.squads.findIndex((sq) => sq.name === d.guards.name);
+      const kindsAt = s.enemies.filter((e) => e.squad === guards).map((e) => e.kind).sort().join();
+      if (kindsAt !== [...DEBRIS.guards].sort().join()) return `event scenario: debris at ${d.id} is guarded by ${kindsAt}`;
+      if (s.rng !== calm.rng || s.bins.length !== calm.bins.length + 1) return `event scenario: debris at ${d.id} changed the raid's random numbers or bins`;
+      if (regionHere(d).id !== d.region) return `event scenario: debris ${d.id} lies in ${regionHere(d).id}`;
+      s.player.pos = { x: crate.x, y: crate.y, z: crate.z + 1 };
+      s.enemies = [];
+      s.player.search = { bin: s.bins.indexOf(crate), t: 99 };
+      step(s, idleInput(), false);
+      const vals = s.loot.filter((l) => l.kind === "valuable");
+      if (vals.length !== DEBRIS.count || vals.some((l) => l.from !== -1 || !DEBRIS.valuables.some(([k]) => k === l.valuable))) return `event scenario: the debris crate at ${d.id} held ${JSON.stringify(vals.map((l) => [l.valuable, l.from]))}`;
+    }
+    // A crews' visit brings a crew and a crew intercept on the board; no crew comes on another day.
+    const visit = makeBoard({ ...newProfile(9), events: [{ t: "crews" }, null] });
+    if (!visit.contracts.some((c) => c.t === "intercept" && c.target.t === "crew")) return "event scenario: a crews' visit has no intercept of the crew";
+    const due = (event: { t: "crews" } | null) => newRun(77, starterKit(), "reservoir", { event }).crewsDue.length;
+    if (due(null) !== 0 || due({ t: "crews" }) !== 1) return `event scenario: ${due(null)} crews come, ${due({ t: "crews" })} on a crews' visit`;
+    // Storm: a grunt sees the player at 0.8 of its range on a clear day, not in a storm.
+    const spot = openSpot(40, 4, 4);
+    if (!spot) return "event scenario: no open ground for the storm";
+    for (const storm of [false, true]) {
+      const { s: t, foes } = standoff(spot, SIGHT.grunt.range * 0.8, ["grunt"]);
+      const e = foes[0];
+      t.squads[e.squad].engaged = false;
+      e.aware = "idle";
+      t.storm = storm;
+      if (sense(t, e) === storm) return `event scenario: a grunt at ${(SIGHT.grunt.range * 0.8).toFixed(0)} m ${storm ? "saw the player in a storm" : "did not see the player on a clear day"}`;
+      const want = SIGHT.grunt.range * AWARE.engagedRange * (storm ? STORM.sight : 1);
+      if (Math.abs(fireRange(t, e) - want) > 1e-6) return `event scenario: a grunt fires out to ${fireRange(t, e)} m, not ${want}, ${storm ? "in a storm" : "on a clear day"}`;
+    }
+    // A crew that never meets the player draws nothing from the raid's numbers: they stand as on a raid without crews.
+    // The crew of seed 1000 beams in about 200 m of walking from its first bin, and has searched it by 330 s.
+    // The crews are the rogues', and the network's squads out between the POIs would fight them (see
+    // FACTION, checked by checkFactions()): these scenarios are played without those squads.
+    {
+      const quietRun = (crews: boolean) => {
+        const t = withoutWalkers(newRun(1000, starterKit(), "reservoir", { event: { t: "crews" } }));
+        if (!crews) t.crewsDue = [];
+        for (let k = 0; k < 330 / TICK; k++) step(t, idleInput(), false);
+        return t;
+      };
+      const a = quietRun(true);
+      const b = quietRun(false);
+      if (!a.stats.crewBins) return "event scenario: the quiet crew took no bin in 330 s";
+      if (a.rng !== b.rng || a.roamRng !== b.roamRng) return `event scenario: a crew out of the player's way left the raid's numbers ${a.rng}/${a.roamRng}, not ${b.rng}/${b.roamRng} (${a.stats.crewBins} bins taken)`;
+    }
+    // Crews: one comes, takes a bin's valuable into its bag (nothing spills), and drops the bag when destroyed.
+    const c = withoutWalkers(newRun(1000, starterKit(), "reservoir", { event: { t: "crews" } }));
     c.player.hp = 1e9;
-    c.player.downed = 0;
-    for (const e of c.events) if (e.t === "crewLoot") looted = c.bins.findIndex((b) => b.id === e.id);
+    let looted = -1;
+    for (let t = 0; t < 400 / TICK && looted < 0; t++) {
+      step(c, idleInput(), false);
+      c.player.hp = 1e9;
+      c.player.downed = 0;
+      for (const e of c.events) if (e.t === "crewLoot") looted = c.bins.findIndex((b) => b.id === e.id);
+    }
+    const crew = c.squads.findIndex((o) => o.crew);
+    if (looted < 0 || crew < 0) return "event scenario: no crew looted a bin in 400 s";
+    const bin = c.bins[looted];
+    const cq = c.squads[crew];
+    if (!bin.open || cq.bag?.length !== 1 || cq.bagAt?.[0] !== bin.poi || c.loot.some((l) => dist2d(l.pos, bin) < 3 && l.kind === "valuable")) return `event scenario: a crew's search left bin open ${bin.open}, bag ${JSON.stringify(cq.bag)}`;
+    const before = c.loot.length;
+    for (const e of c.enemies.filter((o) => o.squad === crew)) kill(c, e, false);
+    const dropped = c.loot.slice(before).filter((l) => l.kind === "valuable" && l.from === bin.poi && l.valuable === cq.bag?.[0]);
+    if (!dropped.length && !c.loot.slice(before).some((l) => l.kind === "valuable" && l.from === bin.poi)) return "event scenario: a destroyed crew dropped no bag";
+    if (c.stats.crewsDown !== 1 || !c.stats.wiped.includes(crewKey("reservoir"))) return "event scenario: a destroyed crew was not counted";
+    // A crew that gets off is counted.
+    const o = withoutWalkers(newRun(1000, starterKit(), "reservoir", { event: { t: "crews" } }));
+    for (let t = 0; t < 80 / TICK; t++) step(o, idleInput(), false);
+    const oq = o.squads.findIndex((x) => x.crew);
+    if (oq < 0) return "event scenario: no crew came in 80 s";
+    o.squads[oq].crew!.t = CREW.leaveAfter;
+    for (let t = 0; t < 2 / TICK; t++) step(o, idleInput(), false);
+    const exit = EXTRACTS.find((x) => x.id === o.squads[oq].crew!.leaving);
+    if (!exit) return "event scenario: a crew past its time did not make for a way off";
+    for (const e of o.enemies.filter((x) => x.squad === oq)) e.pos = { x: exit.x, y: groundAt(exit.x, exit.z, 0.4, 99), z: exit.z };
+    for (let t = 0; t < 1 / TICK; t++) step(o, idleInput(), false);
+    if (o.stats.crewsOut !== 1 || o.enemies.some((x) => x.squad === oq)) return `event scenario: a crew at its way off did not beam out (${o.stats.crewsOut})`;
+    return null;
+  } finally {
+    FEATURES.islandEvents = false;
   }
-  const crew = c.squads.findIndex((o) => o.crew);
-  if (looted < 0 || crew < 0) return "event scenario: no crew looted a bin in 400 s";
-  const bin = c.bins[looted];
-  const cq = c.squads[crew];
-  if (!bin.open || cq.bag?.length !== 1 || cq.bagAt?.[0] !== bin.poi || c.loot.some((l) => dist2d(l.pos, bin) < 3 && l.kind === "valuable")) return `event scenario: a crew's search left bin open ${bin.open}, bag ${JSON.stringify(cq.bag)}`;
-  const before = c.loot.length;
-  for (const e of c.enemies.filter((o) => o.squad === crew)) kill(c, e, false);
-  const dropped = c.loot.slice(before).filter((l) => l.kind === "valuable" && l.from === bin.poi && l.valuable === cq.bag?.[0]);
-  if (!dropped.length && !c.loot.slice(before).some((l) => l.kind === "valuable" && l.from === bin.poi)) return "event scenario: a destroyed crew dropped no bag";
-  if (c.stats.crewsDown !== 1 || !c.stats.wiped.includes(crewKey("reservoir"))) return "event scenario: a destroyed crew was not counted";
-  // A crew that gets off is counted.
-  const o = withoutWalkers(newRun(1000, starterKit(), "reservoir", { event: { t: "crews" } }));
-  for (let t = 0; t < 80 / TICK; t++) step(o, idleInput(), false);
-  const oq = o.squads.findIndex((x) => x.crew);
-  if (oq < 0) return "event scenario: no crew came in 80 s";
-  o.squads[oq].crew!.t = CREW.leaveAfter;
-  for (let t = 0; t < 2 / TICK; t++) step(o, idleInput(), false);
-  const exit = EXTRACTS.find((x) => x.id === o.squads[oq].crew!.leaving);
-  if (!exit) return "event scenario: a crew past its time did not make for a way off";
-  for (const e of o.enemies.filter((x) => x.squad === oq)) e.pos = { x: exit.x, y: groundAt(exit.x, exit.z, 0.4, 99), z: exit.z };
-  for (let t = 0; t < 1 / TICK; t++) step(o, idleInput(), false);
-  if (o.stats.crewsOut !== 1 || o.enemies.some((x) => x.squad === oq)) return `event scenario: a crew at its way off did not beam out (${o.stats.crewsOut})`;
-  return null;
 }
 /** The raid `s` without the robots out between the POIs (on walks, on the roads, at the outposts, the packs and the parties): its POIs' garrisons only. */
 function withoutWalkers(s: State): State {
@@ -3986,6 +4021,15 @@ function checkMods(): string | null {
  * `NETWORK.relayHigh.at` takes it `relayHigh.steps` down. Saves before v17 load at threat 0.
  */
 function checkThreat(): string | null {
+  // Contract pay / 強度-on-taken need the 依頼板; restore the default off after.
+  FEATURES.questBoard = true;
+  try {
+  return checkThreatOn();
+  } finally {
+    FEATURES.questBoard = false;
+  }
+}
+function checkThreatOn(): string | null {
   // The island at each of the enemy's strengths: the player holding none, three or all of the nodes.
   for (const k of [0, 3, NODES.length]) {
     const island = holds({ poiState: { ...newIsland(), ...Object.fromEntries(NODES.slice(0, k).map((o) => [o.id, { state: "own" as const }])) } });

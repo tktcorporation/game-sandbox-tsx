@@ -11,7 +11,7 @@ import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { islandHolds } from "../meta/island";
+import { eventsShown, islandHolds } from "../meta/island";
 import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
@@ -24,7 +24,7 @@ import { IslandMap, islandScene, shieldedBy } from "./map";
 import { sfx } from "./sfx";
 import { nodeRow } from "./row";
 import { CONTRACT_NAME, contractMark, contractTask, contractText, type Contract } from "../meta/contracts";
-import { questBoardOn } from "../meta/features";
+import { islandEventsOn, questBoardOn } from "../meta/features";
 import { currentStep, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
 import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
@@ -1430,7 +1430,7 @@ export class Hud {
     // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
-    const end = islandScene(settled.profile);
+    const end = islandScene({ ...settled.profile, events: eventsShown(settled.profile.events) });
     // The player's nodes after each beat, from the day's end back.
     const after = (ids: Set<string>, c: { gained: readonly string[]; lost: readonly string[] }, back: boolean) => {
       const out = new Set(ids);
@@ -1638,10 +1638,10 @@ export class Hud {
     const contract = c
       ? `<h3>依頼${settled?.threat ? `（強度 ${settled.threat}）` : ""}</h3><p><span class="contract ${c.done ? "done" : "failed"}"><span><em class="ask-kind">${CONTRACT_NAME[c.c.t]}</em>${contractMarks(c.c)}</span><b>${c.done ? `${checkIcon()}${c.cash ?? c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : crossIcon()}</b></span></p>`
       : "";
-    // The day's event and how it went: the salvage crews met.
-    const ev = settled?.event ?? s.event;
+    // The day's event and how it went: the salvage crews met. Hidden while 島の出来事 are off.
+    const ev = islandEventsOn() ? (settled?.event ?? s.event) : null;
     const outcome: string[] = [];
-    if (st.crewsIn)
+    if (islandEventsOn() && st.crewsIn)
       outcome.push(
         `<span class="contract${st.crewsOut ? " failed" : " done"}">${CREW.name} ${st.crewsIn}・箱 ${st.crewBins}<b>${[st.crewsDown ? `撃破 ${st.crewsDown}` : "", st.crewsOut ? `逃走 ${st.crewsOut}` : ""].filter(Boolean).join("・") || "—"}</b></span>`,
       );

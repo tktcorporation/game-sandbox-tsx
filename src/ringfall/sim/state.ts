@@ -7,6 +7,7 @@ import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
 import { crewsFor, type IslandEvent, type PoiHold } from "./island";
+import { islandEventsOn } from "../meta/features";
 import { enemyNodes, nodeHolds, ownNodes, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
 
@@ -1129,8 +1130,9 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     threat,
     known: [...(start.known ?? MOD_START)],
     modOdds: start.noMods ? 0 : 1,
-    event: start.event ?? null,
-    storm: start.event?.t === "storm",
+    // Quiet while FEATURES.islandEvents is off (even if Start.event was set from an old save).
+    event: islandEventsOn() ? (start.event ?? null) : null,
+    storm: islandEventsOn() && start.event?.t === "storm",
     crewsDue: [],
     boost: boostFor(seed, region),
     fetch: fetchBins(seed, bins, start.fetch),

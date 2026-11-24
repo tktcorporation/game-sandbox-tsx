@@ -111,6 +111,7 @@ export function makeBoard(p: BoardBasis): Board {
   const poiRegionOf = (id: PoiId) => REGIONS.find((r) => r.pois.includes(id))!.id;
   const out: Contract[] = [];
   const id = () => `d${p.day}-${out.length}`;
+  // Raw schedule: the board only surfaces while 依頼板 is on; crews spawn only while 島の出来事 is on.
   const today = p.events?.[0] ?? null;
   const nodes = nodeHolds((id) => p.poiState[id].state);
   const strength = strengthFor(ownNodes(nodes));

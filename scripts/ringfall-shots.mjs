@@ -215,6 +215,12 @@ const setQuestBoard = async (pg, on) => {
     window.ringfallFeatures.questBoard = v;
   }, on);
 };
+/** Revival / event shots: turn 島の出来事 on for this page (default play keeps it off). */
+const setIslandEvents = async (pg, on) => {
+  await pg.evaluate((v) => {
+    window.ringfallFeatures.islandEvents = v;
+  }, on);
+};
 /** Closes the station's panel open now by its close button. */
 const closePanel = async (pg, touch = false) => {
   await (touch ? pg.tap("#hub-close") : pg.click("#hub-close"));
@@ -1844,11 +1850,12 @@ lap("island");
     await pg.evaluate(() => window.ringfallStep(3000));
     return readOf(pg);
   };
-  // The map table, today a debris fall and tomorrow a storm.
+  // The map table, today a debris fall and tomorrow a storm (revival: islandEvents on).
   for (const phone of [false, true]) {
     const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
     const pg = await withProfile(ctx, evGame([{ t: "debris", spot: "southwest" }, { t: "storm" }]));
     await toCamp(pg, phone);
+    await setIslandEvents(pg, true);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
     const c0 = await readOf(pg);
     if (!/明日 嵐/.test(c0.camp?.marks.map ?? "")) errors.push(`events: the map table's mark reads "${c0.camp?.marks.map}"`);
@@ -1886,6 +1893,7 @@ lap("island");
     const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
     const pg = await withProfile(ctx, evGame([{ t: "storm" }, null]));
     await toCamp(pg, phone);
+    await setIslandEvents(pg, true);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
     const r = await raidOf(pg, phone, cdp);
     if (!r.storm) errors.push(`events: the storm raid is not stormy (${JSON.stringify(r.event)})`);
@@ -1898,6 +1906,8 @@ lap("island");
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const pg = await withProfile(ctx, evGame([{ t: "crews" }, null]));
     await toCamp(pg);
+    await setIslandEvents(pg, true);
+    await setQuestBoard(pg, true);
     const id = await pg.evaluate(() => window.ringfallContract.take("intercept"));
     if (!id) errors.push("events: a crews' visit offers no intercept");
     const r0 = await raidOf(pg, false);

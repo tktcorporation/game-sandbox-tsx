@@ -17,6 +17,11 @@ export const FEATURES = {
    * Server / AI still resolve expeditions while the owner is away.
    */
   reactiveDefense: false,
+  /**
+   * 島の出来事: 破片の落下・嵐・回収部隊の来訪（予告・レイド適用・リザルト）.
+   * Off so day-one camp / map / depart stay on the front line without event noise.
+   */
+  islandEvents: false,
 };
 
 /** Whether the 依頼板 is in play for the player. */
@@ -24,3 +29,6 @@ export const questBoardOn = () => FEATURES.questBoard;
 
 /** Whether reactive PvP defence (来る遠征 → 固める) is shown and playable. */
 export const reactiveDefenseOn = () => FEATURES.reactiveDefense;
+
+/** Whether 島の出来事 are drawn, shown, and applied in raids. */
+export const islandEventsOn = () => FEATURES.islandEvents;

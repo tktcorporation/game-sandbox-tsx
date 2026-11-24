@@ -18,7 +18,7 @@ import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stas
 import { questBoardOn, reactiveDefenseOn } from "../meta/features";
 import { introFrontOpen, need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { departDepots, eventName, finaleOpen, islandHolds, heldIncome, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
+import { departDepots, eventName, eventsShown, finaleOpen, islandHolds, heldIncome, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
 import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
@@ -1051,8 +1051,8 @@ export class Hub {
     const p = this.profile;
     const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    // Tomorrow's event is announced here a day ahead.
-    const coming = p.events[1];
+    // Tomorrow's event is announced here a day ahead (hidden while 島の出来事 are off).
+    const coming = eventsShown(p.events)[1];
     // 来る遠征 mark only while reactive defence is on.
     const incoming = incomingShown(p).length;
     const map = [incoming ? `${TERM.incomingExpedition} ${incoming}` : "", coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
@@ -1411,8 +1411,11 @@ export class Hub {
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
       `<div class="hub-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>` +
       `<div class="hub-row">${nodeRow(holds)}</div>` +
-      // A quiet day and a quiet tomorrow say nothing.
-      (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
+      // A quiet day and a quiet tomorrow say nothing. Hidden while 島の出来事 are off.
+      (() => {
+        const [today, tomorrow] = eventsShown(p.events);
+        return today || tomorrow ? `<ul class="events"><li><small>今日</small>${eventRow(today)}</li><li><small>明日</small>${eventRow(tomorrow)}</li></ul>` : "";
+      })() +
       `<ul class="hold-key">${key}</ul>` +
       (incoming.length ? `<small>${TERM.incomingExpedition}</small><ul class="island-news incoming">${incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +
@@ -1433,7 +1436,7 @@ export class Hub {
     map.contract = c && contractMark(c);
     map.neighbours = neighboursOnMap(this.profile);
     map.bindNav();
-    map.draw(islandScene({ ...this.profile, incoming: incomingShown(this.profile) }));
+    map.draw(islandScene({ ...this.profile, events: eventsShown(this.profile.events), incoming: incomingShown(this.profile) }));
   }
 
   /** The map table's radio report on the next raid, as a slot, or "" without a radio. */

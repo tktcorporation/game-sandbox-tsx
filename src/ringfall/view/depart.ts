@@ -6,6 +6,7 @@ import { PHRASE } from "./copy";
 import { neighbourFrontPick } from "../meta/neighbour-front";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
+import { eventsShown } from "../meta/island";
 import { IslandMap, islandScene, VIEW_PAD } from "./map";
 
 /*
@@ -103,7 +104,7 @@ export class DepartPicker {
     this.map.known = p.entries;
     this.map.contract = null;
     this.map.neighbours = neighboursOnMap(p);
-    this.map.draw(islandScene({ ...p, incoming: incomingShown(p) }));
+    this.map.draw(islandScene({ ...p, events: eventsShown(p.events), incoming: incomingShown(p) }));
     const pts = hub.startPoints();
     const hint = hub.departHint();
     const peek = hint && pts.every((q) => !(q.on && q.kind === hint.at.kind && q.id === hint.at.id)) ? hint.at : null;

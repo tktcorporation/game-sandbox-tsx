@@ -5,6 +5,7 @@ import { DEBRIS_SPOTS, debrisIndex, DEPOTS, LANDING_NODES, NET_EDGE, NODES, node
 import { capturedIds, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { guardedNodes, type Battle } from "../sim/battle";
 import { mix, type State } from "../sim/state";
+import { islandEventsOn } from "./features";
 
 /*
  * The island between raids (docs/ringfall/island-v2.md): one raid is one day, and each node is the
@@ -255,7 +256,8 @@ function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; c
   const lost = NODES.filter((_, i) => before[i] === "own" && after[i] !== "own").map((n) => n.id);
   const depots = DEPOTS.map((d) => d.poi).filter((id) => p.depots.includes(id) || poiState[id].state === "own");
   // Yesterday's forecast becomes today's event, and tomorrow's is drawn.
-  const events: DayEvents = [p.events?.[1] ?? null, eventFor(p.seed ?? 0, today + 2)];
+  // Quiet while 島の出来事 are off (`FEATURES.islandEvents`): no draw, no carry-forward.
+  const events: DayEvents = islandEventsOn() ? [p.events?.[1] ?? null, eventFor(p.seed ?? 0, today + 2)] : [null, null];
   return {
     profile: { ...p, day: today + 1, poiState, depots, events },
     change: {
@@ -298,8 +300,9 @@ export const heldIncome = (p: Pick<IslandDay, "poiState">): number => playerNode
 /** A hash of the seed, the day and a salt: the event schedule draws on nothing else. */
 const dayHash = (seed: number, day: number, k: number) => mix(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(day + 11, 0x85ebca6b) ^ Math.imul(k + 1, 0xc2b2ae35));
 
-/** The event of day `day`, drawn from `seed` and the day: one day in `1 / EVENTS.chance` or so has one, picked by `EVENTS.weights`. */
+/** The event of day `day`, drawn from `seed` and the day: one day in `1 / EVENTS.chance` or so has one, picked by `EVENTS.weights`. Quiet while `FEATURES.islandEvents` is off. */
 export function eventFor(seed: number, day: number): IslandEvent | null {
+  if (!islandEventsOn()) return null;
   if ((dayHash(seed, day, 0) % 10_000) / 10_000 >= EVENTS.chance) return null;
   const weights = (Object.keys(EVENTS.weights) as EventKind[]).map((k): [EventKind, number] => [k, EVENTS.weights[k]]).filter(([, w]) => w > 0);
   let r = ((dayHash(seed, day, 1) % 10_000) / 10_000) * weights.reduce((n, [, w]) => n + w, 0);
@@ -316,6 +319,13 @@ export function eventFor(seed: number, day: number): IslandEvent | null {
 
 /** The schedule of a profile before the first raid: a quiet first day, and the second's drawn. */
 export const firstEvents = (seed: number): DayEvents => [null, eventFor(seed, 2)];
+
+/**
+ * Today's and tomorrow's events for player-facing UI and the next raid's start.
+ * Empty (quiet) while `FEATURES.islandEvents` is off so a saved schedule is not shown or applied.
+ */
+export const eventsShown = (events: readonly (IslandEvent | null)[] | undefined): DayEvents =>
+  islandEventsOn() && events && events.length >= 2 ? [events[0] ?? null, events[1] ?? null] : [null, null];
 
 /** A saved event; null for anything unreadable. */
 export function parseEvent(raw: unknown): IslandEvent | null {

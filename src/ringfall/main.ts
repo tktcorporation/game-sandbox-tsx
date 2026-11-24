@@ -10,11 +10,11 @@ import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, campSpotLive, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { FEATURES } from "./meta/features";
+import { FEATURES, reactiveDefenseOn } from "./meta/features";
 import { analyse, raidThreat, settle, take, takenStory, type Profile, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
-import { departDepots, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
+import { departDepots, eventsShown, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
 import { nodeRow } from "./view/row";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
@@ -23,7 +23,6 @@ import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { postRaidSummary } from "./post-raid-summary";
 import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
-import { reactiveDefenseOn } from "./meta/features";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
@@ -846,7 +845,7 @@ function start(go: Launch, from?: State) {
     island: shortRaid ? shortRaid.island : holds(hub.profile),
     record: shortRaid ? undefined : record,
     fetch: shortRaid ? undefined : fetch,
-    event: hub.profile.events[0],
+    event: eventsShown(hub.profile.events)[0],
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
     // 短いレイド: 自島バトルなし（ステージは他島コピーの数拠点）
@@ -1128,8 +1127,8 @@ declare global {
       wear: (kinds: string[]) => void;
       drop: (kind: string, ahead: number) => void;
     };
-    /** Flip `questBoard` to revive the 依頼板 in tests / local revival. */
-    ringfallFeatures: { questBoard: boolean };
+    /** Flip feature switches for tests / local revival (docs/ringfall/simplify-candidates.md). */
+    ringfallFeatures: { questBoard: boolean; reactiveDefense: boolean; islandEvents: boolean };
     ringfallCamp: {
       spots: () => CampSpot[];
       walkTo: (id: CampSpot["id"]) => boolean;
@@ -1669,7 +1668,7 @@ window.ringfallEnd = (how, haul = [], found = []) => {
  * just inside the gate facing out; `use` presses the use key where they stand; `open` and `close`
  * open and close a station's panel.
  */
-/** Tests / revival: flip `FEATURES.questBoard` / `FEATURES.reactiveDefense` (docs). */
+/** Tests / revival: flip `FEATURES.*` (docs/ringfall/simplify-candidates.md). */
 window.ringfallFeatures = FEATURES;
 
 window.ringfallCamp = {
