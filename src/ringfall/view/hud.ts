@@ -571,7 +571,12 @@ export class Hud {
     }
     const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
     // The raid's momentum beside the bar: a mark for each node taken after the first.
-    const lib = `<span class="lib-line">${liberationLine(liberationStatusOf(s.nodes))}</span>`;
+    // お隣攻め中は自島の解放進度ではない。決戦はこのレイドの Start.finale に従う（途中で 16 拠点になっても「決戦」とは出さない）。
+    const libStatus = s.incursion ? null : s.finale ? ({ kind: "finale" } as const) : (() => {
+      const st = liberationStatusOf(s.nodes);
+      return st.kind === "finale" ? ({ kind: "nodes", left: 0 } as const) : st;
+    })();
+    const lib = libStatus ? `<span class="lib-line">${liberationLine(libStatus)}</span>` : "";
     const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "") + lib;
     const el = $("island-row");
     if (el.dataset.html !== row) {

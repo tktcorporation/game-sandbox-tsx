@@ -1246,12 +1246,12 @@ export class Hub {
     const p = this.profile;
     const front = this.frontPick();
     const teach = teachFrontCapture(p) && front;
-    // 今日の作戦と同じ優先: 決戦 → お隣／前線。決戦が開いている日に前線だけ出すのはバグだった（2026-11-24）。
+    // 出撃地図で選んだお隣の前線が最優先（決戦が開いていても短いレイドに出る）。未選択時は決戦 → 前線／探索。
     const neighbourFront = this.neighbourAim;
-    const goal = finaleOpen(p)
-      ? esc(`${liberationLine({ kind: "finale" })}`)
-      : neighbourFront
-        ? `${flagIcon(SIDE.rival)}${esc(neighbourFront.name)}を${TERM.attack}`
+    const goal = neighbourFront
+      ? `${flagIcon(SIDE.rival)}${esc(neighbourFront.name)}を${TERM.attack}`
+      : finaleOpen(p)
+        ? esc(`${liberationLine({ kind: "finale" })}`)
         : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
