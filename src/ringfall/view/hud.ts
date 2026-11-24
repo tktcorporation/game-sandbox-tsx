@@ -572,7 +572,7 @@ export class Hud {
     const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
     // The raid's momentum beside the bar: a mark for each node taken after the first.
     // お隣攻め中は自島の解放進度ではない。決戦はこのレイドの Start.finale に従う（途中で 16 拠点になっても「決戦」とは出さない）。
-    const libStatus = s.incursion ? null : s.finale ? ({ kind: "finale" } as const) : (() => {
+    const libStatus = s.finale ? ({ kind: "finale" } as const) : (() => {
       const st = liberationStatusOf(s.nodes);
       return st.kind === "finale" ? ({ kind: "nodes", left: 0 } as const) : st;
     })();
@@ -1601,7 +1601,6 @@ export class Hud {
     }
     // Outgoing expeditions + お隣を攻めた勝ち負け + 同期の知らせ.
     // incursion / 取り合う拠点の制圧行も newsKeep に入れ、後から setNews されても消えないようにする。
-    const inc = settled?.incursion;
     const nameOf = (owner: string) => {
       const n = neighboursNowOnMap().find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
       return n ? (n.ai ? `${n.name}(AI)` : n.name) : owner;
@@ -1609,13 +1608,10 @@ export class Hud {
     const tropPer = settled?.takenRival?.length && settled.trophies?.gained
       ? Math.max(1, Math.round(settled.trophies.gained / settled.takenRival.length))
       : settled?.trophies?.gained;
-    const takeLines = !inc && settled?.takenRival?.length
+    const takeLines = settled?.takenRival?.length
       ? settled.takenRival.map((t) => newsIncursion(nameOf(t.owner), NODES[nodeIndex(t.id)]?.name ?? t.id, true, tropPer))
       : [];
-    const incLine = inc
-      ? newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settled?.trophies?.gained : undefined)
-      : null;
-    this.newsKeep = [...expNews, ...(incLine ? [incLine] : []), ...takeLines];
+    this.newsKeep = [...expNews, ...takeLines];
     const allNews = [...this.newsKeep, ...news];
     const tropLine = settled?.trophies
       ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost)}</p>`

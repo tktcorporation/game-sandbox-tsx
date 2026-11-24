@@ -1,20 +1,18 @@
 /*
  * 信号所（Signal Station）パネル: お隣の島リスト、トロフィー、島の知らせ、自島コードの確認。
  *
- * CoC型への移行（docs/ringfall/pvp-clarity.md）により、能動的な攻めはすべて出撃画面（○○の前線）へ一本化されたため、
- * 信号所に「遠征に出す」ボタンは設置しない。本パネルは情報閲覧（お隣の偵察・活動ログ確認・過去に出した遠征の引き上げ）
- * および自島コード管理を担う。ハブとは独立して描画される（`#hub-exped`）。
+ * 能動的な遠征送信・出ている遠征一覧は置かない。本パネルはお隣の偵察、トロフィー、島の番号の確認を担う（`#hub-exped`）。
  */
 import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
-import { expeditionsOut, numbered, recallAll, sentKey, dropStale, factorySquads, squadsRemaining, refreshOutgoing, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { expeditionsOut, numbered, dropStale, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
 import { NODES, nodeIndex } from "../sim/map";
 import { TERM } from "./copy";
-import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, robotIcon, SIDE } from "./icons";
+import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
@@ -156,8 +154,7 @@ export class ExpeditionPanel {
     else if (act === "exp-island") {
       this.typed = arg;
       void this.look();
-    } else if (act === "exp-recall") void this.recall(arg);
-  }
+    }   }
 
   private async copy() {
     if (this.conn.t !== "ok") return;
@@ -194,26 +191,6 @@ export class ExpeditionPanel {
     this.paint();
   }
 
-  /**
-   * Calls the expedition of key `key` (`sentKey()`) home: its squad is back with the factory at once,
-   * and the island it was on is told (again at the next sync if it could not be).
-   */
-  private async recall(key: string) {
-    const p = this.get();
-    const expeditions = recallAll(p.expeditions, (o) => sentKey(o) === key);
-    if (expeditions === p.expeditions) return;
-    this.put({ ...p, expeditions });
-    this.paint();
-    await flushRecalls(this.get, this.put);
-    this.paint();
-  }
-
-  /** An island as the list names it: its owner's name when it is a neighbour (the game's own marked AI), and its code. */
-  private islandName(code: string): string {
-    const n = this.neighbours.find((x) => x.code === code);
-    return n ? `<b>${esc(n.name)}${n.ai ? `<span class="ai-tag">AI</span>` : ""}</b><b class="exp-code">${esc(code)}</b>` : `<b class="exp-code">${esc(code)}</b>`;
-  }
-
   /** Redraws the section from the profile as it now stands (the hub took a change in from elsewhere). */
   redraw() {
     this.paint();
@@ -232,7 +209,6 @@ export class ExpeditionPanel {
   /** The section as HTML. */
   html(): string {
     const p = this.get();
-    const away = squadsAway(p);
     const c = this.conn;
     // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
     // Trophy is the signal station's primary ranking readout (map table removed): large number first.
@@ -241,13 +217,6 @@ export class ExpeditionPanel {
     const head = `${trop}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
-    const out = p.expeditions.length
-      ? `<h4 class="exp-sub">出ている遠征</h4><div class="exp-list">${p.expeditions
-          .map((e) => `<div class="req exp-out ${e.state}"><span>${this.islandName(e.code)}${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small>${e.id > 0 && (e.state === "coming" || e.state === "attacking" || e.state === "waiting" || e.state === "holding") ? `<button type="button" class="exp-recall" data-act="exp-recall" data-arg="${esc(sentKey(e))}">引き上げる</button>` : ""}</div>`)
-          .join("")}</div>`
-      : "";
-    // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.
-    const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${squadsRemaining(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
     // Island codes: folded away from daily entry (お隣 cards are the primary).
     const dis = this.busy ? " disabled" : "";
     const openCodes = this.answering || this.typed ? " open" : "";
@@ -261,7 +230,7 @@ export class ExpeditionPanel {
             : `<details class="exp-codes${openCodes}"${openCodes ? " open" : ""}><summary>島の番号</summary>` +
               `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button></div>` +
               `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="友達の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div></details>`;
-    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${browse}${out}${cost}<div class="exp-foot">${own}</div></div></div>`;
+    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${browse}<div class="exp-foot">${own}</div></div></div>`;
   }
 
   /** Neighbours as a board, plus a looked-up island's nodes (read-only; no send button). */

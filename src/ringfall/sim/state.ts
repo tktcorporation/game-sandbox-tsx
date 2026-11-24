@@ -693,11 +693,6 @@ export interface State {
   leftParcels: { poi: PoiId; kind: ValuableKind }[];
   /** Parcel ids taken this raid (cleared from the island on report). */
   takenParcels: number[];
-  /**
-   * 他島への短いレイド出撃パラメータ（IncursionPlan）。自島レイドおよびシミュレーションゲート実行時は null
-   * （相手島コピーでの制圧は自島 poiState に影響しない）。
-   */
-  incursion: { code: string; owner: string; target: PoiId; parcels: { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] } | null;
   /** Leaving at a depot: which one, and the seconds still to stand there. */
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
@@ -911,11 +906,6 @@ export interface Start {
    * (方向 A: 工場の部隊). Left out, rival contested hubs stay empty (sim gate / no neighbours).
    */
   defence?: readonly { owner: string; factory: number }[];
-  /**
-   * 他島への短いレイド出撃パラメータ。通常の自島レイドでは省略
-   * （シミュレーションゲートでは設定されないため、決定性ハッシュは不変）。
-   */
-  incursion?: { code: string; owner: string; target: PoiId; parcels: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] };
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1106,14 +1096,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     parcels: [],
     leftParcels: [],
     takenParcels: [],
-    incursion: start.incursion
-      ? {
-          code: start.incursion.code,
-          owner: start.incursion.owner,
-          target: start.incursion.target,
-          parcels: start.incursion.parcels.map((q) => ({ id: q.id, poi: q.poi, kind: q.kind, from: { ...q.from } })),
-        }
-      : null,
     leaving: null,
     leftAt: null,
     away: 0,

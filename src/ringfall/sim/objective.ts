@@ -90,7 +90,7 @@ function captureSteps(s: State, i: number, title: string): Objective {
   const owned = s.nodes[i] === "own";
   const under = s.capture?.node === i;
   const c = under ? s.capture : null;
-  const front = frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
+  const front = frontNodes(s.nodes)[i];
   return buildObjective(title, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: owned || under || dist2d(s.player.pos, core) < ARRIVE },
     { kind: "start", label: "核 · 制圧を始める", until: front || owned ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: owned || under, near: "核 · 制圧を始める" },
@@ -139,12 +139,7 @@ function defendSteps(s: State, i: number): Objective {
  */
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
   if (s.capture && s.nodes[s.capture.node] !== "own") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
-  // Short raid / capture task: 攻める（解放は島全体だけ）。お隣の名があれば付ける。
-  if (task) {
-    const n = NODES[task.node];
-    const who = s.incursion?.owner;
-    return captureSteps(s, task.node, who ? `${who}の${n.name}を攻める` : `${n.name}を攻める`);
-  }
+  if (task) return captureSteps(s, task.node, `${NODES[task.node].name}を攻める`);
   // The decisive battle: the titan, before anything else the island asks.
   if (s.finale) {
     const i = POIS.findIndex((p) => p.boss);

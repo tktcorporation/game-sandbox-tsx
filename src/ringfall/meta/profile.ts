@@ -3,15 +3,12 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, dayChange, departDepots, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
+import { advanceDay, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
-import { withTaken } from "./incursion";
 import { capturedIds, momentum } from "../sim/front";
-import { assaultLost, assaultWon } from "./assault";
-import { TROPHY, clampTrophies, trophyDelta, trophySwap } from "./trophies";
-import { holdsOf } from "./neighbour-front";
+import { TROPHY, trophyDelta } from "./trophies";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -91,9 +88,7 @@ export interface Profile {
    * left in raids while offline / on AI islands. v29 and older saves hold none.
    */
   parcels: Parcel[];
-  /**
-   * 他島への短いレイドで奪取した防衛物資ID（相手島での部分的な防衛物資損失を維持）。
-   */
+  /** Legacy short-raid seize list; dropped on load (v41 stack). */
   incursionTaken: { code: string; ids: number[] }[];
   /**
    * Trophy ranking T1 (game-design-review §5.5): rises when a rival / AI node is taken in a raid,
@@ -554,11 +549,6 @@ export interface Settlement {
    * View-only: 「倉庫へ届いた」 must not claim overflow that 「倉庫に入らなかった」 already lists.
    */
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
-  /**
-   * 他島への短いレイド精算: どの島を襲撃し、どの防衛物資を獲得したか。
-   * 画面表示およびサーバー報告用（自島の poiState は相手島の制圧によって書き換えられない）。
-   */
-  incursion?: { code: string; owner: string; target: PoiId; ids: number[]; won: boolean };
 }
 
 /** Mod kinds as a known list: real ones only, once each, in `MOD_KINDS` order, always with `MOD_START`. */
@@ -648,9 +638,7 @@ export function settle(p: Profile, s: State): Settlement {
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
   const seized = seizeRivalLoot(p, s);
-  // Home-island report must not clear the defender's parcel ids from *this* island's DO.
-  // Lead-incursion stock is tracked in `incursionTaken` / Settlement.incursion instead.
-  if (seized.ids.length && !s.incursion) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
+  if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
   for (const it of seized.items) home.push(it);
   // Each tool home opens the first of its routes still closed, and is spent on it.
   const opened: RouteId[] = [];
@@ -662,19 +650,15 @@ export function settle(p: Profile, s: State): Settlement {
     opened.push(r.id);
     spent.add(i);
   }
-  // Lead-incursion: the copy's captures must not rewrite the home island's nodes.
-  const day = s.incursion ? { ...raidDay(s), captured: [] as NodeId[] } : raidDay(s);
+  const day = raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
   const change = dayChange(p, day);
   const threat = s.threat ?? 0;
   const { profile, sold, soldFor } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
   // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
-  // 短いレイド: コピー島は非ステージ拠点を解放済み（敵なし）とするため、自島プロフィールのデポやsentViaには反映しない。
-  const depots = s.incursion ? [...p.depots] : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const depotSent = s.incursion
-    ? { ...p.depotSent }
-    : Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
+  const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
+  const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
   // A record of a raid kept from before ways in were learned has walked to none.
   const learned = s.outcome === "extracted" ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e)) : [];
   const entries = knownEntries([...p.entries, ...learned]);
@@ -682,8 +666,7 @@ export function settle(p: Profile, s: State): Settlement {
   for (const id of change.gained) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
   // Aid parcels left / taken this raid (ux-design C2): keep local until the island server answers.
   // `LOCAL_AID` survives parseProfile when sync never ran (Codex: empty code was dropped).
-  // Lead-incursion taken ids are the defender's, not this island's — do not strip home parcels.
-  const takenIds = new Set(s.incursion ? [] : (s.takenParcels ?? []));
+  const takenIds = new Set(s.takenParcels ?? []);
   let parcels = (p.parcels ?? []).filter((q) => !takenIds.has(q.id));
   const nextParcelId = () => 1 + parcels.reduce((n, q) => Math.max(n, q.id), 0);
   for (const left of s.leftParcels ?? []) {
@@ -692,31 +675,14 @@ export function settle(p: Profile, s: State): Settlement {
       { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
     ];
   }
-  let incursionTaken = p.incursionTaken ?? [];
-  if (s.incursion && seized.ids.length) incursionTaken = withTaken(incursionTaken, s.incursion.code, seized.ids);
-  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), parcels, incursionTaken };
+  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), parcels, incursionTaken: [] };
   // Apply the same overnight pass once the raid's haul is on today's island.
   const { profile: night } = advanceDay(settled, day);
   // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
-  // 短いレイド勝利によるトロフィー変動（自島ノードの占有書き換えは行わない）。
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
-  let trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
-  const incursionWonEarly = !!s.incursion && capturedIds(s).includes(s.incursion.target as NodeId);
-  if (incursionWonEarly && !trop.taken.length) {
-    const self = p.trophies ?? TROPHY.start;
-    const { gain } = trophySwap(self, self);
-    trop = { next: clampTrophies(self + gain), gained: trop.gained + gain, lost: trop.lost, taken: [s.incursion!.target as NodeId], dropped: trop.dropped };
-  }
+  const trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
   if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
-  // 短いレイド: 出撃エントリを勝利時は holding、敗北時は gone に更新。
-  // 実プレイヤー相手は reportAssault による相手島サーバーの確認まで x2Pending を維持。
-  if (s.incursion) {
-    const expeditions = incursionWonEarly
-      ? assaultWon(night.expeditions, s.incursion.code, trop.gained)
-      : assaultLost(night.expeditions, s.incursion.code);
-    if (expeditions !== night.expeditions) Object.assign(night, { expeditions });
-  }
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).
   let nightParcels = night.parcels ?? parcels;
@@ -739,14 +705,12 @@ export function settle(p: Profile, s: State): Settlement {
   // 方向 A: 遠征で持つ拠点の収入も拠点の収入に合算（リザルトの別行は出さない）。
   const away = awayIncome(night);
   const income = homePay + away;
-  const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone" || e.x2Pending);
+  const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone");
   const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
   // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
   const fresh = { ...next, stash: withStarters(next.stash) };
-  // Lead-incursion captures are on the copy — never pending retakes on the home island.
-  fresh.retaken = s.incursion ? [...p.retaken] : addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
-  const incursionWon = incursionWonEarly;
+  fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
   const takenRival = trop.taken.flatMap((id) => {
     const owner = rivalOf(beforeHolds[nodeIndex(id)] ?? "foe");
     return owner ? [{ id, owner }] : [];
@@ -770,9 +734,6 @@ export function settle(p: Profile, s: State): Settlement {
       : {}),
     ...(takenRival.length ? { takenRival } : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),
-    ...(s.incursion
-      ? { incursion: { code: s.incursion.code, owner: s.incursion.owner, target: s.incursion.target, ids: seized.ids, won: incursionWon } }
-      : {}),
   };
 }
 
@@ -816,19 +777,18 @@ export function keptSeized(
  * Raid loot from 制圧 of rival-held nodes (CoC-style): the 島の守り stock at that node's
  * 中継ボックス comes into the warehouse. With none stacked, a small reserve from the node's
  * seed still arrives so the capture feeds 拠点が育つ. No new verb — same 核 as enemy nodes.
- * A lead-incursion reads the copy's parcels (`State.incursion`), not the home profile's.
  * Empty when the raid had no island / no rivals (sim gate path unchanged).
  */
 export function seizeRivalLoot(
   p: Pick<Profile, "parcels" | "seed">,
-  s: Pick<State, "hold" | "stats" | "seed" | "incursion">,
+  s: Pick<State, "hold" | "stats" | "seed">,
 ): { items: Item[]; ids: number[]; at: { poi: PoiId; kinds: ValuableKind[] }[] } {
   const items: Item[] = [];
   const ids: number[] = [];
   const at: { poi: PoiId; kinds: ValuableKind[] }[] = [];
   const hold = s.hold;
   if (!hold) return { items, ids, at };
-  const stock = s.incursion?.parcels ?? p.parcels ?? [];
+  const stock = p.parcels ?? [];
   const taken = new Set<number>();
   for (const id of capturedIds(s)) {
     const i = poiIndex(id);
@@ -850,20 +810,6 @@ export function seizeRivalLoot(
     at.push({ poi: id, kinds });
   }
   return { items, ids, at };
-}
-
-/** Lead-incursion bookkeeping from a save: `{ code, ids }[]`; unreadable entries dropped. */
-function parseIncursionTaken(raw: unknown): { code: string; ids: number[] }[] {
-  if (!Array.isArray(raw)) return [];
-  const out: { code: string; ids: number[] }[] = [];
-  for (const r of raw) {
-    if (!r || typeof r !== "object" || typeof (r as { code?: unknown }).code !== "string") continue;
-    const ids = Array.isArray((r as { ids?: unknown }).ids)
-      ? (r as { ids: unknown[] }).ids.filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
-      : [];
-    out.push({ code: (r as { code: string }).code, ids });
-  }
-  return out;
 }
 
 /** A common material for an empty rival 中継ボックス, hashed from the raid seed and the POI. */
@@ -1019,12 +965,14 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     poiState,
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
-    expeditions: v27 ? parseOutgoing(o.expeditions) : [],
+    // PR6 / Codex: 出ている遠征 UI を消したあと、セーブに残った遠征はすべて引き上げ（工場スロットを空け、flushRecalls が DELETE）。
+    // `sending`（未着の送信）は島に届いていないので落とす。
+    expeditions: recallAll((v27 ? parseOutgoing(o.expeditions) : []).filter((e) => e.state !== "sending")),
     logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
     retaken: v27 ? parseRetaken(o.retaken) : [],
     incoming: typeof o.v === "number" && o.v >= 29 ? parseIncoming(o.incoming) : [],
     parcels: typeof o.v === "number" && o.v >= 30 ? parseParcels(o.parcels) : [],
-    incursionTaken: parseIncursionTaken(o.incursionTaken),
+    incursionTaken: [],
     trophies,
     news,
     // A save from before the island had an ending is on its first round, begun on day 1.

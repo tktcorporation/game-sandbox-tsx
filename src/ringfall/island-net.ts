@@ -10,14 +10,11 @@ import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, pvpSeaOpen, type Neighbour } from "./meta/neighbours";
-import { aiBusy, aiByCode, aiChanges, aiIncoming, aiLent, aiNextId, aiRefresh, aiView, withAi } from "./meta/ai-islands";
-import { assaultAcked, assaultWinRejected } from "./meta/assault";
+import { aiByCode, aiChanges, aiIncoming, aiLent, aiRefresh, aiView, withAi } from "./meta/ai-islands";
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
-import { clampTrophies, TROPHY } from "./meta/trophies";
-import { newsAssaultReversed, pushNews } from "./view/copy";
+import { pushNews } from "./view/copy";
 import type { NodeId } from "./sim/map";
-import { NODES, nodeIndex } from "./sim/map";
 
 /** An answer: the body of a success, or why it failed. */
 export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | NetError };
@@ -205,96 +202,12 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
   const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
   if (ai) {
     const p = aiSource!();
-    const seized = (p.incursionTaken ?? []).filter((e) => e.code === code).flatMap((e) => e.ids);
-    return { ok: true, body: aiView(ai, aiSalt(), p.day, p.expeditions, loadIdentity().code ?? "", Date.now(), seized) };
+    return { ok: true, body: aiView(ai, aiSalt(), p.day, p.expeditions, loadIdentity().code ?? "", Date.now(), []) };
   }
   const r = await call(`/api/islands/${encodeURIComponent(code)}`, {}, timeout);
   if (!r.ok) return r;
   const v = parseView(r.body);
   return v ? { ok: true, body: v } : failed("bad-response");
-}
-
-/** Sends an expedition of `units` from this island's factory to node `node` of island `code` (`POST …/expeditions`): its number on that island. Gives up as `network` after `timeout` ms. */
-export async function sendExpedition(code: string, node: string, units: number, timeout = SEND_TIMEOUT_MS): Promise<Answer<{ id: number }>> {
-  // The game's own islands take one at once, numbered as their server would; a node one of the player's expeditions is on already refuses it.
-  const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
-  if (ai) {
-    const sent = aiSource!().expeditions;
-    if (sent.some((o) => o.code === code && o.node === node && o.id > 0 && aiBusy(ai, aiSalt(), o, Date.now()))) return failed("node-busy");
-    return { ok: true, body: { id: aiNextId(sent, code) } };
-  }
-  const who = loadIdentity();
-  if (!who.code) return failed("no-own-island");
-  const r = await call(`/api/islands/${encodeURIComponent(code)}/expeditions`, { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units }) }, timeout);
-  if (!r.ok) return r;
-  const id = (r.body as { id?: unknown }).id;
-  return Number.isInteger(id) ? { ok: true, body: { id: id as number } } : failed("bad-response");
-}
-
-/**
- * 実プレイヤーのお隣の島へ短いレイド出撃の予告を登録する（`POST …/expeditions`、`x2: true`）。
- * 相手島では工場のNPC遠征と同じ枠組みで受け付けられ、結果はレイド終了後に `reportAssault` で報告される。
- */
-export async function sendAssault(code: string, node: string, units: number, timeout = SEND_TIMEOUT_MS): Promise<Answer<{ id: number; arriveAt: number }>> {
-  const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
-  if (ai) {
-    const sent = aiSource!().expeditions;
-    return { ok: true, body: { id: aiNextId(sent, code), arriveAt: Date.now() } };
-  }
-  const who = loadIdentity();
-  if (!who.code) return failed("no-own-island");
-  const r = await call(
-    `/api/islands/${encodeURIComponent(code)}/expeditions`,
-    { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units, x2: true }) },
-    timeout,
-  );
-  if (!r.ok) return r;
-  const id = (r.body as { id?: unknown }).id;
-  const arriveAt = (r.body as { arriveAt?: unknown }).arriveAt;
-  return Number.isInteger(id) && typeof arriveAt === "number" && Number.isFinite(arriveAt)
-    ? { ok: true, body: { id: id as number, arriveAt } }
-    : failed("bad-response");
-}
-
-/** 短いレイド結果の報告（`POST …/assault`）: 相手サーバーが勝敗を確定し、双方が拠点占有・トロフィーを同期する。 */
-export async function reportAssault(code: string, id: number, won: boolean, timeout = SEND_TIMEOUT_MS): Promise<Answer<unknown>> {
-  if (aiSource && aiByCode(aiSalt(), code, serverSlots())) return { ok: true, body: { ok: true } };
-  const who = loadIdentity();
-  if (!who.code) return failed("no-own-island");
-  return call(
-    `/api/islands/${encodeURIComponent(code)}/assault`,
-    { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, id, won }) },
-    timeout,
-  );
-}
-
-/** 相手サーバーから短いレイド勝利が受理されなかった場合のエラー群（ローカルの占有・獲得トロフィーを巻き戻す）。 */
-const ASSAULT_WIN_REJECT: ReadonlySet<string> = new Set(["day-limit", "node-not-open", "not-assault", "no-expedition", "already-resolved", "protected", "closed-node"]);
-
-/**
- * 保留中の短いレイド結果（`Outgoing.x2Pending`）を防衛側サーバーへ報告する。
- * ネットワークエラー時は次回同期で再試行。明示的な勝利拒否時はローカルの保持を取り消し獲得トロフィーを巻き戻す。
- */
-export async function flushAssaultReports(get: () => Profile, put: (p: Profile) => void): Promise<void> {
-  for (const o of get().expeditions.filter((e) => e.x2 && e.x2Pending && e.id > 0)) {
-    const won = o.state === "holding";
-    const r = await reportAssault(o.code, o.id, won);
-    const p = get();
-    if (r.ok || (!won && (r.error === "no-expedition" || r.error === "no-island"))) {
-      const expeditions = assaultAcked(p.expeditions, o.code);
-      if (expeditions !== p.expeditions) put({ ...p, expeditions });
-      continue;
-    }
-    if (won && ASSAULT_WIN_REJECT.has(r.error)) {
-      const { list, tropGain } = assaultWinRejected(p.expeditions, o.code);
-      const trophies = tropGain > 0 ? clampTrophies((p.trophies ?? TROPHY.start) - tropGain) : p.trophies;
-      const at = NODES[nodeIndex(o.node)]?.name ?? o.node;
-      const note = newsAssaultReversed(at, tropGain);
-      const news = pushNews(p.news ?? [], [note]);
-      put({ ...p, expeditions: list, news, ...(trophies !== p.trophies ? { trophies } : {}) });
-    }
-    // network / soft errors: leave pending for the next sync.
-  }
 }
 
 /** What a raid's report says beside the island's holds: what became of the expeditions it took in. */

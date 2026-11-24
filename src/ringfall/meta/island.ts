@@ -271,6 +271,9 @@ export const heldIncome = (p: Pick<IslandDay, "poiState">): number => playerNode
 /** Each POI's standing for a raid's start (`Start.island`). */
 export const holds = (p: Pick<IslandDay, "poiState">): Partial<Record<PoiId, PoiHold>> => Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id].state]));
 
+/** Node holds in `NODES` order from an island save. */
+export const holdsOf = (poiState: Island): PoiHold[] => NODES.map((n) => poiState[n.id]?.state ?? "foe");
+
 /** A saved island; anything unreadable is the enemy's. A POI saved thin is the player's (the enemy held it only thinly); the titan's pad is always the enemy's. Another player's standing is kept as saved where `rivals` (a save that can hold one), else it is the enemy's. */
 export function parseIsland(raw: unknown, rivals = true): Island {
   const out = newIsland();

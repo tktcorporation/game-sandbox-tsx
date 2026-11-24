@@ -13,7 +13,7 @@ import { LOG_WORD as COPY_LOG_WORD, newsRetaken, newsWipedEnemy, trophyLine } fr
 import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
-import { holdsOf } from "./neighbour-front";
+import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
 import { trophyDelta } from "./trophies";
 
@@ -381,16 +381,6 @@ export const factorySquads = (p: { factory: number; poiState: Island }) => FACTO
 
 /** Factory squad slots left for this island's own battle after expeditions take theirs, never below 0. */
 export const squadsRemaining = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => Math.max(0, factorySquads(p) - squadsAway(p));
-
-/** Whether the factory has a squad to send: an expedition takes one of the squads it keeps out. */
-export const canSend = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => squadsAway(p) < factorySquads(p);
-
-/**
- * The squad an expedition takes: that of the factory level the server has for this island (its
- * public view's `factory`, the level the owner last reported), which is what the server lets it
- * send. A factory built up since the last report goes out at its new level after the next raid.
- */
-export const sendKinds = (serverFactory: number) => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, Math.round(serverFactory) || 0))].kinds;
 
 /** Whether the camp's factory is ahead of the level the server has for the island (it reaches the server with the next raid's report). */
 export const factoryAhead = (p: { factory: number }, serverFactory: number) => p.factory > serverFactory;

@@ -18,13 +18,12 @@ import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { postRaidSummary } from "./post-raid-summary";
-import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { contestedDefence, contestedParcels } from "./meta/contested-defence";
 import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
-import type { IncursionPlan } from "./meta/incursion";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -349,14 +348,6 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     void flushRecalls(
       () => hub.profile,
       (q) => hub.update(q),
-    );
-    // 防衛側島サーバーの確認待ちである未報告の短いレイド結果を送信（拒否時は勝利を取り消し）。
-    void flushAssaultReports(
-      () => hub.profile,
-      (q) => {
-        hub.update(q);
-        saveProfile(hub.profile);
-      },
     );
     if (!r.ok) return;
     // The next raid is under way only once a new run replaced the settled one: the results of the
@@ -690,13 +681,6 @@ function deliverAwayNews(before: Profile) {
       () => hub.profile,
       (q) => hub.update(q),
     );
-    void flushAssaultReports(
-      () => hub.profile,
-      (q) => {
-        hub.update(q);
-        saveProfile(hub.profile);
-      },
-    );
     if (!r.ok || !camping || running || awaySheetOpen || !$("results").hidden) return;
     const { profile, news, notes } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
@@ -770,20 +754,13 @@ async function answerDepart(go: boolean) {
     lease = null;
   }
   if (go) {
-    // お隣の前線（○○の前線）: 短いレイドへ出撃（要塞化などで出せないときだけ waiting）
-    const assault = await hub.departNeighbourFront();
-    if (assault?.t === "waiting") {
-      hud.toast(assault.toast, 1, 2800);
-      lock();
-      return;
-    }
-    if (d.walk && hub.walksOut() && !assault) {
+    if (d.walk && hub.walksOut()) {
       const launch = hub.launch();
       if (launch) {
         sfx.deploy();
         start(launch, state);
       }
-    } else ride(assault?.t === "ready" ? assault.plan : undefined);
+    } else ride();
     return;
   }
   if (d.walk && d.back) {
@@ -797,13 +774,13 @@ async function answerDepart(go: boolean) {
 }
 
 /** A start away from the gate: a fade, then the raid at the start chosen on the departure's map. */
-function ride(incursion?: IncursionPlan) {
+function ride() {
   if (fading || hub.rideRefused()) return;
   fading = true;
   sfx.deploy();
   fade(true);
   setTimeout(() => {
-    const go = hub.launch(incursion);
+    const go = hub.launch();
     fading = false;
     if (go) start(go);
     requestAnimationFrame(() => fade(false));
@@ -888,38 +865,29 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
-  const shortRaid = go.incursion;
   const neigh = neighboursFor(hub.profile);
-  const defence = shortRaid ? [] : contestedDefence(hub.profile.poiState, hub.profile.day, neigh, aiSalt());
-  const defenceParcels = shortRaid ? shortRaid.parcels : contestedParcels(hub.profile.parcels ?? []);
+  const defence = contestedDefence(hub.profile.poiState, hub.profile.day, neigh, aiSalt());
+  const defenceParcels = contestedParcels(hub.profile.parcels ?? []);
   state = newRun(go.seed, kit, region, {
-    depots: shortRaid ? [] : hub.profile.depots,
+    depots: hub.profile.depots,
     seen: hub.profile.seen,
     from: go.from,
     entry: go.entry,
     routes: hub.profile.routes,
-    island: shortRaid ? shortRaid.island : holds(hub.profile),
+    island: holds(hub.profile),
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
-    // 短いレイド: 自島バトルなし（ステージは他島コピーの数拠点）
-        battle: shortRaid
-      ? undefined
-      : {
-          factory: hub.profile.factory,
-          away: squadsAway(hub.profile),
-          rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
-        },
-    finale: shortRaid ? false : finaleOpen(hub.profile),
+    battle: {
+      factory: hub.profile.factory,
+      away: squadsAway(hub.profile),
+      rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
+    },
+    finale: finaleOpen(hub.profile),
     // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
     ...(defence.length ? { defence } : {}),
     ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
-    ...(shortRaid
-      ? { incursion: { code: shortRaid.code, owner: shortRaid.owner, target: shortRaid.target, parcels: shortRaid.parcels } }
-      : {}),
   });
-  // Short raid: capture the target node. Home raid: clear any leftover short-raid task.
-  if (shortRaid) hud.setCaptureTask(nodeIndex(shortRaid.target));
-  else hud.setContract();
+  hud.setContract();
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
     if (lent) leaseReq = null;
@@ -963,13 +931,7 @@ function finish() {
   hud.show(false);
   const next = settlement ? hub.nextHand() : "";
   const expLines = hub.expeditionNews();
-  // お隣を攻めた勝ち負けも島の知らせの控えへ（リザルトと同じ文）。短いレイド／普段の取り合い制圧。
-  if (settlement?.incursion) {
-    const inc = settlement.incursion;
-    hub.recordNews([
-      newsIncursion(inc.owner, NODES[nodeIndex(inc.target)]?.name ?? inc.target, inc.won, inc.won ? settlement.trophies?.gained : undefined),
-    ]);
-  } else if (settlement?.takenRival?.length) {
+  if (settlement?.takenRival?.length) {
     const tropPer = settlement.trophies?.gained
       ? Math.max(1, Math.round(settlement.trophies.gained / settlement.takenRival.length))
       : undefined;
