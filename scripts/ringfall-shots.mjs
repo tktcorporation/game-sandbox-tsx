@@ -1712,7 +1712,7 @@ const islandDay = {
   await pg.click("#restart");
   await faded(pg);
   const plan = await pg.textContent("#camp-plan");
-  if (!/今日の作戦/.test(plan) || !/攻める拠点/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint")) || (await own("#camp-row")) !== mine(r.profile)) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
+  if (!/今日の作戦/.test(plan) || !/目的/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint")) || (await own("#camp-row")) !== mine(r.profile)) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
   await pg.screenshot({ path: `${out}/m20-camp-today.png` });
   await ctx.close();
 }
@@ -2033,7 +2033,7 @@ if (part("battle")) for (const phone of [false, true]) {
   // The camp's line of the day, its row, and 今日の作戦 (地図の机 deleted: tug row lives here).
   const tugOwn = async (sel) => Number((await pg.locator(`${sel} .tug-n.own`).first().textContent().catch(() => "-1")) ?? -1);
   const today = await pg.textContent("#camp");
-  if (!/9 日目/.test(today) || !/攻める拠点/.test(today) || (await tugOwn("#camp-row")) !== 2) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
+  if (!/9 日目/.test(today) || !/目的/.test(today) || (await tugOwn("#camp-row")) !== 2) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
   await pg.screenshot({ path: tag(2, "camp-row") });
   await pg.screenshot({ path: tag(6, "camp-today") });
   const run = await walkOutOfGate(pg);

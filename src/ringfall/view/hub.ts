@@ -22,7 +22,7 @@ import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { PHRASE, TERM, assaultUnavailable, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
+import { EXP_OUT_WORD, PLAN_GOAL, PHRASE, TERM, assaultUnavailable, expOutLine, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -285,7 +285,7 @@ interface ExpNews {
 /** That as a sentence, for its title. */
 export function expLine(n: ExpNews): string {
   const at = NODES[nodeIndex(n.node)]?.name ?? n.node;
-  return n.t === "held" ? `${n.name}の島の${at}を遠征隊が取った` : n.t === "wiped" ? `${n.name}の島の${at}で遠征隊が全滅した` : `${n.name}の島の${at}を取り返された`;
+  return expOutLine({ t: n.t, name: n.name, node: at });
 }
 
 const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
@@ -1036,9 +1036,8 @@ export class Hub {
 
   /** One 島の知らせ on the signal station (outgoing + incoming + 島の守り), nothing with none. */
   private signalNews(): string {
-    const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
     const out = this.expNews.map(
-      (n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`,
+      (n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${EXP_OUT_WORD[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`,
     );
     const aid = namedAid(this.profile).slice(0, 4).map(
       (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
@@ -1050,8 +1049,7 @@ export class Hub {
 
   /** Lines of 島の知らせ for the results screen (outgoing expeditions, same words as the signal station). */
   expeditionNews(): string[] {
-    const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
-    return this.expNews.map((n) => `${n.name} ${word[n.t]} ${NODES[nodeIndex(n.node)]?.name ?? n.node}`);
+    return this.expNews.map((n) => `${n.name} ${EXP_OUT_WORD[n.t]} ${NODES[nodeIndex(n.node)]?.name ?? n.node}`);
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -1295,7 +1293,7 @@ export class Hub {
       final
         ? ["決戦", esc(POIS.find((o) => o.boss)!.name)]
         : [
-            "攻める拠点",
+            PLAN_GOAL,
             rival
               ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を${TERM.attack}`
               : neighbourFront

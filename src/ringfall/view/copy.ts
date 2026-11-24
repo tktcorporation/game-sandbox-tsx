@@ -139,6 +139,51 @@ export function expeditionSentTo(place: string): string {
   return `${place}へ遠征に出した`;
 }
 
+/**
+ * 島の知らせ（来た遠征）の一語印。自分の遠征の印（EXP_OUT_WORD）と「全滅」を共有しない。
+ * wiped = 相手の隊を撃退した／retaken = 核 · 制圧で戻した。
+ */
+export const LOG_WORD = {
+  noticed: TERM.expedition,
+  landed: "上陸",
+  taken: "奪取",
+  wiped: "撃退",
+  retaken: "制圧",
+  released: "手放し",
+  recalled: "撤収",
+} as const;
+
+/**
+ * 島の知らせ（自分の遠征の結果）の一語印。
+ * wiped = 自分の隊が攻めきれなかった（相手を撃退した「撃退」と別語）。
+ */
+export const EXP_OUT_WORD = {
+  held: "取った",
+  wiped: "攻めきれず",
+  lost: "失った",
+} as const;
+
+/** 今日の作戦・出撃の行名（同じ一手は同じ行名）。 */
+export const PLAN_GOAL = "目的";
+
+/** 島の知らせ: 核 · 制圧で拠点を戻した行（旧・取り返した）。 */
+export function newsRetaken(at: string): string {
+  return `${at}を制圧した · 倉庫へ届く`;
+}
+
+/** 島の知らせ: 相手の遠征隊を撃退した行（旧・全滅させた）。 */
+export function newsWipedEnemy(at: string, who: string): string {
+  return `${at}で${who}の遠征隊を撃退した`;
+}
+
+/** 自分の遠征の結果を一文に（信号所の title・控え）。 */
+export function expOutLine(n: { t: keyof typeof EXP_OUT_WORD; name: string; node: string }): string {
+  const at = n.node;
+  if (n.t === "held") return `${n.name}の島の${at}を遠征隊が取った`;
+  if (n.t === "wiped") return `${n.name}の島の${at}で遠征隊が攻めきれなかった`;
+  return `${n.name}の島の${at}を失った`;
+}
+
 export function nextFront(name: string): string {
   return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${TERM.front}：${name}`;
 }

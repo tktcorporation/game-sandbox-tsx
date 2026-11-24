@@ -42,8 +42,14 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-// Player chrome only. World data (map/config) and the SoT file are exempt via ALLOW.
-const files = [...walk(join(ROOT, "view")), join(ROOT, "main.ts"), join(ROOT, "touch.ts"), "ringfall/index.html"].filter((f, i, a) => a.indexOf(f) === i);
+// Player chrome + meta news lines (島の知らせ). World data (map/config) and the SoT file are exempt via ALLOW.
+const files = [
+  ...walk(join(ROOT, "view")),
+  ...walk(join(ROOT, "meta")),
+  join(ROOT, "main.ts"),
+  join(ROOT, "touch.ts"),
+  "ringfall/index.html",
+].filter((f, i, a) => a.indexOf(f) === i);
 
 /** Strip comments so lint does not hit Japanese in // docs. */
 function stripComments(src: string): string {

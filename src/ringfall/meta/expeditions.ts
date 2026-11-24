@@ -9,6 +9,7 @@ import { ENEMIES, FACTORY, FACTORY_TOP, FRONT, type EnemyKind } from "../sim/con
 import type { Battle, RivalExpedition } from "../sim/battle";
 import { isAiOwner, parseHold, rivalOf, type PoiHold } from "../sim/holds";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
+import { LOG_WORD as COPY_LOG_WORD, newsRetaken, newsWipedEnemy } from "../view/copy";
 import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
@@ -322,9 +323,9 @@ export function logLine(e: IslandLogEntry): string {
       // CoC defence result: losing the node also costs that 中継ボックス's 島の守り.
       return `${who}に${at}を取られた · 島の守りが削られた`;
     case "wiped":
-      return `${at}で${who}の遠征隊を全滅させた`;
+      return newsWipedEnemy(at, who);
     case "retaken":
-      return `${at}を取り返した · 倉庫へ届く`;
+      return newsRetaken(at);
     case "released":
       return `${who}が${at}を手放し、敵の拠点に戻った`;
     case "recalled":
@@ -333,7 +334,7 @@ export function logLine(e: IslandLogEntry): string {
 }
 
 /** What happened in a log entry, in a word, for the signal station's marks. */
-export const LOG_WORD: Record<IslandLogEntry["t"], string> = { noticed: "遠征", landed: "上陸", taken: "奪取", wiped: "全滅", retaken: "奪還", released: "手放し", recalled: "撤収" };
+export const LOG_WORD: Record<IslandLogEntry["t"], string> = { ...COPY_LOG_WORD };
 
 /** Whether an entry is someone's attack on this island, answered by sending one back (仕返し). */
 export const answerable = (e: IslandLogEntry): boolean => (e.t === "noticed" || e.t === "landed" || e.t === "taken") && isIslandCode(e.by.code);

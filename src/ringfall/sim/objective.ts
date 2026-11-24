@@ -93,7 +93,7 @@ function captureSteps(s: State, i: number, title: string): Objective {
   const front = frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
   return buildObjective(title, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: owned || under || dist2d(s.player.pos, core) < ARRIVE },
-    { kind: "start", label: "核を起動する", until: front || owned ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: owned || under, near: "核に触れて制圧を始める" },
+    { kind: "start", label: "核 · 制圧を始める", until: front || owned ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: owned || under, near: "核 · 制圧を始める" },
     {
       kind: "hold",
       label: "核を守り抜く",
@@ -139,7 +139,12 @@ function defendSteps(s: State, i: number): Objective {
  */
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
   if (s.capture && s.nodes[s.capture.node] !== "own") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
-  if (task) return captureSteps(s, task.node, `${NODES[task.node].name}の解放`);
+  // Short raid / capture task: 攻める（解放は島全体だけ）。お隣の名があれば付ける。
+  if (task) {
+    const n = NODES[task.node];
+    const who = s.incursion?.owner;
+    return captureSteps(s, task.node, who ? `${who}の${n.name}を攻める` : `${n.name}を攻める`);
+  }
   // The decisive battle: the titan, before anything else the island asks.
   if (s.finale) {
     const i = POIS.findIndex((p) => p.boss);
@@ -155,6 +160,7 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
   }
   const focus = s.phase === "play" ? battleFocus(s) : null;
   if (focus?.kind === "defend") return defendSteps(s, focus.node);
+  // 陣取り戦は用語として残す（2026-11-24 決定）。
   if (focus?.kind === "attack") return captureSteps(s, focus.node, `陣取り戦：自軍と${NODES[focus.node].name}を取る`);
   const last = s.stats.captured[s.stats.captured.length - 1];
   if (last) return captureSteps(s, NODES.findIndex((n) => n.id === last), `${NODES.find((n) => n.id === last)?.name}の制圧`);
@@ -163,7 +169,7 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ n, i }) => front[i] && n.region === region)
     .sort((a, b) => dist2d(a.n.core, s.player.pos) - dist2d(b.n.core, s.player.pos))[0];
-  if (near) return captureSteps(s, near.i, `前線：${near.n.name}を取る`);
+  if (near) return captureSteps(s, near.i, `前線：${near.n.name}`);
   return buildObjective("探索して脱出する", [
     { kind: "explore", label: "島を探索する", until: "回収品を 1 つ持つ", at: null, done: s.player.haul.length > 0 || s.sent.length > 0 },
     extractStep(s),
