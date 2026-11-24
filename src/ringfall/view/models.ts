@@ -141,7 +141,7 @@ export const PAL = {
   coreShield: 0xff6a5a,
   /** A circuit board's solder-mask green. */
   board: 0x2f7a4a,
-  /** Safety orange: the breaching charge's case and the recorder's. */
+  /** Safety orange: the breaching charge's case. */
   hazard: 0xd8742c,
   /** The glow in the vents of a fallen piece of the ring. */
   ember: 0xff7a2a,
@@ -1546,9 +1546,9 @@ function lean(t: THREE.Group, g: THREE.Object3D): void {
  * medkit a white case with a red cross and a handle; each valuable its own object (a cartridge
  * fuse with blades, a gear on its block, a spool of copper, a board leant over, an upright drive,
  * a gimbal round a lit core, a lit column between two plates, a lit drum in a cage); the vault's key
- * a real key in its rarity's gold; the tools, the recorder, the mod part and the flares their own
- * shapes. The valuables, the armour, the key, the recorder and the mod part carry a part in their
- * rarity's colour, so the item itself says what the beam says. Parts of one material are merged.
+ * a real key in its rarity's gold; the tools, the mod part and the flares their own shapes. The
+ * valuables, the armour, the key and the mod part carry a part in their rarity's colour, so the
+ * item itself says what the beam says. Parts of one material are merged.
  */
 export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind, tool?: ToolKind): THREE.Group {
   const g = new THREE.Group();
@@ -1721,14 +1721,6 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     box(dark, 0.14, 0.1, 0.12, 0.05, 0.39, 0);
     put(new THREE.SphereGeometry(0.035, 6, 4), glow(PAL.healRed), 0.08, 0.46, 0);
     box(steel, 0.015, 0.22, 0.015, 0.0, 0.55, 0);
-  } else if (kind === "record") {
-    // A story record: an orange recorder case with dark bumpers at both ends, a carrying handle, a band of white tape and a lit read-out.
-    box(flat(PAL.hazard), 0.36, 0.24, 0.22, 0, 0.3, 0);
-    for (const x of [-0.195, 0.195]) box(dark, 0.045, 0.27, 0.25, x, 0.3, 0);
-    for (const x of [-0.1, 0.1]) box(dark, 0.04, 0.07, 0.04, x, 0.455, 0);
-    box(dark, 0.25, 0.04, 0.05, 0, 0.505, 0);
-    box(flat(PAL.paint), 0.36, 0.045, 0.225, 0, 0.23, 0);
-    box(lit, 0.16, 0.07, 0.02, 0, 0.34, -0.115);
   } else if (kind === "mod") {
     // A mod part: a hexagonal chip in a dark frame, its core lit in the rarity's colour, three steel clips,
     // stood up on edge so its face is seen from eye height, not only its rim.

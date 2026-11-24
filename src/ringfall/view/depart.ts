@@ -1,5 +1,5 @@
 import { sfx } from "./sfx";
-import { incomingShown, neighboursFor, neighboursOnMap } from "../island-net";
+import { neighboursFor, neighboursOnMap } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
 import { PHRASE } from "./copy";
@@ -103,7 +103,7 @@ export class DepartPicker {
     this.map.known = p.entries;
     this.map.contract = null;
     this.map.neighbours = neighboursOnMap(p);
-    this.map.draw(islandScene({ ...p, incoming: incomingShown(p) }));
+    this.map.draw(islandScene(p));
     const pts = hub.startPoints();
     const hint = hub.departHint();
     const peek = hint && pts.every((q) => !(q.on && q.kind === hint.at.kind && q.id === hint.at.id)) ? hint.at : null;

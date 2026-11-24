@@ -2025,7 +2025,7 @@ export class World {
     extra.add(new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), glow(PAL.orb)));
     extra.add(haloSprite(PAL.orb, 1, 0.5));
     extra.add(new THREE.Mesh(PUFF_GEO, new THREE.MeshLambertMaterial({ color: DEBRIS_SMOKE, transparent: true, opacity: 0.5, depthWrite: false, flatShading: true })));
-    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "tool", "record", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse", "cutter"));
+    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "tool", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse", "cutter"));
     for (const heal of ["cell", "battery", "syringe", "medkit"] as const) extra.add(buildLootItem("heal", 1, undefined, heal));
     extra.add(buildBin(false).root, buildBin(true).root, buildFlareSmoke(), buildRingDebris().root, buildCare(), buildDropship(), buildBoat());
     const guns = new THREE.Group();

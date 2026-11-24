@@ -62,10 +62,10 @@ export async function expeditionShots({ browser, port, out, errors }) {
     await pg.keyboard.press("Escape");
     await pg.evaluate(() => window.advanceTime(200));
   };
-  // CoC-style (FEATURES.reactiveDefense off): map table does not show 来る遠征 warnings.
+  // Reactive defence deleted: map table does not show 来る遠征 warnings.
   await open("map");
   const news = await pg.evaluate(() => document.querySelector(".island-news.incoming")?.textContent ?? "");
-  if (news) errors.push(`expeditions: the map table still warns of incoming "${news}" (reactive defence is off)`);
+  if (news) errors.push(`expeditions: the map table still warns of incoming "${news}" (reactive defence deleted)`);
   await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
   await close();
   // The island's news as marks (E4: no 遠征に出す answer button).

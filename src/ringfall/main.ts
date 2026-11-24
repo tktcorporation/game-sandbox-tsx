@@ -4,26 +4,21 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
-import { campSpotAt, campSpotLive, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { FEATURES } from "./meta/features";
-import { analyse, raidThreat, settle, take, takenStory, type Profile, type Settlement } from "./meta/profile";
+import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
+import { analyse, raidThreat, settle, type Profile, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
 import { nodeRow } from "./view/row";
-import { contractProgress, targetKey } from "./meta/contracts";
-import { currentStory } from "./meta/story";
-import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
-import { squadKey } from "./sim/state";
+import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { postRaidSummary } from "./post-raid-summary";
 import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushAssaultReports, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
-import { reactiveDefenseOn } from "./meta/features";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
@@ -661,7 +656,6 @@ function openCamp() {
 
 /** Opens a station's panel: the camp stands still and the pointer is let go. */
 function openPanel(id: StationId) {
-  if (!campSpotLive(id)) return false;
   keys.clear();
   stick.x = stick.z = 0;
   fire = ads = adsLatch = false;
@@ -681,7 +675,7 @@ function askDepart(walk: boolean) {
     // A newer departure asks for itself, and the island answers it with the same lease.
     if (!r.ok || leaseReq !== req) return;
     if (req.on === "open") lease = r.body;
-    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut, reactiveDefenseOn() ? r.body.noticed : [])) {
+    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut)) {
       raidLent = r.body.expeditions;
       hud.addRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
     }
@@ -713,9 +707,9 @@ async function answerDepart(go: boolean) {
     lease = null;
   }
   if (go) {
-    // お隣の前線（○○の前線）: 短いレイド出撃、または休止機能ON時の事前予告登録
+    // お隣の前線（○○の前線）: 短いレイドへ出撃（要塞化などで出せないときだけ waiting）
     const assault = await hub.departNeighbourFront();
-    if (assault?.t === "scheduled" || assault?.t === "waiting") {
+    if (assault?.t === "waiting") {
       hud.toast(assault.toast, 1, 2800);
       lock();
       return;
@@ -820,10 +814,6 @@ function start(go: Launch, from?: State) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  // The story record under way lies on the island, whichever contract was taken.
-  const record = currentStory(hub.profile.records)?.id;
-  const taken = hub.contract();
-  const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
   // A lease with less than the battle's length left would run out under the raid: the island reckons those expeditions itself.
   const lent = lease && leaseLasts(lease, null) ? lease : null;
   raidLent = lent?.expeditions ?? [];
@@ -844,8 +834,6 @@ function start(go: Launch, from?: State) {
     entry: go.entry,
     routes: hub.profile.routes,
     island: shortRaid ? shortRaid.island : holds(hub.profile),
-    record: shortRaid ? undefined : record,
-    fetch: shortRaid ? undefined : fetch,
     event: hub.profile.events[0],
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
@@ -858,10 +846,6 @@ function start(go: Launch, from?: State) {
           targets: tonight(hub.profile),
           rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
           shut: lent?.shut,
-          // 休止機能: 来る遠征の迎撃（核で固める）は反応型守りON時のみ
-          noticed: reactiveDefenseOn()
-            ? [...new Set([...(lent?.noticed ?? []), ...incomingFor(hub.profile).map((e) => e.node)])]
-            : [],
         },
     finale: shortRaid ? false : finaleOpen(hub.profile),
     ...(shortRaid
@@ -877,7 +861,6 @@ function start(go: Launch, from?: State) {
       leaseReq.raid = state;
     }
   }
-  hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   hud.setRaidsDone(hub.profile.raids);
   // Passive traces only: rivals / incoming, no legend or new noun (ux-design M5).
   const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
@@ -1116,20 +1099,14 @@ declare global {
       clear: (i: number) => void;
       take: (i: number, soon?: boolean) => void;
     };
-    ringfallContract: {
-      take: (type: string) => string | null;
-      destroyTarget: () => number;
-    };
     ringfallNews: (entries: IslandLogEntry[]) => void;
     ringfallAge: (ms: number) => void;
-    ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; records?: string[]; keys?: string[] }) => void;
+    ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; keys?: string[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
       wear: (kinds: string[]) => void;
       drop: (kind: string, ahead: number) => void;
     };
-    /** Flip `questBoard` to revive the 依頼板 in tests / local revival. */
-    ringfallFeatures: { questBoard: boolean };
     ringfallCamp: {
       spots: () => CampSpot[];
       walkTo: (id: CampSpot["id"]) => boolean;
@@ -1146,7 +1123,7 @@ window.render_game_to_text = () => {
   const p = s.player;
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
-    camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt({ ...p.pos, yaw: p.yaw })?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
+    camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt({ ...p.pos, yaw: p.yaw })?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
     profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     strength: s.strength,
@@ -1157,9 +1134,7 @@ window.render_game_to_text = () => {
     storm: s.storm,
     debris: s.bins.filter((b) => b.debris).map((b) => ({ x: b.x, y: +b.y.toFixed(1), z: b.z, open: b.open }))[0] ?? null,
     crews: s.squads.flatMap((q, i) => (q.crew ? [{ squad: i, members: s.enemies.filter((e) => e.squad === i).map((e) => ({ x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z) })), bin: q.crew.bin >= 0 ? { x: s.bins[q.crew.bin].x, y: s.bins[q.crew.bin].y, z: s.bins[q.crew.bin].z } : null, searching: q.crew.searchT > 0, bag: q.bag ?? [], leaving: q.crew.leaving }] : [])),
-    settled: settlement && { event: settlement.event, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed },
-    contract: running && hub.contract() ? { t: hub.contract()!.t, ...contractProgress(hub.contract()!, s) } : null,
-    records: s.player.records,
+    settled: settlement && { event: settlement.event, home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
@@ -1580,38 +1555,12 @@ window.ringfallBot = (skill: string) => {
   bot = new Bot(SKILLS.find((k) => k.name === skill) ?? SKILLS[1], 31);
 };
 
-/**
- * Automation only: the contract board. `take` takes the day's first contract of `type` in the
- * camp (its id, or null with none); `destroyTarget` destroys every robot of the taken intercept
- * contract's squad in the raid under way, as the player's shots would (the robots destroyed).
- */
 /** Automation only: the island's news as a sync would bring it (the map table lists it, attacks with 仕返し). */
 window.ringfallNews = (entries) => hub.takeNews(entries);
 /** Automation only: the expeditions out sent `ms` earlier, those on the game's own islands brought up to that clock (as a sync would, through the hub). */
 window.ringfallAge = (ms) => {
   const p = hub.profile;
   hub.update(refreshAi({ ...p, expeditions: p.expeditions.map((o) => ({ ...o, sentAt: o.sentAt - ms })) }));
-};
-
-window.ringfallContract = {
-  take: (type) => {
-    if (!camping || !FEATURES.questBoard) return null;
-    const c = hub.profile.board.contracts.find((o) => o.t === type);
-    if (!c) return null;
-    // Same path as the board's 受ける button (`take()` clears leftover 強度).
-    hub.profile = take(hub.profile, c.id);
-    saveProfile(hub.profile);
-    if (hub.station) hub.render();
-    return c.id;
-  },
-  destroyTarget: () => {
-    const c = hub.contract();
-    if (!running || c?.t !== "intercept") return 0;
-    const key = targetKey(c.target);
-    const foes = state.enemies.filter((e) => state.squads[e.squad] && squadKey(state.squads[e.squad]) === key);
-    for (const e of foes) kill(state, e, false);
-    return foes.length;
-  },
 };
 
 /**
@@ -1639,7 +1588,7 @@ window.ringfallMods = {
  */
 /**
  * Automation only: fills the bag with `haul` in the raid under way, for screenshots of the bag's
- * slots; `more` sets the POI each valuable came out of (`at`, by id), the tools, records and keys.
+ * slots; `more` sets the POI each valuable came out of (`at`, by id), the tools and keys.
  */
 window.ringfallBag = (haul, more = {}) => {
   if (!running) return;
@@ -1647,7 +1596,6 @@ window.ringfallBag = (haul, more = {}) => {
   p.haul = haul.filter((k): k is keyof typeof VALUABLES => k in VALUABLES);
   p.haulAt = p.haul.map((_, i) => (more.at?.[i] ? poiIndex(more.at[i] as PoiId) : -1));
   if (more.tools) p.tools = more.tools.filter((k): k is ToolKind => k in TOOLS);
-  if (more.records) p.records = more.records as RecordId[];
   if (more.keys) p.keys = more.keys.map((k) => poiIndex(k as PoiId));
 };
 window.ringfallEnd = (how, haul = [], found = []) => {
@@ -1669,9 +1617,6 @@ window.ringfallEnd = (how, haul = [], found = []) => {
  * just inside the gate facing out; `use` presses the use key where they stand; `open` and `close`
  * open and close a station's panel.
  */
-/** Tests / revival: flip `FEATURES.questBoard` / `FEATURES.reactiveDefense` (docs). */
-window.ringfallFeatures = FEATURES;
-
 window.ringfallCamp = {
   spots: () => CAMP.spots,
   walkTo: (id) => {

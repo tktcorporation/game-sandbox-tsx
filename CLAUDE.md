@@ -102,8 +102,8 @@ Clearing a POI's garrison is 掃討 in the UI; 制圧 is only the capture of a c
 Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
 emptied of robots, its clock standing) and its step (`stepCamp()`: walking only, weapons lowered).
-Its stations (map table, quest board, shelves, stall, workshop, factory, and the signal station, 信号所, where everything to do with the other islands is) open the panels of `view/hub.ts` by
-the use key. Walking out of the gate and the use key at the truck by it both open the departure
+Its stations (map table, shelves, stall, workshop, factory, and the signal station, 信号所, where everything to do with the other islands is) open the panels of `view/hub.ts` by
+the use key. The quest board (依頼板: intro / day contracts / story) was **removed** (code deleted 2026-11-24; revive from Git history, not a feature flag). Walking out of the gate and the use key at the truck by it both open the departure
 (`view/depart.ts`, `#depart`): the island drawn whole with every start on it (`Hub.startPoints()`:
 known ways in as solid rings, ways in not known yet dashed and shut, depots switched on as teal
 squares with their allowance as small boxes, red past it, a padlock on a region no raid may start
@@ -135,32 +135,21 @@ takes (`issuedHeals()`), and what is left of them comes home like any other heal
 records what it took (`Profile.lastKit`) and the shelves pick it again while the stash holds things
 like it, a weapon slot left empty taking a starter weapon (`recallLoadout()`). The valuables still wanted (`wanted()`, for the stash's notes and the order in
 which `settle()` keeps what fits) count the factory's levels as well as the hideout's.
-The trader's quests are data in `meta/quests.ts` (`QUESTS`: five intro quests (front first); credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
-also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
-`Profile.seed`, `Profile.day`, the island and the hideout (take a POI on the front by its core,
-fetch a valuable from a POI's bins, destroy a drone pack or a region's hunting party; numbers in
-`CONTRACT`), kept in
-`Profile.board` for the day; the player takes one (`Profile.taken`), the story record under way
-(`STORY_TAKEN`, which makes the record the objective), or none, and `settle()` pays it
-when `contractDone()` holds (fetch counts only valuables tagged with their bin's POI,
-`Player.haulAt` / `State.sentAt`; intercept reads `Stats.wiped`, by `squadKey()`). Five story
-contracts (`meta/story.ts`) follow one at a time: the one under way lays its record at its
-`RECORD_SPOTS` place in `map.ts` (`Start.record`), a bag slot that comes home into
-`Profile.records`. The bots take no contract and carry no record. Each POI has one locked bin (`vault: true` in its `bins`), opened
+The quest board (入門／今日の依頼／物語の依頼, `meta/quests.ts` / `contracts.ts` / `story.ts`, `RECORD_SPOTS`, board payouts) was **removed** (code deleted 2026-11-24; revive from Git history of the parent of that deletion, not via `FEATURES` / `window.ringfallFeatures`). Each POI has one locked bin (`vault: true` in its `bins`), opened
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
-POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
+POIs have a stable `id` (`PoiId` in `map.ts`); saves, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 33), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 34), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
-held; a save from before v14 keeps only the quests that still exist; a save from before v16 has a
+held; a save from before v16 has a
 quiet day and tomorrow's event drawn; a save from before v17 knows the starting mod kinds and plays
 at threat 0; a save from before v19 has the factory at level 0; a save from before v20 remembers no
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v31 that already finished another intro counts the front intro done; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -203,7 +192,7 @@ day (`Profile.day`), and each POI is the enemy's (`foe`), the player's (`own`) o
 player's (`rival:` and that player's id, `RivalHold` in `sim/holds.ts`; docs/ringfall/multiplayer.md)
 (`Profile.poiState`). Another player's node is not the player's: it is on the front and taken by its
 core as the enemy's is, stands no garrison of the enemy's, counts as neither side's for the enemy's
-strength, and the night never comes at it (nor counts it among a node's foes). After each settled raid the browser posts the island's summary (`meta/summary.ts`, as the anonymous player of `meta/identity.ts`) to `/api/island` (`src/ringfall/net.ts`, never under a browser driver), which `worker/api.ts` writes to D1 (`migrations/`; with no `DB` binding it answers 202 `no-database`, and a refused write 503 `db-error`; play is unchanged either way); `npx tsx scripts/ringfall-server.ts` checks the API on Node's SQLite. The Worker applies the migrations itself (`worker/schema.ts`): each file of `migrations/` not recorded in `schema_migrations` runs on an isolate's first API request, so a merge that adds one needs no SQL Console; a new file is also listed in `worker/migrations.ts`, and every statement is written to run again harmlessly (`IF NOT EXISTS`). Each island also has a Durable Object (`IslandDO`, `worker/island-do.ts`, exported by the game Worker and self-bound as `ISLAND` in `cloudflare.config.ts`, docs/ringfall/multiplayer.md; by the island's public code of `meta/island-code.ts`, which the server draws when a player claims an island with `POST /api/islands`) under `/api/islands/:code`, which takes the owner's report, other players' expeditions and reckons them with `sim/reckon.ts` while the owner is away; its rules are the pure `worker/island.ts` (the nodes from `meta/island-table.ts`, checked against `map.ts`), and `npx tsx scripts/ringfall-expeditions.ts` checks them. The camp's signal station (信号所, a mast by the west fence drawn by the view; the factory's panel keeps only the factory and a line of the squads out) has the expeditions' section (`view/expeditions.ts`, the requests in the browser-only `island-net.ts`, the pure rules in `meta/expeditions.ts`, checked by `npx tsx scripts/ringfall-expeditions-ui.ts`): the island's code, the expeditions out (`Profile.expeditions`, v27), and sending one to a node of another island by its code; with no island server it shows one line, and only the game's own islands answer. An expedition stands at its node `EXPEDITION.notice` (12 h) after it is sent: the owner's sync keeps those that hold nothing yet in `Profile.incoming` (v29; a green arrow on the camp's maps, 来る遠征 on the map table), and the node sent at can be fortified in a raid as a night's target is (`Battle.noticed`, `fortifiable()`), which shuts it to expeditions in that raid (`CaptureField.shut`) and for a day on the server (the report's `fortified`). As the departure opens the browser leases the island's expeditions (`leaseOwn()`, `POST …/lease`): the raid starts them as `BattleStart.rivals` (`lentRivals()`), its report says what became of them (`lentResults()`, the report's `lent`), and unreported the island reckons them itself once the lease runs out. Nothing waits on the lease: an answer that comes in the raid's first `LEASE_LATE` seconds still joins it (`takeRivals()`), and one no raid can use is given back (`releaseLease()`, `DELETE …/lease`); the lease also names the nodes still shut from an earlier raid (`BattleStart.shut`). An expedition out is called home from the panel (`recallAll()`, `flushRecalls()`, `DELETE …/expeditions/:id`); a liberation calls them all home and leaves other players' nodes theirs. After each settled raid the browser claims the island if it has no code, reports, and takes the server's other-player holds and log (`Profile.logSeq`, news on the signal station) into the profile; each expedition out keeps one squad fewer out in the raid's battle (`BattleStart.away`), and each node held away pays `FRONT.income` at the settle. While the server offers fewer than four neighbours (or none, with no server), the empty slots at sea hold islands the game runs itself (`meta/ai-islands.ts`, AI の島, marked AI wherever shown, the browser's only: `island-net.ts` answers their views, sends and recalls, `reportHolds()` reports their nodes as the enemy's and `mergeHolds()` keeps them): they grow with the player's day, and once the player holds the node facing one, it now and then sends an expedition at that node for the next raid (`aiLent()`, landing by its node, `RivalExpedition.near`), held as `rival:ai-` and its code if it takes it (`aiOwner()` in `sim/holds.ts`); the player's expeditions to one fight and hold on its clock (`aiOutcome()`); `npx tsx scripts/ringfall-ai-islands.ts` checks them. `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
+strength, and the night never comes at it (nor counts it among a node's foes). After each settled raid the browser posts the island's summary (`meta/summary.ts`, as the anonymous player of `meta/identity.ts`) to `/api/island` (`src/ringfall/net.ts`, never under a browser driver), which `worker/api.ts` writes to D1 (`migrations/`; with no `DB` binding it answers 202 `no-database`, and a refused write 503 `db-error`; play is unchanged either way); `npx tsx scripts/ringfall-server.ts` checks the API on Node's SQLite. The Worker applies the migrations itself (`worker/schema.ts`): each file of `migrations/` not recorded in `schema_migrations` runs on an isolate's first API request, so a merge that adds one needs no SQL Console; a new file is also listed in `worker/migrations.ts`, and every statement is written to run again harmlessly (`IF NOT EXISTS`). Each island also has a Durable Object (`IslandDO`, `worker/island-do.ts`, exported by the game Worker and self-bound as `ISLAND` in `cloudflare.config.ts`, docs/ringfall/multiplayer.md; by the island's public code of `meta/island-code.ts`, which the server draws when a player claims an island with `POST /api/islands`) under `/api/islands/:code`, which takes the owner's report, other players' expeditions and reckons them with `sim/reckon.ts` while the owner is away; its rules are the pure `worker/island.ts` (the nodes from `meta/island-table.ts`, checked against `map.ts`), and `npx tsx scripts/ringfall-expeditions.ts` checks them. The camp's signal station (信号所, a mast by the west fence drawn by the view; the factory's panel keeps only the factory and a line of the squads out) has the expeditions' section (`view/expeditions.ts`, the requests in the browser-only `island-net.ts`, the pure rules in `meta/expeditions.ts`, checked by `npx tsx scripts/ringfall-expeditions-ui.ts`): the island's code, the expeditions out (`Profile.expeditions`, v27), and sending one to a node of another island by its code; with no island server it shows one line, and only the game's own islands answer. An expedition stands at its node `EXPEDITION.notice` (12 h) after it is sent: the owner's sync keeps those that hold nothing yet in `Profile.incoming` (v29). The player-facing 来る遠征 warning / 迎撃導線 (reactive defence) was **removed** (code deleted 2026-11-24; revive from Git history, not a feature flag) — defence is automatic and results land in 島の知らせ. Night fortify (`fortifiable()`, `Battle.fortified`) remains for PvE night targets; a shut node still blocks expeditions for a day on the server (the report's `fortified`). As the departure opens the browser leases the island's expeditions (`leaseOwn()`, `POST …/lease`): the raid starts them as `BattleStart.rivals` (`lentRivals()`), its report says what became of them (`lentResults()`, the report's `lent`), and unreported the island reckons them itself once the lease runs out. Nothing waits on the lease: an answer that comes in the raid's first `LEASE_LATE` seconds still joins it (`takeRivals()`), and one no raid can use is given back (`releaseLease()`, `DELETE …/lease`); the lease also names the nodes still shut from an earlier raid (`BattleStart.shut`). An expedition out is called home from the panel (`recallAll()`, `flushRecalls()`, `DELETE …/expeditions/:id`); a liberation calls them all home and leaves other players' nodes theirs. After each settled raid the browser claims the island if it has no code, reports, and takes the server's other-player holds and log (`Profile.logSeq`, news on the signal station) into the profile; each expedition out keeps one squad fewer out in the raid's battle (`BattleStart.away`), and each node held away pays `FRONT.income` at the settle. While the server offers fewer than four neighbours (or none, with no server), the empty slots at sea hold islands the game runs itself (`meta/ai-islands.ts`, AI の島, marked AI wherever shown, the browser's only: `island-net.ts` answers their views, sends and recalls, `reportHolds()` reports their nodes as the enemy's and `mergeHolds()` keeps them): they grow with the player's day, and once the player holds the node facing one, it now and then sends an expedition at that node for the next raid (`aiLent()`, landing by its node, `RivalExpedition.near`), held as `rival:ai-` and its code if it takes it (`aiOwner()` in `sim/holds.ts`); the player's expeditions to one fight and hold on its clock (`aiOutcome()`); `npx tsx scripts/ringfall-ai-islands.ts` checks them. `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
 makes the player's each node whose core the raid captured, however the raid ended, or with a
 battle takes every node as the battle ended (`RaidDay.battle`), then the night's attacks
 (`nightTargets()`, `nightRaids()`, `NIGHT` in `config.ts`: as a day starts the enemy marks one or two of the player's nodes next to its ground, a hash of the raid's seed, the day and the node, which the camp's maps and the raid's show as a crescent (`tonight()`, `Battle.targets`); only a marked node can fall, by chance, less when guarded and with the factory's level, and never one the player fortified in the raid by holding its core for `FORTIFY.time` seconds, `fortifiable()`, `State.fortify`, `Battle.fortified`), switches
@@ -228,12 +217,11 @@ Mod parts (`MODS` in `config.ts`, `sim/mods.ts`) are the raid's own build: three
 which bin or robot holds one is a hash of the seed and the bin or robot (`binMod()`, `robotMod()`),
 never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play as without them. A core the player takes lays out `MOD.core` parts round it (`coreReward()`, `Loot.choice`): the use key takes one and the rest go, and walking over them puts none on. Three kinds pay for a kill from behind or unseen, or one made sliding or in the air (`killMods()`, `Player.haste`). A
 raid got off alive may analyse one worn part on its results (`analyse()` in `profile.ts`). The
-強度 (`THREAT`, `Profile.threat`, `newRun(..., { threat })`) belongs to the contract taken: it is
-chosen on that contract's card on the board, taking another contract starts it at 0, and a raid
-with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enemy's strength;
-higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
-from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
-each POI's best 強度 for the map.
+強度 (`THREAT`, `newRun(..., { threat })`) for a raid is `raidThreat()` = `roundThreat()` from
+`Profile.cycle` (`FINALE.threat` a round freed; the board-chosen contract 強度 is gone with the
+quest board). 0 is the island's raid at the enemy's strength; higher scales its times and plates
+(`raidClock()`, `netPlated()`), the range robots answer shots from afar, and the mod parts' odds.
+`Profile.freedAt` keeps each POI's best 強度 for the map; `Profile.threat` is kept for save compat.
 The front (`docs/ringfall/island-v2.md`): the twenty-one freeable POIs are the nodes (`NODES` in
 `map.ts`, linked along the roads by the twenty-nine `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
@@ -245,9 +233,8 @@ the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clea
 robots does not take it. The bot captures the front's cores in its region whose garrison's plates
 its best gun pierces, `Skill.capture` a raid (`Skill.battle` in a battle), and then leaves; it takes on
 no POI two tiers past its best gun, and its paths go round the nearest such garrison of its
-region (or the titan's sight, where the titan is). With no contract taken (and
-the story record not taken), the objective card points at the front (`objectiveSteps()`), and the
-record has a line of its own.
+region (or the titan's sight, where the titan is). The objective card points at the front
+(`objectiveSteps()`).
 A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
 `newRun(..., { battle: { factory } })` (`State.battle`); a raid without it, as the sim gate's tables
 play, has none. It lasts `CONQUEST.time` seconds, the raid's time limit (`timeUp`: still out is a
@@ -317,7 +304,7 @@ raises the valuables the trader sells (`materialRarity()`), `stashCap()` and `po
 boosted POI. Every raid leans one POI's bins of its region to a rare kind (`State.boost`, from
 `boostFor(seed, region)` in `state.ts`, without drawing on the raid's random numbers);
 `Profile.seed` is the next raid's seed, fixed at the base so the report comes true. The top levels
-ask for the data core or the small reactor. Build quests (`{ t: "build" }`) finish at the base (`claimBuilt()`).
+ask for the data core or the small reactor.
 `sources()` derives where each valuable is found from the loot data (`loot.valuable`, `TOP_BINS`,
 `VAULT`, `ROBOT_DROPS`), for the workshop's hints.
 
@@ -697,9 +684,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   page audit check them). `bag.ts` (`Hud.bag`) is the bag peek, shown while Tab or the phone's bag
   button is held, the game running on under it with nothing to manage, and the card a pickup slides
   in: each thing carried as its slots in its rarity's colour, its name, credits and what it is for
-  (the hideout module and factory level whose next level takes it, the quests and the contract
-  taken that ask for it, the route a tool opens) as the base's marks, and the pouch's mark on what
-  a wipe keeps. It reads the state and the profile the raid started from (`BagView.setProfile()`),
+  (the hideout module and factory level whose next level takes it, the route a tool opens) as the
+  base's marks, and the pouch's mark on what a wipe keeps. It reads the state and the profile the
+  raid started from (`BagView.setProfile()`),
   and finds a pickup by comparing what is carried frame to frame. Past a sprint's speed the view widens with the speed (up to 12° on a
   zipline, half on a phone), `#fx-speed` streaks the screen's edges (hud.ts sets its opacity) and
   the wind's rush grows (soundscape.ts); a climb nods the view with each pull and dips it over the

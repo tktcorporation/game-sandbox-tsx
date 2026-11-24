@@ -12,7 +12,6 @@
 export type TermId =
   | "camp"
   | "mapTable"
-  | "questBoard"
   | "stashShelf"
   | "traderStall"
   | "workshop"
@@ -47,7 +46,6 @@ export type TermId =
   | "islandNews"
   | "nightRaid"
   | "wares"
-  | "questsAndRecords"
   | "loadout"
   | "seaIslands"
   | "island"
@@ -61,7 +59,6 @@ export type TermId =
 export const TERM = {
   camp: "野営地",
   mapTable: "地図の机",
-  questBoard: "依頼板",
   stashShelf: "倉庫の棚",
   traderStall: "商人の屋台",
   /** World label + panel head/side for the hideout station. */
@@ -108,7 +105,6 @@ export const TERM = {
   islandNews: "島の知らせ",
   nightRaid: "夜の襲撃",
   wares: "売り物",
-  questsAndRecords: "依頼と記録",
   loadout: "持っていく物",
   seaIslands: "海の向こうの島",
   island: "島",
@@ -127,10 +123,7 @@ export const PHRASE = {
   /** 倉庫 capacity: raise from the shelves where the count is seen. */
   nextStashRaise: `${TERM.nextHand}${TERM.stashShelf} · ${TERM.raiseLevel}`,
   nextFactoryRaise: `${TERM.nextHand}${TERM.factory} · ${TERM.raiseLevel}`,
-  nextMapFortifyIncoming: `${TERM.nextHand}${TERM.mapTable} · ${TERM.incomingExpedition}を${TERM.fortify}`,
   nextVehicleOrGate: `${TERM.nextHand}${TERM.vehicle}か${TERM.gate}から${TERM.sortie}`,
-  nextQuestPick: `${TERM.nextHand}${TERM.questBoard} · 依頼を選ぶ`,
-  nextQuestDeliver: `${TERM.nextHand}${TERM.questBoard} · 納品する`,
   sortieDo: `${TERM.sortie}する`,
   factoryRaiseReady: `${TERM.factory} · ${TERM.raiseLevelReady}`,
   sideWorkshop: TERM.workshop,
@@ -169,27 +162,12 @@ export function nextAttack(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.attack}`;
 }
 
-/** お隣の前線: 予告登録完了トースト（休止機能: 反応型守りON時）。 */
-export function assaultNoticeTo(name: string): string {
-  return `${name}へ${TERM.incomingExpedition}の予告を立てた`;
-}
-
-/** お隣の前線: 予告猶予時間中の待ちトースト（休止機能: 反応型守りON時）。 */
-export function assaultWaitHours(name: string, hours: number): string {
-  return `${name}を${TERM.attack} · あと約 ${hours} 時間（${TERM.incomingExpedition}と同じ予告）`;
-}
-
 /**
  * 相手拠点が要塞化・占有変更等で出撃できないときのエラートースト。
  * 【元】（なし） 【案】〜は固められていて攻められない 【理由】来る遠征と同じ「固める」語で拒否理由を出す。
  */
 export function assaultFortified(name: string): string {
   return `${name}は${TERM.fortify}られていて攻められない`;
-}
-
-/** 次の一手: 予告猶予時間中の表示（休止機能: 反応型守りON時）。 */
-export function nextAssaultWait(name: string, hours: number): string {
-  return `${TERM.nextHand}${name}を${TERM.attack} · 予告 あと約 ${hours} 時間`;
 }
 
 /** 次の一手: 短いレイド出撃が可能になったときの表示。 */

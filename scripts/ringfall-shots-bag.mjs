@@ -1,10 +1,9 @@
 /**
  * The bag's screenshots for the shots gate (scripts/ringfall-shots.mjs runs them;
  * `node scripts/ringfall-shots-bag.mjs` runs them alone against the build (`npm run build`)): the bag peek held
- * open over a mixed bag (valuables of several rarities, one of them asked for by the contract
- * taken, a key, a tool, a story record, a mod part worn, what the pouch keeps), the game running
- * on under it, and the card a pickup slides in; on a desktop by Tab and on phones (844×390 and
- * 740×360) by the bag button under real touch events.
+ * open over a mixed bag (valuables of several rarities, a key, a tool, a mod part worn, what the
+ * pouch keeps), the game running on under it, and the card a pickup slides in; on a desktop by Tab
+ * and on phones (844×390 and 740×360) by the bag button under real touch events.
  */
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -14,10 +13,9 @@ import { chromium } from "playwright-core";
 
 /** Where the game keeps its profile (src/ringfall/meta/storage.ts). */
 const KEY = "ringfall.profile.v1";
-/** A mid-game base: the hideout half built, the factory at its first level, the trader's delivery quest open. */
+/** A mid-game base: the hideout half built, the factory at its first level. */
 const BASE = {
   v: 13, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, day: 15, depots: ["quarry"], seen: "",
-  quests: { progress: {}, done: ["front", "grunts", "village", "medbay"] },
   hideout: { infirmary: 1, workbench: 1, storage: 1, radio: 0, pouch: 1 },
   stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "valuable", kind: "fuse" }],
 };
@@ -33,16 +31,10 @@ export async function bagShots({ browser, port, out, errors }) {
     await pg.waitForTimeout(300);
     return pg;
   };
-  /** From the title into a raid out of the camp's gate, with the day's fetch contract taken if the board has one; that contract. */
+  /** From the title into a raid out of the camp's gate. */
   const raid = async (pg, touch) => {
     await (touch ? pg.tap("#start") : pg.click("#start"));
     await pg.waitForFunction(() => getComputedStyle(document.getElementById("fade")).opacity === "0", null, { timeout: 8000 }).catch(() => errors.push("bag: the fade never cleared"));
-    // Bag marks for a fetch contract need the 依頼板 revival path.
-    await pg.evaluate(() => {
-      window.ringfallFeatures.questBoard = true;
-    });
-    const id = await pg.evaluate(() => window.ringfallContract.take("fetch"));
-    const fetch = id ? await pg.evaluate(([k, i]) => JSON.parse(localStorage.getItem(k)).board.contracts.find((c) => c.id === i), [KEY, id]) : null;
     await pg.evaluate(() => window.ringfallCamp.toGate());
     await pg.keyboard.down("KeyW");
     let st = await read(pg);
@@ -55,15 +47,14 @@ export async function bagShots({ browser, port, out, errors }) {
     for (let i = 0; i < 20 && (await read(pg)).screen !== "game"; i++) await pg.evaluate(() => window.advanceTime(200));
     if ((await read(pg)).screen !== "game") errors.push("bag: no raid started");
     await pg.evaluate(() => window.ringfallStep(1500));
-    return fetch;
   };
-  /** The mixed bag: a contract's valuable from its POI and one from elsewhere, others of each rarity, a tool, a record, a key, a mod part. */
-  const fill = async (pg, fetch, swap = false) => {
-    const kind = fetch?.kind ?? "drive";
+  /** The mixed bag: valuables of each rarity, a tool, a key, a mod part. */
+  const fill = async (pg, swap = false) => {
+    const kind = "drive";
     // `swap`: a gyro picked up with a full bag, a parts and the fuse left behind for it.
     const haul = swap ? [kind, kind, "board", "parts", "gyro"] : [kind, kind, "board", "parts", "parts", "fuse"];
-    const at = [fetch?.poi ?? null, null];
-    await pg.evaluate(([h, a]) => window.ringfallBag(h, { at: a, tools: ["cutter"], records: ["tether"], keys: ["relay"] }), [haul, at]);
+    const at = ["relay", null];
+    await pg.evaluate(([h, a]) => window.ringfallBag(h, { at: a, tools: ["cutter"], keys: ["relay"] }), [haul, at]);
     await pg.evaluate(() => window.ringfallMods.wear(["grip", "probe"]));
   };
   /** The first pickup card, if it is on screen and seen: inside the window, opaque and visible, it and every parent. */
@@ -104,8 +95,8 @@ export async function bagShots({ browser, port, out, errors }) {
   {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const pg = await open(ctx);
-    const fetch = await raid(pg, false);
-    await fill(pg, fetch);
+    await raid(pg, false);
+    await fill(pg);
     // The cards of what was just put in the bag go first.
     await pg.evaluate(() => window.advanceTime(2600));
     await pg.keyboard.down("Tab");
@@ -122,7 +113,7 @@ export async function bagShots({ browser, port, out, errors }) {
     await pg.evaluate(() => window.advanceTime(50));
     if (!(await pg.evaluate(() => document.getElementById("bag-peek").hidden))) errors.push("bag: the peek stayed open after Tab was let go");
     // A pickup: a gyro enters the bag, what it took the place of struck through on its card.
-    await fill(pg, fetch, true);
+    await fill(pg, true);
     // Past the card's slide-in (0.18 s of the game's time).
     await pg.evaluate(() => window.advanceTime(300));
     await pg.waitForTimeout(300);
@@ -139,8 +130,8 @@ export async function bagShots({ browser, port, out, errors }) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const pg = await open(ctx);
     const cdp = await ctx.newCDPSession(pg);
-    const fetch = await raid(pg, true);
-    await fill(pg, fetch);
+    await raid(pg, true);
+    await fill(pg);
     await pg.evaluate(() => window.advanceTime(2600));
     const bb = await pg.locator("#t-bag").boundingBox();
     if (!bb) errors.push(`bag (${w}×${h}): no bag button`);
@@ -154,7 +145,7 @@ export async function bagShots({ browser, port, out, errors }) {
       await pg.evaluate(() => window.advanceTime(50));
       if (!(await pg.evaluate(() => document.getElementById("bag-peek").hidden))) errors.push(`bag (${w}×${h}): the peek stayed open after the button was let go`);
     }
-    await fill(pg, fetch, true);
+    await fill(pg, true);
     // Past the card's slide-in (0.18 s of the game's time).
     await pg.evaluate(() => window.advanceTime(300));
     await pg.waitForTimeout(300);

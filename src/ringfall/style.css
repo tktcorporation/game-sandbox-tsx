@@ -539,26 +539,6 @@ body.touch #obj-raid .why {
   display: none;
 }
 
-/* The contract taken and the story record: gold like the loot, turning to the sky's blue once met. */
-#obj-contract,
-#obj-story {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--r3);
-}
-#obj-contract[hidden],
-#obj-story[hidden] {
-  display: none;
-}
-#obj-contract.met,
-#obj-story.met {
-  color: var(--sky);
-}
-
 /* The day's island event, under the place: the haze's grey, its icon in its own colour. */
 #obj-event {
   grid-column: 1 / -1;
@@ -2632,27 +2612,6 @@ body.touch .note a {
   display: inline-block;
   padding: 11px 0;
 }
-/*
- * On a phone the contract shares the second row with the bag and the clock, shortened to its
- * progress, so the card still ends above the vitals; the story record takes that place only
- * while no contract is taken.
- */
-body.touch #obj-contract,
-body.touch #obj-story {
-  order: 2;
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-body.touch #obj-contract .lead,
-body.touch #obj-story .lead {
-  display: none;
-}
-body.touch #obj-contract:not([hidden]) ~ #obj-story {
-  display: none;
-}
 body.touch #obj-event {
   order: 3;
   flex-basis: 100%;
@@ -3977,22 +3936,6 @@ body.touch #obj-raid .short {
 }
 #obj-until b.paused {
   color: var(--amber);
-}
-#obj-contract b {
-  font-family: var(--num);
-  margin-left: 8px;
-}
-#obj-contract .ico.check,
-#obj-story .ico.check {
-  margin-left: 4px;
-}
-#obj-story .lead {
-  margin-right: 6px;
-  color: var(--muted);
-}
-#obj-story .at {
-  margin-left: 6px;
-  color: var(--muted);
 }
 #obj-raid {
   display: flex;
@@ -5584,13 +5527,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
 /*
  * The objective card says one thing: what to do now. Under it only what changes as the raid goes:
  * the bag, the clock, whether the robots know. The goal's own name is on the camp's card and the
- * departure, the record's line gives way to a contract's, and a way off shows when it is news (a
- * craft called, a flare in hand); every way off is on the map (docs/ringfall/ui.md, 1 画面 1 つ).
+ * departure, and a way off shows when it is news (a craft called, a flare in hand); every way off
+ * is on the map (docs/ringfall/ui.md, 1 画面 1 つ).
  */
 #obj-title {
-  display: none;
-}
-#obj-contract:not([hidden]) ~ #obj-story {
   display: none;
 }
 #obj-exits div:not(.live) {

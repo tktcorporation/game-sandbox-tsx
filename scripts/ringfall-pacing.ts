@@ -1,18 +1,17 @@
 /**
  * The hideout's pacing for RINGFALL's sim gate: the meta played with the raids the bots
  * really played. Each playthrough draws raids of one skill from the recorded pool, settles
- * them in order, and spends with a greedy policy: deliver what the trader asks, build the
- * cheapest level that can be built (buying what it lacks, if the trader sells it), and
- * sell all gear (the bots play the starter weapons, which cannot be sold) and every valuable nothing still needs, and keep
- * room in the stash for a full bag. It starts in the region whose recorded raids bring
- * home the most worth, above all what the hideout wants and cannot buy.
+ * them in order, and spends with a greedy policy: build the cheapest level that can be built
+ * (buying what it lacks, if the trader sells it), and sell all gear (the bots play the starter
+ * weapons, which cannot be sold) and every valuable nothing still needs, and keep room in the
+ * stash for a full bag. It starts in the region whose recorded raids bring home the most worth,
+ * above all what the hideout wants and cannot buy.
  */
-import { BAG, HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from "../src/ringfall/sim/config";
-import { ENTRIES, POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
+import { BAG, HIDEOUT, VALUABLES, type ModuleId, type ValuableKind } from "../src/ringfall/sim/config";
+import { ENTRIES, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
 import { hideoutDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
-import { build, buy, canBuild, deliver, deliverable, hideoutWanted as wanted, newProfile, bestFitValuables, sell, settle, shortfall, stashUsed, type Profile } from "../src/ringfall/meta/profile";
-import { offered } from "../src/ringfall/meta/quests";
+import { build, buy, canBuild, hideoutWanted as wanted, newProfile, bestFitValuables, sell, settle, shortfall, stashUsed, type Profile } from "../src/ringfall/meta/profile";
 
 /** What settle() reads of a raid, kept from each bot run. */
 export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats" | "sent" | "sentVia" | "depots" | "seen"> & {
@@ -42,11 +41,10 @@ const brought = (r: RaidRecord, slots: number): ValuableKind[] => [...r.sent, ..
 
 /**
  * The region whose raids bring home the most credits' worth, counting twice what the hideout
- * still wants and cannot buy, and an offered quest to clear a POI there as worth its reward.
+ * still wants and cannot buy.
  */
 function pickRegion(p: Profile, pool: Partial<Record<RegionId, RaidRecord[]>>): RegionId {
   const want = wanted(p);
-  const clears = offered(p.quests).filter((q) => q.goal.t === "clear");
   let best: RegionId = REGIONS[0].id;
   let bestScore = -1;
   for (const r of REGIONS) {
@@ -57,12 +55,7 @@ function pickRegion(p: Profile, pool: Partial<Record<RegionId, RaidRecord[]>>): 
     // Everything brought home is worth its price (built in or sold); what the hideout wants and
     // the trader does not sell counts once more, since credits cannot stand in for it.
     const sold = onSale(p.hideout);
-    let score = (Object.keys(mean) as ValuableKind[]).reduce((n, k) => n + ((mean[k] ?? 0) + (sold.includes(k) ? 0 : Math.min(Math.max(0, want[k]), mean[k] ?? 0))) * VALUABLES[k].value, 0);
-    for (const q of clears) {
-      const poi = POIS.findIndex((o) => q.goal.t === "clear" && o.id === q.goal.poi);
-      const worth = q.reward.cash + q.reward.items.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
-      score += (worth * raids.filter((raid) => raid.stats.cleared.includes(poi)).length) / raids.length;
-    }
+    const score = (Object.keys(mean) as ValuableKind[]).reduce((n, k) => n + ((mean[k] ?? 0) + (sold.includes(k) ? 0 : Math.min(Math.max(0, want[k]), mean[k] ?? 0))) * VALUABLES[k].value, 0);
     if (score > bestScore) [best, bestScore] = [r.id, score];
   }
   return best;
@@ -76,7 +69,6 @@ const cost = (p: Profile, m: ModuleId) => {
 
 /** The greedy spending after each raid. */
 function spend(p: Profile): Profile {
-  for (let q = offered(p.quests).find((o) => deliverable(p, o)); q; q = offered(p.quests).find((o) => deliverable(p, o))) p = deliver(p, q.id);
   for (let built = true; built; ) {
     built = false;
     const open = MODULES.filter((m) => nextLevel(p.hideout, m)).sort((a, b) => cost(p, a) - cost(p, b));
@@ -92,9 +84,8 @@ function spend(p: Profile): Profile {
       }
     }
   }
-  // Sell gear (the starter weapons are not for sale) and every valuable no level nor delivery still wants, last entries first so indices hold.
+  // Sell gear (the starter weapons are not for sale) and every valuable no level still wants, last entries first so indices hold.
   const want = wanted(p);
-  for (const q of offered(p.quests)) if (q.goal.t === "deliver") want[q.goal.valuable] += q.goal.n;
   for (let n = p.stash.length - 1; n >= 0; n--) {
     const i = p.stash[n];
     if (i.t !== "valuable") p = sell(p, n);
