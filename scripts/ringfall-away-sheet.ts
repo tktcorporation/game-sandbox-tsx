@@ -32,4 +32,13 @@ assert.equal(awaySheetParts(["a"], ["a"]), null);
   assert.ok(parts!.trop!.startsWith(TERM.trophy));
 }
 
+// Same wording twice: the second occurrence is still fresh (count, not Set).
+{
+  const line = "ツバキに補給所を取られた · 島の守りが削られた";
+  const parts = awaySheetParts([line], [line, line]);
+  assert.ok(parts);
+  assert.deepEqual(parts!.lines, [line]);
+  assert.equal(parts!.trop, null);
+}
+
 console.log("away sheet ok");

@@ -580,7 +580,14 @@ let departing: { walk: boolean; back: { x: number; y: number; z: number; yaw: nu
 let inside: { x: number; y: number; z: number; yaw: number } | null = null;
 
 /** The camp stands still while a station's panel, the departure's check or a start fade is up. */
-const campFrozen = () => hub.station !== null || departing !== null || fading;
+/**
+ * 起動時の一枚を出しているあいだ true。野営地に戻るで閉じ、同じ同期の結果を二度出さない。
+ * セッション中いちど同期したら awayBooted が立ち、レイド帰営の openCamp では再同期しない。
+ */
+let awaySheetOpen = false;
+let awayBooted = false;
+
+const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen;
 
 /** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
 function fade(on: boolean, now = false) {
@@ -618,13 +625,6 @@ function readyRaid() {
   whenIdle(walks);
 }
 
-/**
- * 起動時の一枚を出しているあいだ true。野営地に戻るで閉じ、同じ同期の結果を二度出さない。
- * セッション中いちど同期したら awayBooted が立ち、レイド帰営の openCamp では再同期しない。
- */
-let awaySheetOpen = false;
-let awayBooted = false;
-
 /** Wakes the player in the camp, the teammate beside them: from the title, after the results. */
 function openCamp() {
   // 起動時の一枚を閉じる（同じ結果を二度出さない）。
@@ -632,6 +632,8 @@ function openCamp() {
     awaySheetOpen = false;
     hud.endResults();
     $("results").hidden = true;
+    paused = false;
+    $("pause").hidden = true;
     lock();
     return;
   }

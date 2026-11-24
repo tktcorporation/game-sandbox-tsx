@@ -202,14 +202,24 @@ export function pushNews(prev: readonly string[], lines: readonly string[]): str
 
 /**
  * 起動時の一枚（留守中の対人）: 控えに増えた行のうち、トロフィー行は別枠、残りは島の知らせ。
- * どちらも空なら一枚を出さない（null）。
+ * 同じ文が二度入っても件数で差を取る（Set だと二度目が落ちる）。どちらも空なら null。
  */
 export function awaySheetParts(
   beforeNews: readonly string[],
   afterNews: readonly string[],
 ): { lines: string[]; trop: string | null } | null {
-  const seen = new Set(beforeNews);
-  const fresh = afterNews.filter((l) => l.trim() && !seen.has(l));
+  const left = new Map<string, number>();
+  for (const l of beforeNews) {
+    if (!l.trim()) continue;
+    left.set(l, (left.get(l) ?? 0) + 1);
+  }
+  const fresh: string[] = [];
+  for (const l of afterNews) {
+    if (!l.trim()) continue;
+    const n = left.get(l) ?? 0;
+    if (n > 0) left.set(l, n - 1);
+    else fresh.push(l);
+  }
   if (!fresh.length) return null;
   const trop = fresh.find((l) => l.startsWith(TERM.trophy)) ?? null;
   const lines = trop ? fresh.filter((l) => l !== trop) : fresh;
