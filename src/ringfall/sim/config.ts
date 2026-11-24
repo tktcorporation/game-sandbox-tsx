@@ -593,7 +593,7 @@ export const NIGHT = {
  * (`finaleOpen()` in meta/island.ts): the raid's objective is the titan, and a raid in which it
  * falls frees the island. The days the round took are kept, the island is the enemy's again, the
  * factory starts over, and every raid of the next round plays `threat` levels of 強度 harder
- * (`THREAT`, on top of a contract's, to its top). What the player has learned and stored stays.
+ * (`THREAT`, to its top). What the player has learned and stored stays.
  */
 export const FINALE = { nodes: 16, threat: 1 };
 
@@ -690,27 +690,6 @@ export const STRENGTH = {
   play: 2,
 };
 
-/**
- * The camp's contract board (meta/contracts.ts): `count` contracts a day, built from the island
- * and the profile, of which the player takes one or none. Rewards, in credits:
- * - free a POI: `freePerRobot` for each robot of its garrison that day;
- * - bring home valuables from a POI's bins: `fetchShare` of their worth, at least `fetchMin`,
- *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
- * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
- *   weapon, one step rarer every `rarityEvery` days.
- * Each is multiplied by the region's `region` factor: the launch site across the canyon is harder ground than the reservoir, the harbor harder still, the city across the strait the hardest.
- */
-export const CONTRACT = {
-  count: [3, 4] as const,
-  freePerRobot: 150,
-  fetchShare: 0.6,
-  fetchMin: 300,
-  fetchMax: 3,
-  intercept: { pack: 500, party: 800, crew: 900 },
-  rarityEvery: 6,
-  region: { reservoir: 1, harbor: 1.4, city: 1.6, launch: 1.3 } satisfies Record<RegionId, number>,
-};
-
 /** The island's events (島の出来事): at most one a day, announced the day before (meta/island.ts). */
 export type EventKind = "debris" | "storm" | "crews";
 
@@ -726,7 +705,7 @@ export const EVENTS = {
 
 /**
  * A debris fall (破片の落下): a piece of the ring lies at one of `DEBRIS_SPOTS` (map.ts) for the
- * day, with a crate (a bin out on the island, so it counts for no fetch contract) that holds
+ * day, with a crate (a bin out on the island) that holds
  * `count` valuables drawn from `valuables` and `heals` heals, guarded by `guards` at its foot.
  */
 export const DEBRIS = {

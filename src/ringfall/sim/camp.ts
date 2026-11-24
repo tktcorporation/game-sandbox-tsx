@@ -1,15 +1,11 @@
 import { PLAYER } from "./config";
 import { stepAlly, placeAlly } from "./ally";
 import { groundAt } from "./geom";
-import { CAMP, HOME_REGION, inCamp, type CampSpot, type RouteId, type StationId } from "./map";
-import { questBoardOn } from "../meta/features";
+import { CAMP, HOME_REGION, inCamp, type CampSpot, type RouteId } from "./map";
 import { stepPlayer } from "./player";
 import { useRoutes } from "./routes";
 import { starterKit, idleInput, newRun, type Input, type Kit, type State } from "./state";
 import { hypot2 } from "./hypot";
-
-/** Whether a camp station is usable (依頼板 is off while `FEATURES.questBoard` is false). */
-export const campSpotLive = (id: StationId | "vehicle") => id !== "quests" || questBoardOn();
 
 /*
  * The camp between raids: the player and the teammate walk the yard (map.ts `CAMP`) with no
@@ -67,8 +63,6 @@ export function campSpotAt(at: { x: number; z: number; yaw?: number }): CampSpot
   const fx = yaw !== undefined ? Math.sin(yaw) : 0;
   const fz = yaw !== undefined ? -Math.cos(yaw) : 0;
   for (const c of CAMP.spots) {
-    // 依頼板 is scenery only while FEATURES.questBoard is off.
-    if (c.id === "quests" && !campSpotLive(c.id)) continue;
     const dx = c.x - at.x;
     const dz = c.z - at.z;
     const d = hypot2(dx, dz);

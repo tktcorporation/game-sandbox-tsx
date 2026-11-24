@@ -1,10 +1,9 @@
-import { CONQUEST, FRONT, VALUABLES, type ValuableKind } from "./config";
+import { CONQUEST, FRONT } from "./config";
 import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, recordSpot, regionHere, type PoiId, type RecordId, type RegionId } from "./map";
+import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, regionHere } from "./map";
 import { frontNodes } from "./front";
-import { haulOrigins } from "./world";
-import { squadKey, type State } from "./state";
+import type { State } from "./state";
 
 /*
  * The raid's objective as an ordered list of steps (`objectiveSteps()`): what to do now, what
@@ -13,15 +12,10 @@ import { squadKey, type State } from "./state";
  */
 
 /**
- * What the raid is out to do, as the sim sees it: a node to take by its core, a valuable to bring
- * from a POI's bins, a squad to destroy (by `squadKey()`), or a story record to bring home. The contracts (meta/contracts.ts)
- * and the story give a raid one.
+ * What the raid is out to do, as the sim sees it: a node to take by its core. With none given,
+ * `objectiveSteps()` follows the front, the day's battle, or explore-and-extract.
  */
-export type Task =
-  | { t: "capture"; node: number }
-  | { t: "fetch"; poi: PoiId; kind: ValuableKind; n: number }
-  | { t: "intercept"; key: string; name: string; region: RegionId; at?: { x: number; z: number } }
-  | { t: "record"; id: RecordId };
+export type Task = { t: "capture"; node: number };
 
 /** A point a step leads to: the beacon stands there and the compass points at it. */
 export interface Spot {
@@ -113,9 +107,6 @@ function captureSteps(s: State, i: number, title: string): Objective {
   ]);
 }
 
-/** The squads (by index) that count for a task destroyed under `key`, with members left. */
-const squadsUnder = (s: State, key: string) => s.squads.map((q, k) => ({ q, k })).filter(({ q, k }) => squadKey(q) === key && s.enemies.some((e) => e.squad === k));
-
 /** The steps of holding node `i`, the player's, against the squads coming to take it (sim/battle.ts). */
 function defendSteps(s: State, i: number): Objective {
   const n = NODES[i];
@@ -148,7 +139,7 @@ function defendSteps(s: State, i: number): Objective {
  */
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
   if (s.capture && s.nodes[s.capture.node] !== "own") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
-  if (task) return taskSteps(s, task);
+  if (task) return captureSteps(s, task.node, `${NODES[task.node].name}の解放`);
   // The decisive battle: the titan, before anything else the island asks.
   if (s.finale) {
     const i = POIS.findIndex((p) => p.boss);
@@ -177,49 +168,6 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
     { kind: "explore", label: "島を探索する", until: "回収品を 1 つ持つ", at: null, done: s.player.haul.length > 0 || s.sent.length > 0 },
     extractStep(s),
   ]);
-}
-
-/** The steps of a given task. */
-function taskSteps(s: State, task: Task): Objective {
-  const p = s.player.pos;
-  switch (task.t) {
-    case "capture":
-      return captureSteps(s, task.node, `${NODES[task.node].name}の解放`);
-    case "fetch": {
-      const i = poiIndex(task.poi);
-      const poi = POIS[i];
-      const got = [...haulOrigins(s.player).map((from, n) => ({ kind: s.player.haul[n], from })), ...s.sent.map((kind, n) => ({ kind, from: s.sentAt[n] ?? -1 }))].filter((v) => v.kind === task.kind && v.from === i).length;
-      const bins = s.bins.filter((b) => !b.open && s.fetch?.bins.includes(b.id));
-      const bin = bins.sort((a, b) => dist2d(a, p) - dist2d(b, p))[0];
-      return buildObjective(`${VALUABLES[task.kind].label}の回収`, [
-        { kind: "go", label: `${poi.name}へ向かう`, until: `${poi.name}に入る`, at: ground(poi.x, poi.z), done: got > 0 || dist2d(p, poi) < poi.trigger },
-        { kind: "act", label: `${poi.name}の補給箱を開ける`, until: `${VALUABLES[task.kind].label}を ${task.n} 個見つける`, progress: `${Math.min(got, task.n)}/${task.n}`, at: bin ? ground(bin.x, bin.z, bin.y) : null, done: got >= task.n, near: "補給箱を使う" },
-        extractStep(s),
-      ]);
-    }
-    case "intercept": {
-      const live = squadsUnder(s, task.key);
-      const members = s.enemies.filter((e) => live.some(({ k }) => k === e.squad));
-      const lead = members.sort((a, b) => dist2d(a.pos, p) - dist2d(b.pos, p))[0];
-      const at = lead ? ground(lead.pos.x, lead.pos.z) : task.at ? ground(task.at.x, task.at.z) : null;
-      const beaten = s.stats.wiped.includes(task.key);
-      return buildObjective(`${task.name}の迎撃`, [
-        { kind: "go", label: "相手のいる辺りへ向かう", until: `${ARRIVE} m 以内に近づく`, at, done: beaten || (!!at && dist2d(p, at) < ARRIVE) },
-        { kind: "act", label: `${task.name}を全滅させる`, until: "最後の 1 体まで倒す", progress: members.length ? `残り ${members.length}` : undefined, at, done: beaten },
-        extractStep(s),
-      ]);
-    }
-    case "record": {
-      const r = recordSpot(task.id);
-      const held = s.player.records.includes(task.id) || s.sentRecords.includes(task.id);
-      const at = ground(r.x, r.z, r.y);
-      return buildObjective(`記録：${r.name}`, [
-        { kind: "go", label: `${r.place}へ向かう`, until: `${ARRIVE} m 以内に着く`, at, done: held || dist2d(p, at) < ARRIVE },
-        { kind: "act", label: `${r.name}を使う`, until: "記録を使う（バッグ 1 枠）", at, done: held, near: `${r.name}を使う` },
-        extractStep(s),
-      ]);
-    }
-  }
 }
 
 /** The current step, or null once every step is done. */

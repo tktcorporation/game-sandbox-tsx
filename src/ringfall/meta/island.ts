@@ -272,7 +272,7 @@ function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; c
 /**
  * The overnight change alone: which nodes the player gained or lost after raid `r`, without
  * writing the next day onto the profile. Used when settle needs the list (contracts, `freedAt`)
- * before the stash and quests are packed onto today's island.
+ * before the stash is packed onto today's island.
  */
 export const dayChange = (p: IslandDay, r: RaidDay): DayChange => reckonOvernight(p, r).change;
 

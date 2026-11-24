@@ -1,5 +1,5 @@
 import { ALLY, BOOST, CREW, DEPOT, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, recordSpot, regionOf, UNLOCKS, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, regionOf, UNLOCKS, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -98,11 +98,9 @@ export interface Player {
   haul: ValuableKind[];
   /**
    * The POI (index) whose bin each valuable of `haul` came out of, at the same place; -1 for one
-   * found anywhere else. A fetch contract counts only those of its POI.
+   * found anywhere else.
    */
   haulAt: number[];
-  /** Story records carried (meta/story.ts): a bag slot each, never sold, kept on the profile once home. */
-  records: RecordId[];
   /** Keys on the ring, as the POIs whose vaults they open (copies included). They take no bag space. */
   keys: number[];
   /** Tools carried (`TOOLS`): they fill bag slots beside the haul and score nothing, but open a route once home. */
@@ -379,7 +377,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "tool" | "record" | "mod";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "tool" | "mod";
 
 export interface Loot {
   id: number;
@@ -390,7 +388,6 @@ export interface Loot {
   /** For a key: the POI whose vault it opens. */
   key?: number;
   tool?: ToolKind;
-  record?: RecordId;
   mod?: ModKind;
   /** For a part a taken core laid out (`coreReward()`): the node, as a place in `NODES`. One of a node's is taken, by the use key; the rest go with it. */
   choice?: number;
@@ -712,11 +709,6 @@ export interface State {
   crewsDue: number[];
   /** This raid's POI whose bins lean to a rare kind (`BOOST`), as a POI index. */
   boost: { poi: number; kind: ValuableKind };
-  /**
-   * The bins (ids) that hold the taken fetch contract's valuable this raid, whatever their roll:
-   * the contract asks for as many as its POI's bins can give, so the raid must hold them.
-   */
-  fetch: { kind: ValuableKind; bins: number[] } | null;
   outcome: Outcome | null;
   /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
@@ -734,8 +726,6 @@ export interface State {
   sentTools: ToolKind[];
   /** Where each of `sent` came from, as `Player.haulAt`. */
   sentAt: number[];
-  /** Story records sent home the same way. */
-  sentRecords: RecordId[];
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
   /**
@@ -948,10 +938,6 @@ export interface Start {
   island?: Partial<Record<PoiId, PoiHold>>;
   /** The titan's pad is open to the decisive battle (`FINALE`): the raid's objective is the titan, and its fall frees the island. */
   finale?: boolean;
-  /** The record of the story contract under way: it lies at its spot (`RECORD_SPOTS`) this raid. */
-  record?: RecordId;
-  /** The fetch contract taken: `n` of its POI's bins hold its valuable this raid (`State.fetch`). */
-  fetch?: { poi: PoiId; kind: ValuableKind; n: number };
   /** The day's island event; left out, none. */
   event?: IslandEvent | null;
   /** The threat chosen at the map table, 0 to `THREAT.max`; left out, 0. */
@@ -1095,7 +1081,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
       flares: 0,
       haul: [],
       haulAt: [],
-      records: [],
       keys: [...kit.keys],
       tools: [],
       mods: [],
@@ -1133,7 +1118,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     storm: start.event?.t === "storm",
     crewsDue: [],
     boost: boostFor(seed, region),
-    fetch: fetchBins(seed, bins, start.fetch),
     outcome: null,
     extractTime: 0,
     calls: {},
@@ -1143,7 +1127,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     sent: [],
     sentTools: [],
     sentAt: [],
-    sentRecords: [],
     sentVia: DEPOTS.map(() => 0),
     // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
     parcels: [],
@@ -1202,11 +1185,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   if (start.battle) s.battle = initBattle(s, start.battle);
   placeParties(s);
   placeEvent(s);
-  // An id of its own below every other, so a raid with a record numbers the rest as one without.
-  if (start.record) {
-    const r = recordSpot(start.record);
-    s.loot.push({ id: -1_000_000, kind: "record", record: r.id, rarity: 3, pos: { x: r.x, y: r.y, z: r.z }, vel: { x: 0, y: 0, z: 0 }, age: 99 });
-  }
   return s;
 }
 
@@ -1235,18 +1213,7 @@ function placeEvent(s: State) {
 export const debrisBin = (s: Pick<State, "bins">) => s.bins.find((b) => b.debris) ?? null;
 
 /**
- * The fetch contract's bins: `n` of its POI's ordinary bins, picked by a hash of the seed and the
- * bin so that the raid's random numbers are drawn as in a raid without the contract.
- */
-function fetchBins(seed: number, bins: Bin[], fetch: Start["fetch"]): State["fetch"] {
-  if (!fetch) return null;
-  const poi = poiIndex(fetch.poi);
-  const order = bins.filter((b) => b.poi === poi && !b.vault && !b.outside).sort((a, b) => mix(seed * 31 + a.id) - mix(seed * 31 + b.id));
-  return { kind: fetch.kind, bins: order.slice(0, fetch.n).map((b) => b.id) };
-}
-
-/**
- * A squad's name for a contract to point at: a drone pack by its own name, a hunting party by
+ * A squad's name for wiped-squad tracking: a drone pack by its own name, a hunting party by
  * its region (its line-up changes from raid to raid), any other squad by its name.
  */
 export const squadKey = (sq: Pick<SquadState, "name" | "party" | "crew">) => (sq.party ? partyKey(sq.party.region) : sq.crew ? crewKey(sq.crew.region) : sq.name);
