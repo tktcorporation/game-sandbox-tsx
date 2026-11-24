@@ -1998,7 +1998,7 @@ if (part("battle")) for (const phone of [false, true]) {
   await pg.waitForTimeout(200);
   const panel = await pg.textContent("#hub-side");
   const build = await pg.textContent("#hub-side [data-act=factory]").catch(() => "");
-  if (!/Lv3/.test(panel) || build !== "Lv4 を建てる" || /陣取り戦|網/.test(panel)) errors.push(`battle: the factory's panel reads "${panel.slice(0, 200)}"`);
+  if (!/Lv3/.test(panel) || build !== "Lv4 · レベルを上げる" || /陣取り戦|網/.test(panel)) errors.push(`battle: the factory's panel reads "${panel.slice(0, 200)}"`);
   const fit = await spills(pg);
   if (fit.length) errors.push(`battle factory panel (${phone ? "phone" : "1280x720"}): ${fit.join(", ")}`);
   await pg.screenshot({ path: tag(1, "panel-factory") });

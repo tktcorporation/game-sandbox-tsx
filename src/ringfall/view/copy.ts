@@ -96,7 +96,11 @@ export const TERM = {
   islandNews: "島の知らせ",
   wares: "売り物",
   loadout: "持っていく物",
-  seaIslands: "海の向こうの島",
+  /**
+   * 信号所の側見出し。カード見出し「お隣の島」と同じ語に揃える。
+   * 【元】海の向こうの島 【案】お隣の島 【理由】同じパネルで別名をやめる
+   */
+  seaIslands: "お隣の島",
   island: "島",
   /** Ranking T1 — signal station / results. */
   trophy: "トロフィー",
@@ -206,9 +210,12 @@ export function assaultUnavailable(name: string): string {
   return `${name}へは今攻められない`;
 }
 
-/** 次の一手: 短いレイド出撃が可能になったときの表示。 */
+/**
+ * 次の一手: 短いレイドへ出られるときも、入口は門からの出撃に揃える。
+ * 【元】次：門から短いレイド · …を攻める 【案】次：門から出撃 · …を攻める 【理由】登録の有無で同じ一手の文が変わっていた
+ */
 export function nextShortRaid(name: string): string {
-  return `${TERM.nextHand}${TERM.gate}から${TERM.shortRaid} · ${name}を${TERM.attack}`;
+  return nextAttack(name);
 }
 
 export function moduleRaiseReady(moduleName: string): string {

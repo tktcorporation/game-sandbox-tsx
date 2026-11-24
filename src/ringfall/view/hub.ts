@@ -94,9 +94,9 @@ export function nextHandFor(p: Profile): string {
     return pick ? nextFrontCapture(pick.name) : PHRASE.nextGate;
   }
   if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
-  // 倉庫 capacity is raised at the shelves; tip there when that level is ready.
+  // 倉庫 capacity is raised only at the shelves (作業場には倉庫カードを置かない).
   if (canBuild(p, "storage")) return PHRASE.nextStashRaise;
-  if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
+  if (MODULES.some((m) => m !== "storage" && canBuild(p, m))) return PHRASE.nextWorkshopRaise;
   const pick = frontPickFor(p);
   return pick ? nextFront(pick.name) : PHRASE.nextGate;
 }
@@ -930,7 +930,8 @@ export class Hub {
   /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report on the shelves. */
   marks(): Record<StationId, string> {
     const p = this.profile;
-    const buildable = MODULES.filter((m) => canBuild(p, m)).length;
+    // 倉庫は倉庫の棚だけの入口: 作業場の ▲ に数えない.
+    const buildable = MODULES.filter((m) => m !== "storage" && canBuild(p, m)).length;
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
@@ -1016,7 +1017,7 @@ export class Hub {
     // What the nodes held add: their squads' flags and the gun's colour (the trader's shelf), under the node's core.
     const nodes = `<div class="from-nodes"><small>拠点から</small>${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max"><b>MAX</b></div>`;
-    const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} を建てる</button>`) : "";
+    const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : "";
     const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? "レベルの一覧を閉じる" : "全部のレベルを見る"}</button>`;
     return (
       `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}${TERM.factory}</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
@@ -1129,7 +1130,9 @@ export class Hub {
     const open = this.module === m || (this.station === "stash" && m === "storage");
     const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
-    const body = open ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1}</button>`) : ""}</div>` : "";
+    const body = open
+      ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : ""}</div>`
+      : "";
     return (
       `<div class="mod up-card${open ? " open" : ""}" data-mod="${m}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
       `<strong>${MODULE_ICON[m]()}${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
@@ -1356,8 +1359,11 @@ export class Hub {
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
+      // 倉庫のレベルは倉庫の棚だけ: 作業場の一覧から外す.
       $("hub-side").innerHTML =
-        MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
+        MODULES.filter((m) => m !== "storage")
+          .map((m) => this.moduleCard(m))
+          .join("") + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);
