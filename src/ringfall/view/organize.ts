@@ -65,7 +65,17 @@ export class Organize {
     $("org-title").textContent = TERM.organize;
     $("org-pending-title").textContent = TERM.broughtHome;
     $("org-stash-title").textContent = TERM.warehouse;
+    $("org-tab-pending").textContent = TERM.broughtHome;
+    $("org-tab-stash").textContent = TERM.warehouse;
+    $("org-tabs").hidden = false;
+    this.setTab("pending");
     this.render(p);
+  }
+
+  private setTab(tab: "pending" | "stash") {
+    $("org-cols").dataset.tab = tab;
+    $("org-tab-pending").classList.toggle("on", tab === "pending");
+    $("org-tab-stash").classList.toggle("on", tab === "stash");
   }
 
   hide() {

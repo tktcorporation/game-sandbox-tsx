@@ -611,8 +611,8 @@ organize.bind((p) => {
     };
   }
 });
-// Resume 倉庫の整理 after a reload when pending remains.
-if (needsOrganize(hub.profile)) organize.ensure(hub.profile);
+// Resume 倉庫の整理 after a reload when pending remains — but only once the
+// title is left (openCamp). Opening it here would cover the title chrome.
 // The game's own islands answer from the profile the page plays (island-net.ts, AI の島).
 useAi(() => hub.profile);
 const campView = new CampView();
@@ -685,6 +685,7 @@ function openCamp() {
     paused = false;
     $("pause").hidden = true;
     lock();
+    if (needsOrganize(hub.profile)) organize.ensure(hub.profile);
     return;
   }
   // The expeditions on the game's own islands stand as their clock has them, so the settle pays the nodes they hold.
@@ -727,6 +728,8 @@ function openCamp() {
     awayBooted = true;
     void deliverAwayNews(beforeSnap);
   }
+  // Reload with pending: open 整理 over the camp, not over the title.
+  if (needsOrganize(hub.profile)) organize.ensure(hub.profile);
 }
 
 /**
@@ -751,7 +754,7 @@ function deliverAwayNews(before: Profile) {
     const parts = fromSync ?? awaySheetParts(before.news ?? [], hub.profile.news ?? []);
     if (!parts) return;
     // 同期のあいだに出撃やリザルトが開いていたら重ねない。
-    if (!camping || running || departing || !$("results").hidden || hub.station !== null) return;
+    if (!camping || running || departing || !$("results").hidden || hub.station !== null || organize.open) return;
     awaySheetOpen = true;
     hud.awayResults(before, hub.profile, parts.lines, parts.trop, hub.nextHand());
     $("results").hidden = false;
@@ -1085,6 +1088,14 @@ $("restart").addEventListener("click", () => {
   openCamp();
 });
 $("organize").addEventListener("click", (e) => {
+  const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-org-tab]");
+  if (tab?.dataset.orgTab === "pending" || tab?.dataset.orgTab === "stash") {
+    $("org-cols").dataset.tab = tab.dataset.orgTab;
+    $("org-tab-pending").classList.toggle("on", tab.dataset.orgTab === "pending");
+    $("org-tab-stash").classList.toggle("on", tab.dataset.orgTab === "stash");
+    sfx.click();
+    return;
+  }
   const r = organize.click(e.target as HTMLElement, hub.profile);
   if (!r) return;
   sfx.click();

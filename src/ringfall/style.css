@@ -1545,6 +1545,8 @@ body.camp #pause .keys .raid {
   place-items: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgb(var(--ink-rgb) / 0.5);
+  /* Above the title if both were ever visible; boot opens 整理 only after 野営地へ. */
+  z-index: 3;
 }
 #organize .org-row {
   display: flex;
@@ -1650,6 +1652,29 @@ body.camp #pause .keys .raid {
   background: rgb(var(--ink-rgb) / 0.9);
   box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12), 6px 6px 0 rgb(var(--shade-rgb) / 0.25);
 }
+/* Narrow tabs (倉庫 / 持っていく物). Hidden on wide layouts; shown under ~900px / phone frame. */
+.hub-tabs {
+  display: none;
+  grid-column: 1 / -1;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hub-tabs[hidden] {
+  display: none !important;
+}
+.hub-tabs button {
+  flex: 1 1 auto;
+  font-size: 14px;
+  padding: 6px 12px;
+  background: rgb(var(--paper-rgb) / 0.08);
+  color: var(--mist);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.14);
+}
+.hub-tabs button.on {
+  background: var(--hot);
+  color: var(--ink);
+  box-shadow: none;
+}
 /* A station with one list of its own (the workshop): a narrower panel. */
 #hub[data-station="workshop"] .hub-inner {
   width: min(720px, 100%);
@@ -1729,6 +1754,8 @@ body.touch #hub-close kbd {
   grid-template-columns: 1fr 1fr;
   gap: 18px;
   min-height: 0;
+  /* Footer stays in its grid row; lists scroll inside. */
+  overflow: hidden;
 }
 .hub-col {
   display: flex;
@@ -5242,6 +5269,36 @@ body.touch .bag-card:nth-last-child(n + 3) {
 #organize .org-left {
   font-weight: 800;
   color: var(--mist);
+}
+/* Below ~900px or the 740×360 phone frame: tabs switch columns; kit foot stays clear. */
+@media (max-width: 900px), (max-height: 400px) {
+  .hub-tabs:not([hidden]) {
+    display: flex;
+  }
+  #hub .hub-cols:not(.one),
+  #organize .hub-cols {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #hub .hub-cols:not(.one)[data-tab="stash"] #hub-side-col,
+  #hub .hub-cols:not(.one)[data-tab="side"] #hub-stash-col,
+  #organize .hub-cols[data-tab="pending"] #org-stash-col,
+  #organize .hub-cols[data-tab="stash"] #org-pending-col {
+    display: none;
+  }
+  /* Column titles duplicate the tabs — hide them to save height. */
+  #hub .hub-cols:not(.one) .hub-col > h3,
+  #hub .hub-cols:not(.one) .hub-col > .hub-cap-head,
+  #organize .hub-cols .hub-col > h3 {
+    display: none;
+  }
+  .hub-inner {
+    height: min(720px, 100%);
+    max-height: 100%;
+  }
+  .hub-foot {
+    flex-shrink: 0;
+  }
 }
 /* The use key's prompt at something shut: where the thing that opens it lies, smaller after the marks. */
 #prompt small {

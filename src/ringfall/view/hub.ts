@@ -515,6 +515,11 @@ export class Hub {
       (n) => this.takeNews(n),
     );
     $("hub").addEventListener("click", (e) => {
+      const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-hub-tab]");
+      if (tab?.dataset.hubTab) {
+        this.setTab(tab.dataset.hubTab as "stash" | "side");
+        return;
+      }
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) {
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
@@ -523,12 +528,24 @@ export class Hub {
     });
   }
 
+  /** Narrow layout: which column is shown (stash | side). Wide layout ignores this. */
+  private hubTab: "stash" | "side" = "stash";
+
+  private setTab(tab: "stash" | "side", sound = true) {
+    this.hubTab = tab;
+    $("hub-cols").dataset.tab = tab;
+    $("hub-tab-stash").classList.toggle("on", tab === "stash");
+    $("hub-tab-side").classList.toggle("on", tab === "side");
+    if (sound) sfx.tab();
+  }
+
   open(station: StationId) {
     this.station = station;
     this.load = this.fit(this.load);
     $("hub").hidden = false;
     $("hub-side").scrollTop = 0;
     $("hub-stash").scrollTop = 0;
+    this.setTab("stash", false);
     sfx.tab();
     if (station === "signal") this.newsSeen = true;
     this.render();
@@ -1359,7 +1376,7 @@ export class Hub {
           return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
         }) || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
-    $("hub-side-title").textContent = shop
+    const sideTitle = shop
       ? TERM.wares
       : st === "workshop"
         ? PHRASE.sideWorkshop
@@ -1368,6 +1385,12 @@ export class Hub {
           : st === "signal"
             ? TERM.seaIslands
             : TERM.loadout;
+    $("hub-side-title").textContent = sideTitle;
+    // Narrow tabs: 倉庫 / 右列の見出し。One-column stations hide the tab bar.
+    const twoCol = panel.stash;
+    $("hub-tabs").hidden = !twoCol;
+    $("hub-tab-stash").textContent = TERM.warehouse;
+    $("hub-tab-side").textContent = sideTitle;
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
@@ -1385,7 +1408,7 @@ export class Hub {
           return `<button type="button" class="item" data-act="buy" data-arg="${n}" style="--c:${itemShade(item)}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`;
         });
     } else $("hub-side").innerHTML = this.kitPanel();
-    // The shelves' footer: what the next raid takes out, in a line.
+    // The shelves' footer: what the next raid takes out, in a line. Grid row keeps it below the lists.
     $("hub-foot").hidden = !kit;
     if (kit) {
       $("hub-foot-note").innerHTML = this.kitMarks();
