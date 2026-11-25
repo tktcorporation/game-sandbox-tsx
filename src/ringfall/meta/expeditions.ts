@@ -16,7 +16,7 @@ import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
 import { clampTrophies, defendGain, rivalTrophies, trophyDelta } from "./trophies";
-import { emptyOuterGuard, guardOn, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
+import { emptyOuterGuard, guardOn, mergeOuterGuard, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
 
 /**
@@ -238,8 +238,12 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
   const parcels = s.parcels ? [...s.parcels] : p.parcels;
-  // 作り順③: prefer the server's view snapshot; else bump from new "taken" log lines.
-  let outerGuard = s.outerGuard ?? p.outerGuard ?? emptyOuterGuard();
+  // 作り順③: merge server snapshot with local (AI takes never hit the server), then
+  // bump from new "taken" log lines when the sync brought no view snapshot.
+  const now = Date.now();
+  let outerGuard = s.outerGuard
+    ? mergeOuterGuard(p.outerGuard, s.outerGuard, now)
+    : (p.outerGuard ?? emptyOuterGuard());
   if (!s.outerGuard) {
     for (const e of news) {
       if (e.t === "taken" && isContestedShore(e.node)) outerGuard = recordOuterLoss(outerGuard, e.at);
