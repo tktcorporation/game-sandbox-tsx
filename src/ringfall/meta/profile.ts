@@ -25,7 +25,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 43;
+  v: 44;
   cash: number;
   stash: Item[];
   raids: number;
@@ -163,7 +163,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 43,
+    v: 44,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -956,12 +956,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v41 marks 方向 A 取り合う拠点 (TKT-195) for stack consistency.
  * v41 and older have no `pending` / `goal`; v42 adds 倉庫の整理待ち and the hunt target.
  * v42 and older may hold `cycle` / `cycleDay` / `liberations` (島の解放); v43 drops them — the island never resets.
+ * v43 and older contest only the four shore hubs; v44 marks outer-edge contested hubs (作り順②) for stack consistency (ownership still in poiState).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1028,12 +1029,13 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v41: 取り合う海岸拠点（方向 A）。専用フィールドは無し（poiState の rival が持ち主）。
   // v42: 倉庫の整理待ち（`pending`）と入手先の目標（`goal`）。
   // v43: 島の解放（cycle / cycleDay / liberations）を外す。島は終わりなく育つ。
+  // v44: 外側の取り合う拠点（作り順②）。専用フィールドは無し（poiState の rival が持ち主）。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
       : [];
   return {
-    v: 43,
+    v: 44,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,

@@ -1,10 +1,10 @@
 /**
- * Contested coastal hubs (方向 A / TKT-195): rival-held hubs stand 工場 + 島の守り as garrison.
+ * Contested outer hubs (作り順②): rival-held hubs stand 工場 + 島の守り as garrison.
  * Run: `npx tsx scripts/ringfall-contested.ts`.
  */
 import { FACTORY } from "../src/ringfall/sim/config";
 import { NODES, poiIndex, type NodeId } from "../src/ringfall/sim/map";
-import { CONTESTED_SHORES, neighbourNameByCode } from "../src/ringfall/meta/neighbours";
+import { CONTESTED_SHORES, ROUTE_SHORES, neighbourNameByCode } from "../src/ringfall/meta/neighbours";
 import { contestedOwned, newIsland, nonContestedNodeCount, type Island } from "../src/ringfall/meta/island";
 import { contestedDefence } from "../src/ringfall/meta/contested-defence";
 import { rivalHold } from "../src/ringfall/sim/holds";
@@ -17,12 +17,27 @@ const check = (ok: boolean, what: string) => {
   if (!ok) errors.push(what);
 };
 
-check(CONTESTED_SHORES.length === 4, `contested: expected 4 shores, got ${CONTESTED_SHORES.length}`);
-check(nonContestedNodeCount() === NODES.length - 4, `contested: non-contested count ${nonContestedNodeCount()}`);
+check(CONTESTED_SHORES.length > ROUTE_SHORES.length, `contested: outer should widen past ${ROUTE_SHORES.length} shores, got ${CONTESTED_SHORES.length}`);
+check(nonContestedNodeCount() === NODES.length - CONTESTED_SHORES.length, `contested: non-contested count ${nonContestedNodeCount()}`);
 check(
   CONTESTED_SHORES.every((id) => isContestedPoi(id)),
-  "contested: sim isContestedPoi misses a shore",
+  "contested: sim isContestedPoi misses an outer hub",
 );
+check(
+  ROUTE_SHORES.every((id) => CONTESTED_SHORES.includes(id)),
+  "contested: a sea-route shore dropped out of outer set",
+);
+// An expanded outer hub (not a sea-route face) also gets defence when rival-held.
+{
+  const extra = CONTESTED_SHORES.find((id) => !(ROUTE_SHORES as readonly string[]).includes(id));
+  check(!!extra, "contested: no expanded outer hub beyond route shores");
+  if (extra) {
+    const i = poiIndex(extra);
+    const hold = rivalHold("OWNER1");
+    const sq = garrison(i, hold, { factory: 1, aid: 1 });
+    check(sq.length === 1, `contested: expanded hub ${extra} defence squad missing`);
+  }
+}
 
 const island = (own: NodeId[], rival?: Partial<Record<NodeId, string>>): Island => {
   const poiState = newIsland();

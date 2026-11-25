@@ -431,7 +431,7 @@ export function attackScoutTrop(trop: number): string {
 export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   {
     title: TERM.seaIslands,
-    body: `海に面した拠点を、${TERM.seaIslands}と${TERM.contest}。`,
+    body: `外側の拠点を、${TERM.seaIslands}と${TERM.contest}。`,
   },
   {
     title: `${TERM.front}の拠点`,

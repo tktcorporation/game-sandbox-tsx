@@ -87,6 +87,21 @@ export function drawAttackFlag(g: CanvasRenderingContext2D, x: number, y: number
   g.restore();
 }
 
+/**
+ * Subtle dashed ring on a contested hub the player holds (作り順②): others can take it.
+ * Rival green, thin, no caption — the ring alone marks「取られうる」without a new term.
+ */
+export function drawExposedRing(g: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+  g.save();
+  g.strokeStyle = alpha(color, 0.7);
+  g.lineWidth = Math.max(1, r * 0.12);
+  g.setLineDash([Math.max(2, r * 0.35), Math.max(2, r * 0.28)]);
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.stroke();
+  g.restore();
+}
+
 export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: number, lit: boolean) {
   g.save();
   // A dark disc behind it, so it reads on the red and blue ground alike.
@@ -1072,6 +1087,8 @@ export class IslandMap {
       return contestOwner(n.ai ? aiLabel(n.name) : n.name);
     };
     const attackable = (i: number): boolean => isContestedShore(POIS[i].id) && rivalOf(hold(i)) !== null;
+    /** Own contested outer hub: can be taken by others (dashed ring). */
+    const exposed = (i: number): boolean => isContestedShore(POIS[i].id) && hold(i) === "own";
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
     // The POI names written: goal POIs and nodes that changed hands come first (and are never
@@ -1355,6 +1372,10 @@ export class IslandMap {
         // Contested hub held by a neighbour: 攻める pennant (raid / depart / minimap / results).
         if (attackable(i)) {
           drawAttackFlag(g, p.x + r * 1.55, p.y - r * 0.85, (this.mini ? 9 : 11) * dpr, RIVAL_CSS);
+        }
+        // Own outer contested hub: dashed ring — others can take it (作り順②).
+        if (exposed(i) && !plain) {
+          drawExposedRing(g, p.x, p.y, r * 1.7, RIVAL_CSS);
         }
       }
       if (poi.boss) {

@@ -4,6 +4,7 @@
  * slot of its own, and the factory's expeditions start from them, so sending one needs no code typed.
  * Pure: the answer read here, the requests in island-net.ts.
  */
+import { CONTESTED_OUTER, isContestedOuter } from "../sim/contested-outer";
 import { isAiOwner } from "../sim/holds";
 import { isIslandCode } from "./island-code";
 import type { NodeId } from "../sim/map";
@@ -48,12 +49,17 @@ export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[]
 ];
 
 /**
- * Coastal hubs contested with a neighbour (方向 A / TKT-195): 観測所・浄水場・ロボット工場・追跡レーダー.
- * Contested coastal hubs (方向 A): held by the player or a neighbour; not a liberation progress count.
+ * Outer-edge hubs contested with neighbours (作り順② / design-direction.md): every freeable hub on
+ * the island's outer edge (sea or world bound), derived in `sim/contested-outer.ts`. Supersedes the
+ * direction-A list of four shore hubs (`NEIGHBOUR_SLOTS[].shore`); those four remain the sea-route
+ * faces. Alias kept as `CONTESTED_SHORES` for call sites and the worker.
  */
-export const CONTESTED_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
+export const CONTESTED_SHORES: readonly NodeId[] = CONTESTED_OUTER;
 
-export const isContestedShore = (id: NodeId | string): boolean => (CONTESTED_SHORES as readonly string[]).includes(id);
+export const isContestedShore = (id: NodeId | string): boolean => isContestedOuter(id);
+
+/** The four hubs that open a sea route to a neighbour slot (unchanged from direction A). */
+export const ROUTE_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
 
 /** Whether the sea route to neighbour slot `k` is open: the player holds the node facing it. */
 export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);

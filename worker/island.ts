@@ -33,7 +33,7 @@ export function migrateIslandState(s: IslandState): IslandState {
   return s;
 }
 
-/** Coastal hubs contested with a neighbour (観測所・浄水場・ロボット工場・追跡レーダー). */
+/** Outer-edge hubs contested with neighbours (作り順②; derived in sim/contested-outer.ts). */
 export const CONTESTED_SHORES: readonly string[] = CLIENT_CONTESTED;
 
 export const isContestedShore = (id: string): boolean => clientContested(id);

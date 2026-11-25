@@ -676,6 +676,28 @@ const T2 = T1 + 400_000;
   check(mirAgain.status === 409 && (mirAgain.body as { error?: string }).error === "shielded", "mirror: same-day flip was allowed");
   const mirFlip = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + DAY }, T1 + DAY);
   check(mirFlip.status === 200 && mir.holds[station] === "own", "mirror: next-day flip to own refused");
+  // 作り順②: an outer hub beyond the four sea-route faces mirrors by the same id.
+  const power = NODE_IDS.indexOf("powerplant");
+  check(power >= 0 && !NEIGHBOUR_SLOTS.some((s) => s.shore === "powerplant"), "outer: powerplant should be contested but not a sea-route face");
+  const mirOuter = island({ powerplant: "own", supply: "own" }, 0);
+  const mirOuterSet = op(mirOuter, { t: "contestedMirror", shore: "powerplant", owner: B.code, name: B.name, at: T1 }, T1);
+  check(
+    mirOuterSet.status === 200 && mirOuter.holds[power] === `rival:${B.code}` && mirOuter.shielded?.nodes.includes(power),
+    "outer mirror: powerplant rival hold failed",
+  );
+  const foeOuter = island({ powerplant: "foe", supply: "own" }, 0);
+  const foeOuterTake = op(
+    foeOuter,
+    { t: "report", player: A, retaken: ["powerplant"], holds: holdsWith({ powerplant: "own", supply: "own" }) as IslandState["holds"], factory: 0, day: 53 },
+    nextDay + DAY * 2,
+  );
+  const foeOuterBody = foeOuterTake.body as { contestedTaken?: { shore: string; from: string | null }[] };
+  check(
+    foeOuterTake.status === 200 &&
+      foeOuter.holds[power] === "own" &&
+      (foeOuterBody.contestedTaken ?? []).some((c) => c.shore === "powerplant" && c.from === null),
+    `outer foe take: ${JSON.stringify(foeOuterBody.contestedTaken)}`,
+  );
   // Codex: leased wipe must not bypass same-day shield (retaken + lent left:0).
   const lentShield = island({ station: "own", supply: "own", quarry: "own" }, 0);
   op(lentShield, { t: "expedition", from: B, target: "station", kinds: top.slice(0, 1) }, T1);

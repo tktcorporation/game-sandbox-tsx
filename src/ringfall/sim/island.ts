@@ -1,4 +1,5 @@
 import { FACTORY, FACTORY_TOP, PLATE, STRENGTH, THREAT, type EnemyKind } from "./config";
+import { CONTESTED_OUTER, isContestedOuter } from "./contested-outer";
 import { rivalOf, type PoiHold } from "./holds";
 import { NODES, PACKS, POIS, REGIONS, regionHere, TIER, nodeIndex, type Member, type NodeId, type Squad } from "./map";
 import { mix } from "./state";
@@ -7,20 +8,20 @@ import { mix } from "./state";
  * What a POI's standing on the island (meta/island.ts) means inside a raid: whether its robots
  * stand there. The rules that move a POI from one standing to another live in the meta.
  *
- * Contested coastal hubs (方向 A / TKT-195) held by another player stand a garrison from that
- * owner's 工場の部隊 and 島の守り (extra grunts), not the authored POI squads.
+ * Contested outer hubs (作り順②) held by another player stand a garrison from that owner's
+ * 工場の部隊 and 島の守り (extra grunts), not the authored POI squads.
  */
 
 export type { PoiHold, RivalHold } from "./holds";
 
 /**
- * Coastal hubs contested with a neighbour (must match `CONTESTED_SHORES` in meta/neighbours.ts):
- * 観測所・浄水場・ロボット工場・追跡レーダー.
+ * Outer-edge hubs contested with neighbours (must match `CONTESTED_SHORES` / `CONTESTED_OUTER`):
+ * derived from the map in `contested-outer.ts`, not a hand list.
  */
-export const CONTESTED_POIS: readonly NodeId[] = ["station", "waterworks", "robotworks", "radar"];
+export const CONTESTED_POIS: readonly NodeId[] = CONTESTED_OUTER;
 
 export const isContestedPoi = (poi: number | NodeId | string): boolean =>
-  typeof poi === "number" ? CONTESTED_POIS.includes(POIS[poi]?.id as NodeId) : (CONTESTED_POIS as readonly string[]).includes(poi);
+  typeof poi === "number" ? isContestedOuter(POIS[poi]?.id ?? "") : isContestedOuter(poi);
 
 /** Extra grunts from 島の守り joining a contested defence (matches worker `EXPEDITION.aidPerFight`). */
 export const DEFENCE_AID = 2;

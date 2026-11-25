@@ -121,7 +121,7 @@ export const rivalNodes = (holds: readonly NodeHold[]): Partial<Record<NodeId, s
 /** The nodes the player holds on an island day. */
 export const playerNodes = (p: Pick<IslandDay, "poiState">): NodeId[] => NODES.filter((n) => p.poiState[n.id].state === "own").map((n) => n.id);
 
-/** Freeable nodes that are not contested with a neighbour. */
+/** Freeable nodes that are not contested outer hubs (作り順②). */
 export const nonContestedNodeCount = (): number => NODES.filter((n) => !CONTESTED_SHORES.includes(n.id)).length;
 
 /** Contested coastal hubs the player holds (方向 A). */
