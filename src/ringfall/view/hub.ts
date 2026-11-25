@@ -1,11 +1,6 @@
 import { PLAYER } from "../sim/config";
-import { aiSalt, isAi, neighboursFor, readView, sendAssault } from "../island-net";
-import { errorText } from "../meta/island-errors";
-import { assaultOf, scheduleAssault } from "../meta/assault";
-import { aiByCode, aiNextId, aiView } from "../meta/ai-islands";
-import { planShortRaid, shortRaidTarget, takenOn, type IncursionPlan } from "../meta/incursion";
-import { neighbourFronts, type NeighbourFront } from "../meta/neighbour-front";
-import { squadsRemaining } from "../meta/expeditions";
+import { neighboursFor } from "../island-net";
+import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
@@ -22,7 +17,7 @@ import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, assaultUnavailable, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, nextShortRaid, pushNews, relayOf } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -55,23 +50,24 @@ export function teachFrontCapture(p: Profile): boolean {
 export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
   const holds = islandHolds(p);
   const front = frontNodes(holds);
+  const neigh = neighboursFor(p);
+  const label = (n: (typeof NODES)[number], i: number): string => {
+    const who = rivalOf(holds[i]);
+    if (!who) return n.name;
+    const owner = neighbourNameByCode(who, neigh);
+    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名. Unknown code → 他のプレイヤー (not the slot's name).
+    return owner ? `${owner}の${n.name}` : `他のプレイヤーの${n.name}`;
+  };
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ i }) => front[i] && rivalOf(holds[i]) !== null)
-    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z))[0];
-  return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
-}
-
-/** Whether the front's island is an AI copy (notice clock and local view). */
-export const isAiFront = (f: NeighbourFront): boolean => !!f.ai || isAi(f.code);
-
-/** お隣の前線（○○の前線）一覧。航路が開通していて、まだ自島に陣地のないお隣。 */
-export function neighbourFrontsFor(p: Profile, from?: { x: number; z: number }): NeighbourFront[] {
-  return neighbourFronts(p.poiState, neighboursFor(p), from);
-}
-
-/** 最も近いお隣の前線、または null。 */
-export function neighbourFrontPickFor(p: Profile, from: { x: number; z: number } = CAMP.wake): NeighbourFront | null {
-  return neighbourFrontsFor(p, from)[0] ?? null;
+    // Contested coastal hubs first, then nearer.
+    .sort((a, b) => {
+      const ac = Number(isContestedShore(a.n.id));
+      const bc = Number(isContestedShore(b.n.id));
+      if (ac !== bc) return bc - ac;
+      return Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z);
+    })[0];
+  return near ? { name: label(near.n, near.i), x: near.n.x, z: near.n.z } : null;
 }
 
 /**
@@ -81,13 +77,6 @@ export function neighbourFrontPickFor(p: Profile, from: { x: number; z: number }
 export function nextHandFor(p: Profile): string {
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
-  // お隣の前線（○○の前線）への攻め案内。予告待ちはなく、出撃登録済みなら短いレイド。
-  const neighbourFront = neighbourFrontPickFor(p);
-  if (neighbourFront) {
-    const out = assaultOf(p.expeditions, neighbourFront.code);
-    if (out) return nextShortRaid(neighbourFront.name);
-    return nextAttack(neighbourFront.name);
-  }
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
   if (teachFrontCapture(p)) {
     const pick = frontPickFor(p);
@@ -307,8 +296,7 @@ const PANELS: Record<StationId, { title: string; stash: boolean }> = {
  * level, allowance (`budget`) and what the loadout costs of it; `over` when that is past it.
  */
 export interface StartPoint {
-  /** "assault": お隣の前線（○○の前線）への出撃地点。選択時は departNeighbourFront で短いレイドへ向かう。 */
-  kind: "entry" | "depot" | "assault";
+  kind: "entry" | "depot";
   id: string;
   name: string;
   x: number;
@@ -366,16 +354,7 @@ export interface Launch {
   seed: number;
   from?: PoiId;
   entry: EntryId;
-  /** お隣の島への短いレイド（Short Raid）の出撃計画。 */
-  incursion?: IncursionPlan;
 }
-
-/**
- * お隣の前線への出撃処理の結果（departNeighbourFront）:
- * 要塞化などで出撃できない（waiting）、または短いレイド計画の準備完了（ready）。
- * 予告猶予はなく、登録後は即 ready へ進む。
- */
-export type NeighbourDepart = { t: "waiting"; toast: string } | { t: "ready"; plan: IncursionPlan };
 
 /**
  * Where a valuable is found, as a line: the POIs whose bins hold it most often (with the
@@ -406,11 +385,6 @@ export class Hub {
   private entry: EntryId | null;
   /** A depot start instead of a way in; null for a way in. */
   private from: PoiId | null = null;
-  /**
-   * お隣の前線（○○の前線）: 出撃マップで明示的に選択された場合に格納。
-   * null の場合は通常の自島出撃。
-   */
-  private neighbourAim: NeighbourFront | null = null;
   /** The shut start the departure shows beside its map (`peek()`), or null; never the start itself. */
   private peeked: LockedPick | null = null;
   /** The hideout module opened to show what its next level takes. */
@@ -702,7 +676,7 @@ export class Hub {
   /** Whether the chosen start is the gate's own way in: walking out of the gate then starts the raid where the player stands. */
   walksOut(): boolean {
     this.fixStart();
-    return !this.neighbourAim && !this.from && this.region === HOME_REGION.id && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
+    return !this.from && this.region === HOME_REGION.id && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
   }
 
   /**
@@ -716,26 +690,14 @@ export class Hub {
     const p = this.profile;
     const may = departDepots(p);
     const cost = loadoutCost(p, this.startLoad());
-    const ways: StartPoint[] = ENTRIES.map((e) => ({ kind: "entry", id: e.id, name: e.name, x: e.x, z: e.z, region: e.region, open: p.entries.includes(e.id) && canStartIn(p, e.region), on: !this.neighbourAim && !this.from && this.region === e.region && this.entry === e.id, over: false }));
+    const ways: StartPoint[] = ENTRIES.map((e) => ({ kind: "entry", id: e.id, name: e.name, x: e.x, z: e.z, region: e.region, open: p.entries.includes(e.id) && canStartIn(p, e.region), on: !this.from && this.region === e.region && this.entry === e.id, over: false }));
     // Only depots a held node could open a start from: one that never opens one is no start to show.
     const depots: StartPoint[] = DEPOTS.filter((d) => p.depots.includes(d.poi) && departNodesIn(poiRegion(d.poi).id).includes(d.poi)).map((d) => {
       const open = may.includes(d.poi);
       const a = depotAllowance(p, d.poi);
-      return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: !this.neighbourAim && this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
+      return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
     });
-    // お隣の前線（○○の前線）: 出撃地図から直接短いレイドへ向かう入口
-    const assaults: StartPoint[] = neighbourFrontsFor(p, CAMP.wake).map((f) => ({
-      kind: "assault" as const,
-      id: f.code,
-      name: f.name,
-      x: f.x,
-      z: f.z,
-      region: HOME_REGION.id,
-      open: true,
-      on: this.neighbourAim?.code === f.code,
-      over: false,
-    }));
-    return [...ways, ...depots, ...assaults];
+    return [...ways, ...depots];
   }
 
   /** The regions no raid may start in yet (no way in known, no depot open there), for the departure map's padlocks. */
@@ -753,11 +715,6 @@ export class Hub {
     if (at.kind === "region") {
       const id = at.id as RegionId;
       return canStartIn(p, id) ? null : { name: regionOf(id).name, why: "道を知らない", how: regionHow(id) };
-    }
-    if (at.kind === "assault") {
-      // お隣の前線が開いている間のみ表示
-      const f = neighbourFrontsFor(p).find((n) => n.code === at.id);
-      return f ? null : { name: TERM.shortRaid, why: `${TERM.front}が開いていない`, how: [`<span class="how">${flagIcon(SIDE.rival)}${TERM.shortRaid}</span>`] };
     }
     if (at.kind === "entry") {
       const e = ENTRIES.find((w) => w.id === at.id);
@@ -800,20 +757,10 @@ export class Hub {
     return { name: relayOf(POIS[poiIndex(this.from)].name), why: `持ち込み枠 ${a.cost} / ${a.budget}`, how: [`<span class="how">${stashIcon()}−</span>`, ...(grow ? [grow] : [])], at: { kind: "depot", id: this.from } };
   }
 
-  /** Chooses where the next raid starts: a way in known, a depot that opens a start, or an assault on a neighbour front. False when it may not start there. */
+  /** Chooses where the next raid starts: a way in known, or a depot that opens a start. False when it may not start there. */
   choose(kind: StartPoint["kind"], id: string): boolean {
     const p = this.profile;
     this.peeked = null;
-    if (kind === "assault") {
-      const f = neighbourFrontsFor(p).find((n) => n.code === id);
-      if (!f) return false;
-      this.neighbourAim = f;
-      this.from = null;
-      this.region = HOME_REGION.id;
-      this.entry = FIRST_ENTRY;
-      return true;
-    }
-    this.neighbourAim = null;
     if (kind === "depot") {
       if (!departDepots(p).includes(id as PoiId)) return false;
       this.from = id as PoiId;
@@ -831,97 +778,18 @@ export class Hub {
   }
 
   /**
-   * お隣の前線（○○の前線）への出撃を処理する。
-   * 出撃マップでお隣の前線（neighbourAim）が選択されている場合のみ動作する。
-   *
-   * 予告猶予はなく、登録後すぐに短いレイド計画（IncursionPlan）を組み立てて
-   * { t: "ready", plan } を返す。要塞化などで攻められないときだけ { t: "waiting", toast }。
-   * null の場合は通常の自島出撃。
-   */
-  async departNeighbourFront(now = Date.now()): Promise<NeighbourDepart | null> {
-    const neighbourFront = this.neighbourAim;
-    if (!neighbourFront) return null;
-    const ai = isAiFront(neighbourFront);
-    let existing = assaultOf(this.profile.expeditions, neighbourFront.code);
-    if (!existing) {
-      const units = Math.max(1, squadsRemaining(this.profile) || 1);
-      let id = aiNextId(this.profile.expeditions, neighbourFront.code);
-      let node: NodeId;
-      if (ai) {
-        const pick = this.aiShortRaidNode(neighbourFront.code, neighbourFront.shore, now);
-        if (!pick) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
-        node = pick;
-      } else {
-        const view = await readView(neighbourFront.code);
-        if (!view.ok) return { t: "waiting", toast: errorText(view.error) };
-        const pick = shortRaidTarget(view.body, neighbourFront.shore, now);
-        if (!pick) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
-        node = pick;
-        const sent = await sendAssault(neighbourFront.code, node, units);
-        if (!sent.ok) return { t: "waiting", toast: errorText(sent.error) };
-        id = sent.body.id;
-      }
-      const { list, created } = scheduleAssault(this.profile.expeditions, { code: neighbourFront.code, node, units, id, now });
-      if (created) this.set({ ...this.profile, expeditions: list });
-      existing = assaultOf(this.profile.expeditions, neighbourFront.code);
-      if (!existing) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
-    }
-    let plan = await this.shortRaidPlan(neighbourFront.code, existing.node, ai);
-    // 過去の予告が旧ショアノードを指している場合、再選定して試行
-    if (!plan) {
-      const retry = ai ? this.aiShortRaidNode(neighbourFront.code, neighbourFront.shore, now) : await this.realShortRaidNode(neighbourFront.code, neighbourFront.shore, now);
-      if (retry && retry !== existing.node) plan = await this.shortRaidPlan(neighbourFront.code, retry, ai);
-    }
-    if (!plan) return { t: "waiting", toast: assaultUnavailable(neighbourFront.name) };
-    return { t: "ready", plan };
-  }
-
-  /** AI neighbour node to raid: prefer `prefer` when open on their view, else nearest open foothold. */
-  private aiShortRaidNode(code: string, prefer: NodeId, now = Date.now()): NodeId | null {
-    const a = aiByCode(aiSalt(), code);
-    if (!a) return null;
-    const seized = takenOn(this.profile.incursionTaken, code);
-    const view = aiView(a, aiSalt(), this.profile.day, this.profile.expeditions, "", now, seized);
-    return shortRaidTarget(view, prefer, now);
-  }
-
-  /** Real-neighbour shortRaidTarget via the island API (null when the view cannot be read). */
-  private async realShortRaidNode(code: string, prefer: NodeId, now = Date.now()): Promise<NodeId | null> {
-    const view = await readView(code);
-    return view.ok ? shortRaidTarget(view.body, prefer, now) : null;
-  }
-
-  /** Build a short raid plan: AI view locally, real neighbour via `GET /api/islands/:code`. */
-  private async shortRaidPlan(code: string, target: NodeId, ai: boolean): Promise<IncursionPlan | null> {
-    if (ai) {
-      const a = aiByCode(aiSalt(), code);
-      if (!a) return null;
-      const seized = takenOn(this.profile.incursionTaken, code);
-      const view = aiView(a, aiSalt(), this.profile.day, this.profile.expeditions, "", Date.now(), seized);
-      return planShortRaid(view, target, { ai: true, known: this.profile.entries });
-    }
-    const r = await readView(code);
-    if (!r.ok) return null;
-    return planShortRaid(r.body, target, { ai: false, known: this.profile.entries, ignoreBusy: true });
-  }
-
-  /**
    * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
    * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
-   * お隣の前線への短いレイド出撃時は incursion に `IncursionPlan` を渡す。
    */
-  launch(incursion?: IncursionPlan): Launch | null {
+  launch(): Launch | null {
     this.fixStart();
-    const from = incursion ? undefined : this.from;
-    const entry = incursion?.entry ?? this.entry ?? this.profile.entry;
-    const region = incursion?.region ?? this.region;
-    const taken = takeKit(this.profile, this.startLoad(), from ?? null);
+    const taken = takeKit(this.profile, this.startLoad(), this.from ?? null);
     if (!taken) return null;
     const { profile, kit } = taken;
     // The start is remembered for the next departure, which opens on it (home raids only).
-    this.set(incursion ? profile : { ...profile, region: this.region, entry });
+    this.set({ ...profile, region: this.region, entry: this.entry ?? this.profile.entry });
     this.load = emptyLoadout();
-    return { kit, region, seed: this.profile.seed, from: from ?? undefined, entry, ...(incursion ? { incursion } : {}) };
+    return { kit, region: this.region, seed: this.profile.seed, from: this.from ?? undefined, entry: this.entry ?? this.profile.entry };
   }
 
   /** No contract system — always null (callers that still ask get nothing taken). */
@@ -1246,13 +1114,9 @@ export class Hub {
     const p = this.profile;
     const front = this.frontPick();
     const teach = teachFrontCapture(p) && front;
-    // 出撃地図で選んだお隣の前線が最優先（決戦が開いていても短いレイドに出る）。未選択時は決戦 → 前線／探索。
-    const neighbourFront = this.neighbourAim;
-    const goal = neighbourFront
-      ? `${flagIcon(SIDE.rival)}${esc(neighbourFront.name)}を${TERM.attack}`
-      : finaleOpen(p)
-        ? esc(`${liberationLine({ kind: "finale" })}`)
-        : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+    const goal = finaleOpen(p)
+      ? esc(`${liberationLine({ kind: "finale" })}`)
+      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
@@ -1290,11 +1154,9 @@ export class Hub {
     const pick = this.frontPick();
     // Each value is HTML: marks, and names escaped here.
     const rival = rivalFrontPick(p);
-    const neighbourFront = !rival ? neighbourFrontPickFor(p) : null;
     const teach = teachFrontCapture(p);
     const plan: [string, string][] = [
       // The pad open to the decisive battle comes before any node. A rival on the front is why to sortie.
-      // お隣の前線（○○の前線）: 出撃して短いレイドで制圧する
       // First sessions name 核 · 制圧 on the node so the line's middle is the day's ask.
       final
         ? ["決戦", esc(POIS.find((o) => o.boss)!.name)]
@@ -1302,13 +1164,11 @@ export class Hub {
             PLAN_GOAL,
             rival
               ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を${TERM.attack}`
-              : neighbourFront
-                ? `${flagIcon(SIDE.rival)}${esc(neighbourFront.name)}を${TERM.attack}`
-                : pick
-                  ? teach
-                    ? `${esc(pick.name)} · ${TERM.captureCore}`
-                    : esc(pick.name)
-                  : "—",
+              : pick
+                ? teach
+                  ? `${esc(pick.name)} · ${TERM.captureCore}`
+                  : esc(pick.name)
+                : "—",
           ],
       ["装備", this.kitMarks()],
     ];

@@ -1,11 +1,12 @@
 /** Offline UTF-8 boundary checks for the D1 API and the real IslandDO.fetch path. */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { TextDecoder, TextEncoder } from "node:util";
-import { fileURLToPath, URL } from "node:url";
+import { URL } from "node:url";
 import { handleApi, type ApiEnv, type Db, type DbStatement, type IslandNamespace } from "../worker/api";
 import { IslandDO } from "../worker/island-do";
+import type { Migration } from "../worker/schema";
 import { defaultName } from "../src/ringfall/meta/identity";
 
 const id = "98810000-0000-4000-8000-000000000001";
@@ -40,8 +41,17 @@ class Statement implements DbStatement {
   }
 }
 
+// Same path as production: every file in migrations/ via ensureSchema (worker/schema.ts), not only 0001.
+const migrationsDir = new URL("../migrations/", import.meta.url);
+const migrationFiles = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
+const MIGRATIONS: readonly Migration[] = migrationFiles.map((name) => ({
+  name,
+  sql: readFileSync(new URL(name, migrationsDir), "utf8"),
+}));
+const listed = [...readFileSync(new URL("../worker/migrations.ts", import.meta.url), "utf8").matchAll(/name: "([^"]+\.sql)"/g)].map((m) => m[1]);
+assert.equal(listed.join(), migrationFiles.join(), `worker/migrations.ts lists ${listed.join()}, the folder holds ${migrationFiles.join()}`);
+
 const sqlite = new DatabaseSync(":memory:");
-sqlite.exec(readFileSync(fileURLToPath(new URL("../migrations/0001_init.sql", import.meta.url)), "utf8"));
 const db: Db = {
   prepare: (sql) => new Statement(sql, sqlite),
   batch: async (statements) => {
@@ -62,7 +72,7 @@ async function saveToD1(name: string) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ player: { id, name }, island: { day: 1, held: 0, enemy: 21, rival: 0, factory: 0, strength: 0 } }),
-  }), { DB: db }, at);
+  }), { DB: db, MIGRATIONS }, at);
   assert.equal(response?.status, 200);
   assert.equal((await decoded(response!, '"ok":true')).ok, true);
   const row = sqlite.prepare("SELECT name FROM players WHERE id = ?").get(id) as { name: string };

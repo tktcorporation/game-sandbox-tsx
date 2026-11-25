@@ -11,14 +11,14 @@
  * keeps (the expeditions sent, the nodes held); the browser's requests are answered from here
  * (island-net.ts), so the factory's panel works the same for them.
  */
-import { FACTORY, FACTORY_TOP, type EnemyKind } from "../sim/config";
+import { FACTORY, FACTORY_TOP, type EnemyKind, type ValuableKind } from "../sim/config";
 import { aiOwner, isAiOwner, rivalOf, type PoiHold } from "../sim/holds";
-import { FRONT_LINKS, NODES, TIER, nodeIndex, type NodeId } from "../sim/map";
+import { DEPOTS, FRONT_LINKS, NODES, TIER, nodeIndex, type NodeId, type PoiId } from "../sim/map";
 import { CODE_ALPHABET, CODE_LENGTH } from "./island-code";
 import { lentRivals, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Outgoing } from "./expeditions";
-import { aiDefenceParcels } from "./incursion";
+import { LOCAL_AID, type Parcel } from "./parcels";
 import type { RivalExpedition } from "../sim/battle";
-import { NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
+import { CONTESTED_SHORES, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
 import type { Island } from "./island";
 
 /** The numbers of the game's islands. */
@@ -137,6 +137,30 @@ export function aiLast(a: AiIsland, salt: number, day: number, now: number): Non
 /** Its island as a neighbour of the player on day `day`, at `now`. */
 export const aiNeighbour = (a: AiIsland, salt: number, day: number, now: number): Neighbour => ({ code: a.code, name: a.name, held: aiHeld(a, salt, day), total: NODES.length, day, slot: a.slot, last: aiLast(a, salt, day, now), ai: true });
 
+const nodeSalt = (id: string) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) | 0;
+  return h >>> 0;
+};
+
+/**
+ * AI islands' 島の守り at depots on nodes they hold (for contested-coast defence views).
+ * `taken` lists parcel ids already seized from this island in older saves.
+ */
+export function aiDefenceParcels(a: AiIsland, salt: number, day: number, held: readonly NodeId[], taken: readonly number[] = []): Parcel[] {
+  const gone = new Set(taken);
+  const pool: ValuableKind[] = ["parts", "fuse", "board"];
+  const out: Parcel[] = [];
+  held.forEach((id, n) => {
+    if (!DEPOTS.some((d) => d.poi === id)) return;
+    const pid = 1 + ((Math.imul(salt ^ 0x85ebca6b, a.slot + 1) >>> 0) % 90_000) + n;
+    if (gone.has(pid)) return;
+    const kind = pool[(Math.imul(salt + day, nodeSalt(id) + 1) >>> 0) % pool.length]!;
+    out.push({ id: pid, poi: id as PoiId, kind, from: { code: LOCAL_AID, name: a.name }, at: 0 });
+  });
+  return out;
+}
+
 /** The server's neighbours with the game's islands in the slots it leaves free, in slot order. */
 export function withAi(server: readonly Neighbour[], salt: number, day: number, now: number): Neighbour[] {
   const taken = server.map((n) => n.slot);
@@ -162,7 +186,7 @@ export function aiView(
   sent: readonly Outgoing[],
   mine: string,
   now: number,
-  /** Parcel ids already seized from this island in lead-incursions (partial defence loss). */
+  /** Parcel ids already removed from this island's defence stock (legacy saves). */
   seized: readonly number[] = [],
 ): IslandView {
   const own = new Set<string>(aiNodes(a, salt, day));
@@ -188,8 +212,7 @@ export function aiView(
  */
 export function aiOutcome(a: AiIsland, salt: number, o: Outgoing, now: number): Outgoing["state"] {
   if (o.state === "sending" || o.state === "recalling" || o.state === "gone") return o.state;
-  // 短いレイド出撃エントリ: settle による勝敗確定（holding/gone）まで状態固定（数値による自動解決は行わない）。
-  if (o.x2) return o.state === "holding" ? "holding" : "coming";
+  if (o.x2) return "gone";
   const t = (now - o.sentAt) / 60_000;
   if (t < AI.coming) return "coming";
   if (t < AI.coming + AI.fighting) return "attacking";
@@ -203,7 +226,6 @@ export function aiOutcome(a: AiIsland, salt: number, o: Outgoing, now: number): 
 
 /** Whether the player's expedition `o` on island `a` still takes up its node at `now`: being sent, on its way, fighting or holding. */
 export const aiBusy = (a: AiIsland, salt: number, o: Outgoing, now: number): boolean => {
-  // 短いレイド出撃エントリはノードを占有しない（プレイヤー自身が出撃するため対象ノードは開けておく）。
   if (o.x2) return false;
   const state = aiOutcome(a, salt, o, now);
   return state !== "gone" && state !== "recalling";
@@ -272,6 +294,8 @@ export function aiLent(p: Seen, salt: number, taken: readonly number[], scouted 
   const out: LentIn[] = [];
   for (const n of NODES) {
     const owner = rivalOf(p.poiState[n.id]?.state ?? "foe");
+    // Contested coastal hubs stand 工場 + 島の守り as POI garrison (`Start.defence`), not a battle holding squad.
+    if (CONTESTED_SHORES.includes(n.id)) continue;
     // Every slot's: an island whose slot a player's island has since taken still holds what it took, and stands its squad there.
     const a = aiByOwner(salt, owner);
     if (a) out.push({ id: 0, by: { code: aiOwner(a.code), name: a.name }, target: n.id, kinds: aiKinds(p.day), state: "holding" });

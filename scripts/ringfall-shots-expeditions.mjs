@@ -136,11 +136,10 @@ export async function expeditionShots({ browser, port, out, errors }) {
   for (let i = 0; i < 30 && !st.camp?.depart; i++) st = JSON.parse(await pg.evaluate(() => (window.advanceTime(200), window.render_game_to_text())));
   await pg.keyboard.up("KeyW");
   if (!st.camp?.depart) errors.push("expeditions: the departure did not open");
-  // CoC-style: no 来る遠征 row on depart; attack entry is ○○の前線 / 攻める on the map.
   const incomingRow = st.camp?.depart?.rows?.find((r) => r[0] === "来る遠征");
   if (incomingRow) errors.push(`expeditions: depart still lists 来る遠征: ${JSON.stringify(incomingRow)}`);
   const assault = st.camp?.depart?.starts?.find((s) => s.kind === "assault");
-  if (!assault) errors.push("expeditions: depart has no assault start (攻め入口)");
+  if (assault) errors.push("expeditions: depart still has removed assault start");
   await pg.screenshot({ path: `${out}/153-expeditions-depart.png` });
   // Into the raid: AI scout still lands (auto defence) — banner is fine; no pre-raid warning.
   await pg.keyboard.press("Enter");

@@ -27,6 +27,8 @@
  * - **steady**: the island reckoned in one alarm or in many small ones ends the same.
  * - **x2**: a short-raid notice (`x2: true`) stands as 来る遠征, skips numeric fights and the
  *   owner's lease, and `assault` after the notice takes or wipes the node.
+ * - **shield / contested**: a coastal hub taken today cannot flip again until the next UTC day;
+ *   contestedMirror sets the neighbour's facing shore to the shared owner.
  *
  * Run alone: `npx tsx scripts/ringfall-expeditions.ts`; it ends with "expeditions ok".
  */
@@ -626,6 +628,79 @@ const T2 = T1 + 400_000;
     stored.holds[0] === "own" && stored.holds[1] === "foe" && stored.holds[2] === "rival:ABC123" && stored.holds[3] === "own" && stored.holds[4] === "foe",
     `legacy DO: migrateIslandState left ${JSON.stringify(stored.holds)}`,
   );
+  check(Array.isArray(stored.shielded?.nodes), "legacy DO: migrateIslandState left no shielded");
+
+  // Contested same-day shield + mirror (方向 A / TKT-195): station is a coastal contested hub.
+  const station = NODE_IDS.indexOf("station");
+  check(station >= 0 && NEIGHBOUR_SLOTS.some((s) => s.shore === "station"), "shield: station is not a contested shore");
+  const shIsle = island({ station: "own", supply: "own", quarry: "own" }, 0);
+  op(shIsle, { t: "expedition", from: B, target: "station", kinds: top.slice(0, 1), x2: true }, T1);
+  const shId = shIsle.expeditions[0]!.id;
+  const shWin = op(shIsle, { t: "assault", from: B.code, id: shId, won: true }, T1 + NOTICE + 1000);
+  check(shWin.status === 200 && shIsle.holds[station] === `rival:${B.code}`, "shield: first take of station failed");
+  check(shIsle.shielded?.nodes.includes(station), "shield: station not shielded after take");
+  // Same UTC day: owner cannot retake via report.
+  const shRetake = op(
+    shIsle,
+    { t: "report", player: A, retaken: ["station"], holds: holdsWith({ station: "own", supply: "own", quarry: "own" }) as IslandState["holds"], factory: 0, day: 50 },
+    T1 + NOTICE + 2000,
+  );
+  check(shIsle.holds[station] === `rival:${B.code}` && ((shRetake.body as { shielded?: string[] }).shielded ?? []).includes("station"), "shield: same-day retake of station was allowed");
+  // Next UTC day: retake ok.
+  const nextDay = T1 + NOTICE + DAY + 1000;
+  const shLater = op(
+    shIsle,
+    { t: "report", player: A, retaken: ["station"], holds: holdsWith({ station: "own", supply: "own", quarry: "own" }) as IslandState["holds"], factory: 0, day: 51 },
+    nextDay,
+  );
+  check(shLater.status === 200 && shIsle.holds[station] === "own", "shield: next-day retake of station refused");
+  // Contested mirror: neighbour's facing shore becomes rival:owner (or own).
+  const mir = island({ station: "own", supply: "own" }, 0);
+  const mirSet = op(mir, { t: "contestedMirror", shore: "station", owner: B.code, at: T1 }, T1);
+  check(mirSet.status === 200 && mir.holds[station] === `rival:${B.code}` && mir.shielded?.nodes.includes(station), "mirror: set rival hold failed");
+  const mirAgain = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + 1000 }, T1 + 1000);
+  check(mirAgain.status === 409 && (mirAgain.body as { error?: string }).error === "shielded", "mirror: same-day flip was allowed");
+  const mirFlip = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + DAY }, T1 + DAY);
+  check(mirFlip.status === 200 && mir.holds[station] === "own", "mirror: next-day flip to own refused");
+  // Codex: leased wipe must not bypass same-day shield (retaken + lent left:0).
+  const lentShield = island({ station: "own", supply: "own", quarry: "own" }, 0);
+  op(lentShield, { t: "expedition", from: B, target: "station", kinds: top.slice(0, 1) }, T1);
+  const lentId = lentShield.expeditions[0]!.id;
+  op(lentShield, { t: "lease", player: A.id }, T1 + 1000);
+  op(
+    lentShield,
+    {
+      t: "report",
+      player: A,
+      retaken: [],
+      holds: holdsWith({ station: `rival:${B.code}`, supply: "own", quarry: "own" }) as IslandState["holds"],
+      factory: 0,
+      day: 50,
+      lent: [{ id: lentId, left: 1 }],
+    },
+    T1 + 1_500_000,
+  );
+  check(lentShield.holds[station] === `rival:${B.code}` && !!lentShield.shielded?.nodes.includes(station), "shield lent: take/shield failed");
+  const lease2 = op(lentShield, { t: "lease", player: A.id }, T1 + 1_600_000);
+  check(lease2.status === 200 && (lease2.body as { expeditions?: unknown[] }).expeditions?.length === 1, "shield lent: re-lease failed");
+  const lentWipe = op(
+    lentShield,
+    {
+      t: "report",
+      player: A,
+      retaken: ["station"],
+      holds: holdsWith({ station: "own", supply: "own", quarry: "own" }) as IslandState["holds"],
+      factory: 0,
+      day: 50,
+      lent: [{ id: lentId, left: 0 }],
+    },
+    T1 + 1_700_000,
+  );
+  check(
+    lentShield.holds[station] === `rival:${B.code}` && ((lentWipe.body as { shielded?: string[] }).shielded ?? []).includes("station"),
+    "shield lent: wipe+retaken bypassed same-day shield",
+  );
+  console.log(`shield: station shielded then retaken next day; mirror flip blocked same day`);
 }
 
 if (errors.length) {

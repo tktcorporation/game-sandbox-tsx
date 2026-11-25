@@ -40,10 +40,10 @@ import { step } from "../src/ringfall/sim/step";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
-import { expeditionsOut, answerRecall, incomingLine, incomingOf, LANDING, lentResults, lentRivals, parseLease, recallAll, numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, squadsRemaining, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
+import { expeditionsOut, answerRecall, incomingLine, incomingOf, LANDING, lentResults, lentRivals, parseLease, recallAll, numbered, answerSend, dropStale, factoryAhead, sendingEntry, SENDING_MS, applySync, retakenNodes, awayIncome, factorySquads, squadsRemaining, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { EXPEDITION, islandOp, publicView, squadKinds, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
-import { readView, SEND_TIMEOUT_MS, sendExpedition, takeReport, takeSync } from "../src/ringfall/island-net";
+import { readView, SEND_TIMEOUT_MS, takeReport, takeSync } from "../src/ringfall/island-net";
 import { rememberCode } from "../src/ringfall/meta/identity";
 
 const errors: string[] = [];
@@ -287,8 +287,8 @@ function island(freed: string[], rival: string[] = []): Profile {
   const p0 = { ...island([]), factory: 2 };
   const p1 = { ...p0, expeditions: [...away(1), ...away(1, "gone")] };
   const p2 = { ...p0, expeditions: away(3) };
-  console.log(`cost: factory Lv2 keeps ${factorySquads(p0)}; one away leaves ${squadsRemaining(p1)} (away ${squadsAway(p1)}), three leave ${squadsRemaining(p2)}; can send ${canSend(p1)} / ${canSend(p2)}`);
-  check(squadsAway(p1) === 1 && squadsRemaining(p1) === factorySquads(p0) - 1 && squadsRemaining(p2) === 0 && canSend(p1) && !canSend(p2), "cost: the squads away are not taken from the factory's");
+  console.log(`cost: factory Lv2 keeps ${factorySquads(p0)}; one away leaves ${squadsRemaining(p1)} (away ${squadsAway(p1)}), three leave ${squadsRemaining(p2)}`);
+  check(squadsAway(p1) === 1 && squadsRemaining(p1) === factorySquads(p0) - 1 && squadsRemaining(p2) === 0, "cost: the squads away are not taken from the factory's");
   // In the battle: a factory of level 0 keeps one squad out; with it away, none comes out.
   const squadsOut = (away: number) => {
     const s: State = newRun(9, starterKit(), "reservoir", { island: holds(island(["supply"])), battle: { factory: 0, ...(away ? { away } : {}) } });
@@ -306,16 +306,17 @@ function island(freed: string[], rival: string[] = []): Profile {
 // --- sending
 {
   const levels = FACTORY.levels.map((_, f) => f);
-  const same = levels.every((f) => sendKinds(f).join() === squadKinds(f).join());
+  const factorySquadKinds = (f: number) => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, f))].kinds;
+  const same = levels.every((f) => factorySquadKinds(f).join() === squadKinds(f).join());
   // The camp's factory at level 3, the server's copy of the island still at 1 (the last report's).
   const p = { ...island([]), factory: 3 };
   const t0 = 1_700_000_000_000;
   const own = islandOp(null, { t: "claim", player: { id: ID_A, name: "わたし" }, code: A }, t0).state as IslandState;
   islandOp(own, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(p), retaken: [], factory: 1, day: 2 }, t0 + 1000);
   const level = parseView(JSON.parse(JSON.stringify(publicView(own, t0 + 2000))))!.factory;
-  console.log(`sending: the server has the factory at ${level}, the camp at ${p.factory}; the squad goes ${sendKinds(level).length} strong (the camp's would be ${sendKinds(p.factory).length}); ahead ${factoryAhead(p, level)}`);
-  check(same, "sending: the squad the game sends is not the one the server allows at some level");
-  check(level === 1 && sendKinds(level).length === FACTORY.levels[1].kinds.length && factoryAhead(p, level) && !factoryAhead({ factory: 1 }, level), "sending: the squad is not sized by the factory level the server has");
+  console.log(`sending: the server has the factory at ${level}, the camp at ${p.factory}; the squad goes ${factorySquadKinds(level).length} strong (the camp's would be ${factorySquadKinds(p.factory).length}); ahead ${factoryAhead(p, level)}`);
+  check(same, "sending: the squad the server allows is not FACTORY.levels at some level");
+  check(level === 1 && factorySquadKinds(level).length === FACTORY.levels[1].kinds.length && factoryAhead(p, level) && !factoryAhead({ factory: 1 }, level), "sending: the squad is not sized by the factory level the server has");
   // A send being made takes its squad at once; the answer numbers it, or a refusal gives the squad back.
   const now = t0 + 5000;
   const pending = sendingEntry(B, "relay", 3, now);
@@ -383,38 +384,20 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(kept.length === 12 && kept.some((o) => o.state === "holding"), "trim: a live expedition was dropped for newer ones that are gone");
 }
 
-// --- a send against a server that never answers: each request gives up, and the send rolls back
+// --- readView gives up as network when the server never answers (player send UI removed; rules below stay for stale `sending` entries)
 {
-  rememberCode(A);
   const real = globalThis.fetch;
   globalThis.fetch = ((_: unknown, init?: RequestInit) =>
     new Promise((_ok, fail) => init?.signal?.addEventListener("abort", () => fail(init.signal!.reason)))) as typeof fetch;
-  // Node's abort timers do not hold the process open (a browser tab is): this interval does, meanwhile.
   const alive = setInterval(() => {}, 1000);
   const t = performance.now();
   const view = await readView(B, 50);
-  const sent = await sendExpedition(B, "relay", 3, 50);
   const took = Math.round(performance.now() - t);
   clearInterval(alive);
   globalThis.fetch = real;
-  const pending = sendingEntry(B, "relay", 3, 0);
-  const rolled = answerSend([pending], pending, sent.ok ? sent.body.id : null);
-  console.log(`timeout: view ${JSON.stringify(view)}, send ${JSON.stringify(sent)} in ${took} ms; rolled back ${rolled.length === 0}; a send gives up within ${2 * SEND_TIMEOUT_MS} ms of ${SENDING_MS}`);
-  check(!view.ok && view.error === "network" && !sent.ok && sent.error === "network" && took < 2000, "timeout: a request of a send to a server that never answers did not give up as network");
-  check(rolled.length === 0 && !!ERROR_TEXT.network, "timeout: a timed-out send did not roll back");
-  check(2 * SEND_TIMEOUT_MS < SENDING_MS, "timeout: a send's requests may outlast SENDING_MS, so a send still out could be dropped");
-  // Browsers without AbortSignal.timeout (Safari before 16): the deadline still holds.
-  const timeoutFn = AbortSignal.timeout;
-  Object.defineProperty(AbortSignal, "timeout", { value: undefined, configurable: true, writable: true });
-  globalThis.fetch = ((_: unknown, init?: RequestInit) =>
-    new Promise((_ok, fail) => init?.signal?.addEventListener("abort", () => fail(init.signal!.reason)))) as typeof fetch;
-  const alive2 = setInterval(() => {}, 1000);
-  const old = await readView(B, 50);
-  clearInterval(alive2);
-  globalThis.fetch = real;
-  Object.defineProperty(AbortSignal, "timeout", { value: timeoutFn, configurable: true, writable: true });
-  console.log(`timeout without AbortSignal.timeout: view ${JSON.stringify(old)}`);
-  check(!old.ok && old.error === "network", "timeout: without AbortSignal.timeout a request did not give up as network");
+  console.log(`timeout: view ${JSON.stringify(view)} in ${took} ms`);
+  check(!view.ok && view.error === "network" && took < 2000, "timeout: readView did not give up as network");
+  check(2 * SEND_TIMEOUT_MS < SENDING_MS, "timeout: SENDING_MS still covers unanswered sending entries");
 }
 
 // --- income
@@ -431,9 +414,10 @@ function island(freed: string[], rival: string[] = []): Profile {
   s2.outcome = "extracted";
   const plain = settle(base, s1);
   const away = settle({ ...base, expeditions: exps }, s2);
-  console.log(`income: plain ${plain.profile.cash} (${JSON.stringify(plain.awayIncome)}), with a node held away ${away.profile.cash} (+${away.awayIncome}); expeditions kept ${away.profile.expeditions.map((e) => e.state).join()}`);
+  console.log(`income: plain ${plain.profile.cash} (income ${plain.income}), with a node held away ${away.profile.cash} (income ${away.income}); expeditions kept ${away.profile.expeditions.map((e) => e.state).join()}`);
   check(awayIncome({ expeditions: exps }) === FRONT.income, "income: the nodes held away do not pay FRONT.income each");
-  check(away.profile.cash - plain.profile.cash === FRONT.income && away.awayIncome === FRONT.income && plain.awayIncome === undefined, "income: the settle does not pay the nodes held away");
+  // 方向 A: awayIncome folds into Settlement.income (no separate awayIncome field / 遠征の拠点の収入 row).
+  check(away.profile.cash - plain.profile.cash === FRONT.income && away.income - plain.income === FRONT.income, "income: settle folds away pay into 拠点の収入");
   check(away.profile.expeditions.map((e) => e.state).join() === "holding,coming", "income: the settle did not drop the expeditions gone");
 }
 
@@ -447,9 +431,10 @@ function island(freed: string[], rival: string[] = []): Profile {
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(current?.v === 40 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
-  check(v27?.v === 40 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
-  check(v26?.v === 40 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(current?.v === 41 && current.expeditions.length === 1 && current.expeditions[0]!.state === "recalling" && current.expeditions[0]!.id === 2 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not recall its expeditions / keep log and nodes taken back");
+  check(v27?.v === 41 && v27.expeditions.length === 1 && v27.expeditions[0]!.state === "recalling" && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not recall its expeditions / keep log and nodes taken back");
+  check(parseProfile(JSON.parse(JSON.stringify({ ...p, expeditions: [{ code: A, node: "relay", sentAt: 5, id: 0, units: 3, state: "sending" }] })))?.expeditions.length === 0, "saves: a sending expedition was kept after send UI removal");
+  check(v26?.v === 41 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");

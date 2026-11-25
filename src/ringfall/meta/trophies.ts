@@ -4,7 +4,8 @@
  * classic CoC). Defence kill bonuses are out of scope for now.
  */
 import { rivalOf, type PoiHold } from "../sim/holds";
-import { NODES, type NodeId } from "../sim/map";
+import type { NodeId } from "../sim/map";
+import { ISLAND_TABLE } from "./island-table";
 
 /** Numbers for T1. Soft season reset is left to a later pass. */
 export const TROPHY = {
@@ -51,8 +52,9 @@ export function trophyDelta(
   let lost = 0;
   const taken: NodeId[] = [];
   const dropped: NodeId[] = [];
-  for (let i = 0; i < NODES.length; i++) {
-    const id = NODES[i].id;
+  // ISLAND_TABLE.nodes is NODES order (server-safe; importing map.ts would build the world in the Worker).
+  for (let i = 0; i < ISLAND_TABLE.nodes.length; i++) {
+    const id = ISLAND_TABLE.nodes[i].id as NodeId;
     const was = before[i] ?? "foe";
     const now = after[i] ?? "foe";
     const wasRival = rivalOf(was);

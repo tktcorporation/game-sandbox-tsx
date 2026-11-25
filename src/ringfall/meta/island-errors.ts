@@ -33,6 +33,7 @@ export const API_ERRORS = [
   "node-busy",
   "island-full",
   "day-limit",
+  "shielded",
   "too-many-units",
   "no-expedition",
   // X2 short-raid assault report.
@@ -70,6 +71,7 @@ export const ERROR_TEXT: Record<ApiError | NetError, string> = {
   "node-busy": "その拠点にはもう遠征隊が向かっています",
   "island-full": "その島には遠征隊がいっぱいです",
   "day-limit": "その島は今日の分を取られました。明日もう一度",
+  shielded: "その拠点は今日取られたばかりです。明日もう一度",
   "too-many-units": "工場の部隊より多くは送れません",
   "no-expedition": "その遠征隊はもういません",
   "not-assault": "その遠征は短いレイドの予告ではありません",

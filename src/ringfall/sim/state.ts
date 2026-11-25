@@ -6,7 +6,8 @@ import { placeParties } from "./world";
 import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
-import type { PoiHold } from "./island";
+import { DEFENCE_AID, isContestedPoi, type PoiHold } from "./island";
+import { rivalOf } from "./holds";
 import { enemyNodes, nodeHolds, ownNodes, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
 
@@ -642,6 +643,13 @@ export interface State {
    * POI starts cleared, with no robots, its vault open to search and its depot on.
    */
   hold: PoiHold[];
+  /**
+   * Factory level of each rival owner defending contested coastal hubs this raid (`Start.defence`).
+   * Empty when the sim gate plays (no rivals → bench hash unchanged).
+   */
+  defence: Record<string, number>;
+  /** Extra 島の守り grunts at contested POI indices (from `Start.parcels` counts, capped at DEFENCE_AID). */
+  defenceAid: Record<number, number>;
   /** Seconds until the next reinforcement squad beams in, and how many have come. */
   reinforceT: number;
   reinforceN: number;
@@ -685,11 +693,6 @@ export interface State {
   leftParcels: { poi: PoiId; kind: ValuableKind }[];
   /** Parcel ids taken this raid (cleared from the island on report). */
   takenParcels: number[];
-  /**
-   * 他島への短いレイド出撃パラメータ（IncursionPlan）。自島レイドおよびシミュレーションゲート実行時は null
-   * （相手島コピーでの制圧は自島 poiState に影響しない）。
-   */
-  incursion: { code: string; owner: string; target: PoiId; parcels: { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] } | null;
   /** Leaving at a depot: which one, and the seconds still to stand there. */
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
@@ -893,15 +896,16 @@ export interface Start {
   /** The day's battle (陣取り戦) and what the player brings to it; left out, the raid has none. */
   battle?: BattleStart;
   /**
-   * Parcels at depots from the island / profile (ux-design C2). Left out, none — the sim gate
-   * and campaigns omit them, so their hashes stay put.
+   * Parcels at depots from the island / profile (ux-design C2). For contested hubs another player
+   * holds, counts at those POIs become 島の守り grunts in the defence (`DEFENCE_AID` cap). Left
+   * out, none — the sim gate and campaigns omit them, so their hashes stay put.
    */
   parcels?: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[];
   /**
-   * 他島への短いレイド出撃パラメータ。通常の自島レイドでは省略
-   * （シミュレーションゲートでは設定されないため、決定性ハッシュは不変）。
+   * Factory level of each rival owner whose contested coastal hub stands a defence this raid
+   * (方向 A: 工場の部隊). Left out, rival contested hubs stay empty (sim gate / no neighbours).
    */
-  incursion?: { code: string; owner: string; target: PoiId; parcels: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[] };
+  defence?: readonly { owner: string; factory: number }[];
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -976,6 +980,19 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
       if (f.heal) loot.push({ id: id++, kind: "heal", heal: f.heal, rarity: 1, pos, vel, age: 99 });
     }),
   );
+  const defence: Record<string, number> = {};
+  for (const d of start.defence ?? []) {
+    if (typeof d.owner === "string" && d.owner && Number.isFinite(d.factory)) defence[d.owner] = d.factory;
+  }
+  // 島の守り stock at contested hubs another player holds → up to DEFENCE_AID grunts in that garrison.
+  const defenceAid: Record<number, number> = {};
+  for (const q of start.parcels ?? []) {
+    const i = poiIndex(q.poi);
+    if (i < 0 || !isContestedPoi(i)) continue;
+    const who = rivalOf(hold[i] ?? "foe");
+    if (!who || defence[who] === undefined) continue;
+    defenceAid[i] = Math.min(DEFENCE_AID, (defenceAid[i] ?? 0) + 1);
+  }
   const s: State = {
     time: 0,
     phase: "play",
@@ -1047,9 +1064,16 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     care: null,
     visited: POIS.map(() => false),
     // An owned POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
-    // A POI with no garrison standing (the player's, or another player's) starts cleared.
-    cleared: hold.map((h) => h !== "foe"),
+    // A POI with no garrison standing (the player's, or another player's without contested defence) starts cleared.
+    cleared: hold.map((h, i) => {
+      if (h === "foe") return false;
+      const who = rivalOf(h);
+      if (who && isContestedPoi(i) && defence[who] !== undefined) return false;
+      return true;
+    }),
     hold,
+    defence,
+    defenceAid,
     reinforceT: clock.first,
     reinforceN: 0,
     raiderT: clock.raiders,
@@ -1072,14 +1096,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     parcels: [],
     leftParcels: [],
     takenParcels: [],
-    incursion: start.incursion
-      ? {
-          code: start.incursion.code,
-          owner: start.incursion.owner,
-          target: start.incursion.target,
-          parcels: start.incursion.parcels.map((q) => ({ id: q.id, poi: q.poi, kind: q.kind, from: { ...q.from } })),
-        }
-      : null,
     leaving: null,
     leftAt: null,
     away: 0,

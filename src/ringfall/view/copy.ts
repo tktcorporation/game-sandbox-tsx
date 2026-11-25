@@ -44,8 +44,7 @@ export type TermId =
   | "loadout"
   | "seaIslands"
   | "island"
-  | "trophy"
-  | "shortRaid";
+  | "trophy";
 
 /**
  * Canonical place / action words as the game shows them.
@@ -108,7 +107,6 @@ export const TERM = {
    * お隣の島の一部への短いレイド（Short Raid）。
    * 【元】（なし・写し全体） 【案】短いレイド 【理由】全島ミラーを避けつつ他島へ攻めに行く感。
    */
-  shortRaid: "短いレイド",
 } as const satisfies Record<TermId, string>;
 
 /** Full live phrases built from TERM. */
@@ -173,9 +171,17 @@ export const PLAN_GOAL = "目的";
 /** 信号所に残す島の知らせの件数（2026-11-24 決定）。 */
 export const NEWS_KEEP = 10;
 
-/** お隣を攻めた勝ち負けの一行（リザルト／信号所）。 */
+/**
+ * お隣の拠点を取った／攻めきれなかった一行（リザルト／信号所）。
+ * 【元】{お隣}の{拠点}を取った · トロフィー +n
+ * 【案】… · トロフィー +n · 倉庫へ届く
+ * 【理由】島の守りが倉庫へ届くことを一行に（方向 A）
+ */
 export function newsIncursion(owner: string, node: string, won: boolean, trop?: number): string {
-  if (won) return trop != null && trop > 0 ? `${owner}の${node}を取った · ${TERM.trophy} +${trop}` : `${owner}の${node}を取った`;
+  if (won) {
+    const tropBit = trop != null && trop > 0 ? ` · ${TERM.trophy} +${trop}` : "";
+    return `${owner}の${node}を取った${tropBit} · 倉庫へ届く`;
+  }
   return `${owner}の${node}を攻めきれなかった`;
 }
 
@@ -186,11 +192,6 @@ export function trophyLine(before: number, after: number, gained = 0, lost = 0):
   if (lost > 0) parts.push(`取られた −${lost}`);
   const mid = parts.length ? `（${parts.join(" · ")}）` : "";
   return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;
-}
-
-/** 短いレイドの勝ちが相手サーバーに拒否されたときの一行。 */
-export function newsAssaultReversed(node: string, trop: number): string {
-  return trop > 0 ? `${node}の勝ちが取り消された · ${TERM.trophy} −${trop}` : `${node}の勝ちが取り消された`;
 }
 
 /** 島の知らせの控え: 新しい行を先頭に足し、最新 NEWS_KEEP 件だけ残す。 */
@@ -254,9 +255,14 @@ export function newsRetaken(at: string): string {
   return `${at}を制圧した · 倉庫へ届く`;
 }
 
-/** 島の知らせ: 相手の遠征隊を撃退した行（旧・全滅させた）。 */
+/**
+ * 島の知らせ: 相手の攻めを守りきった行。
+ * 【元】{拠点}で{誰}の遠征隊を撃退した
+ * 【案】{誰}が{拠点}を攻めた · 守りきった
+ * 【理由】相手の普段のレイドで攻められる。育てた守りが効いたことを言う（方向 A）
+ */
 export function newsWipedEnemy(at: string, who: string): string {
-  return `${at}で${who}の遠征隊を撃退した`;
+  return `${who}が${at}を${TERM.attack} · 守りきった`;
 }
 
 /** 自分の遠征の結果を一文に（信号所の title・控え）。 */
@@ -279,22 +285,6 @@ export function nextFrontCapture(name: string): string {
 /** Next-hand line for a rival hold on the front (E4: 攻める). */
 export function nextAttack(name: string): string {
   return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${name}を${TERM.attack}`;
-}
-
-/**
- * 相手拠点へ今すぐ短いレイドで出られないときのエラートースト。
- * 【元】〜は固められていて攻められない 【案】〜へは今攻められない 【理由】固める削除後も短いレイド拒否が必要
- */
-export function assaultUnavailable(name: string): string {
-  return `${name}へは今攻められない`;
-}
-
-/**
- * 次の一手: 短いレイドへ出られるときも、入口は門からの出撃に揃える。
- * 【元】次：門から短いレイド · …を攻める 【案】次：門から出撃 · …を攻める 【理由】登録の有無で同じ一手の文が変わっていた
- */
-export function nextShortRaid(name: string): string {
-  return nextAttack(name);
 }
 
 export function moduleRaiseReady(moduleName: string): string {

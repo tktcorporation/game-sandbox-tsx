@@ -4,6 +4,7 @@
  * slot of its own, and the factory's expeditions start from them, so sending one needs no code typed.
  * Pure: the answer read here, the requests in island-net.ts.
  */
+import { isAiOwner } from "../sim/holds";
 import { isIslandCode } from "./island-code";
 import type { NodeId } from "../sim/map";
 
@@ -16,6 +17,8 @@ export interface Neighbour {
   day: number;
   /** The slot at sea it stands in (`NEIGHBOUR_SLOTS`), which sets the sea route to it. */
   slot: number;
+  /** Factory level last reported (島の守り／守備隊). Optional on older answers. */
+  factory?: number;
   /** What its owner did last, for a sign of life: when they last played, and that raid's cores taken and whether they got home. */
   last?: { at: number; captured: number; home: boolean };
   /** An island the game runs itself (meta/ai-islands.ts), filling a slot the server left free: marked AI wherever it is shown. */
@@ -38,6 +41,14 @@ export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[]
   { x: 860, z: -1150, shore: "robotworks" },
   { x: -980, z: -940, shore: "radar" },
 ];
+
+/**
+ * Coastal hubs contested with a neighbour (方向 A / TKT-195): 観測所・浄水場・ロボット工場・追跡レーダー.
+ * Holding one counts toward 「島の解放まで · 拠点 あと N」; 16 is still reachable without them.
+ */
+export const CONTESTED_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
+
+export const isContestedShore = (id: NodeId | string): boolean => (CONTESTED_SHORES as readonly string[]).includes(id);
 
 /** Whether the sea route to neighbour slot `k` is open: the player holds the node facing it. */
 export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);
@@ -65,9 +76,20 @@ export function parseNeighbours(raw: unknown): Neighbour[] | null {
     // An answer from before slots were kept places each in the slot of its place in the list.
     const slot = Number.isInteger(n.slot) && (n.slot as number) >= 0 && (n.slot as number) < NEIGHBOUR_MAX ? (n.slot as number) : k;
     if (out.some((o) => o.slot === slot)) continue;
-    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(last ? { last } : {}) });
+    const factory = Number.isInteger(n.factory) && (n.factory as number) >= 0 && (n.factory as number) <= 64 ? (n.factory as number) : undefined;
+    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(factory !== undefined ? { factory } : {}), ...(last ? { last } : {}) });
   }
   return out;
+}
+
+/**
+ * Display name for a rival hold's owner code among known neighbours.
+ * Resolves by code only (never by the current neighbour slot): a rival may keep a coastal hub
+ * across a weekly redraw while a different player sits that slot (Codex / TKT-195).
+ */
+export function neighbourNameByCode(who: string, neighbours: readonly Pick<Neighbour, "code" | "name">[]): string | null {
+  const n = neighbours.find((x) => x.code === who || (isAiOwner(who) && x.code === who.slice(3)));
+  return n?.name ?? null;
 }
 
 /** How long ago, in its largest unit and a letter: 5m, 3h, 2d (the marks beside a neighbour). */

@@ -112,12 +112,8 @@ export function coreInReach(s: State): number {
   return NODES.findIndex((n, i) => s.nodes[i] !== "own" && dist2d(n.core, p.pos) < PLAYER.interactRange + FRONT.half + 0.5 && p.pos.y > n.core.y - 1.5 && p.pos.y < n.core.y + 2);
 }
 
-/**
- * Whether node `i` can be taken in the raid as it stands: on the front, and not the player's
- * already. A short raid's target is always open — the copy has no home front from the camp.
- */
-export const capturable = (s: Pick<State, "nodes" | "incursion">, i: number) =>
-  frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
+/** Whether node `i` can be taken in the raid as it stands: on the front, and not the player's already. */
+export const capturable = (s: Pick<State, "nodes">, i: number) => frontNodes(s.nodes)[i];
 
 /**
  * The use key at core `i`: a core off the front is shielded by the enemy and refuses; one on it

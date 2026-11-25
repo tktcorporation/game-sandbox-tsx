@@ -13,8 +13,7 @@ import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
-import { neighbourFronts } from "../meta/neighbour-front";
-import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
+import { NEIGHBOUR_SLOTS, neighbourNameByCode, routeOpen, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
 
 /*
@@ -1014,17 +1013,15 @@ export class IslandMap {
     // A POI the enemy held as the raid began and the player cleared gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "foe";
     const poiText = (i: number) => (s.cleared[i] && hold(i) === "foe" ? `${POIS[i].name} ✓` : POIS[i].name);
-    // E4: rival holds show the owner's name (AI tagged) under the mark.
+    // 方向 A: rival holds (esp. contested coastal hubs) show the owner's name (AI tagged) under the mark.
     const rivalWho = (i: number): string | null => {
       const owner = rivalOf(hold(i));
       if (!owner) return null;
       if (isAiOwner(owner)) {
-        const code = owner.slice(3);
-        const n = this.neighbours.find((x) => x.code === code);
-        return n ? `${n.name} AI` : "AI";
+        const n = neighbourNameByCode(owner, this.neighbours);
+        return n ? `${n} AI` : "AI";
       }
-      const n = this.neighbours.find((x) => x.code === owner);
-      return n?.name ?? "他のプレイヤー";
+      return neighbourNameByCode(owner, this.neighbours) ?? "他のプレイヤー";
     };
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
@@ -1114,29 +1111,6 @@ export class IslandMap {
       // Whose island and how much of it they hold, in one line over it: a slot near the map's edge keeps it whole.
       label(`${n.name}${n.ai ? " AI" : ""} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
       taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
-    }
-    // お隣の前線: 航路開通済みかつ自島に陣地なし → ○○の前線マーク（攻められる印）。
-    // Use `nodes` (NODES order), never `hold` (POIS order — includes `pad` and shifts coastal slots).
-    if (!plain && !this.mini && s.nodes) {
-      for (const f of neighbourFronts(s.nodes, this.neighbours)) {
-        const p = at(f.x, f.z);
-        const r = 8 * dpr;
-        g.save();
-        g.lineWidth = 2 * dpr;
-        g.strokeStyle = UI.rivalLight;
-        g.setLineDash([3 * dpr, 3 * dpr]);
-        g.beginPath();
-        g.arc(p.x, p.y, r, 0, Math.PI * 2);
-        g.stroke();
-        g.setLineDash([]);
-        g.fillStyle = alpha(UI.rival, 0.45);
-        g.beginPath();
-        g.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2);
-        g.fill();
-        g.restore();
-        label(f.name, p.x, p.y - r - 5 * dpr, UI.rivalLight, 10);
-        taken.push({ x0: p.x - r * 1.4, y0: p.y - r - 14 * dpr, x1: p.x + r * 1.4, y1: p.y + r });
-      }
     }
     // Districts and landmarks between the POIs, small and muted under everything else.
     for (const d of plain ? [] : LANDMARKS) {
