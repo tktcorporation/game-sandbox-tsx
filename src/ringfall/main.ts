@@ -10,7 +10,7 @@ import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, needsOrganize, raidThreat, settle, type Profile, type Settlement } from "./meta/profile";
+import { analyse, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { Organize } from "./view/organize";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
@@ -904,6 +904,9 @@ function start(go: Launch, from?: State) {
     island: holds(hub.profile),
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
+    // Free stash slots after takeKit — 中継ボックス sends only what fits.
+    stashRoom: stashRoom(hub.profile),
+    stashWant: wanted(hub.profile),
     battle: {
       factory: hub.profile.factory,
       away: squadsAway(hub.profile),

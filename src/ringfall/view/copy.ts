@@ -171,6 +171,8 @@ export const PHRASE = {
    * 【理由】送れないことをその場で。「倉庫が満杯」は商人の屋台で使っている語
    */
   relayWarehouseFull: `${TERM.relayBox} · ${TERM.warehouse}が満杯`,
+  /** Partial depot send: rest stayed in the bag. */
+  bagKept: "点はバッグに残った",
 } as const;
 
 /** Toast after confirming 遠征に出す (past of TERM.sendExpedition). */

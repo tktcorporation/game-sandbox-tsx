@@ -486,10 +486,16 @@ export class Hud {
         break;
       case "deposit": {
         // Same use as 倉庫へ送る: island defence stock is automatic — show the result on the line.
+        if (e.full && e.n === 0) {
+          this.toast(`${depotIcon()}${PHRASE.relayWarehouseFull}`, 0, 3200);
+          break;
+        }
         const i = depotInReach(s);
         const place = i >= 0 ? POIS[poiIndex(DEPOTS[i].poi)].name : "";
+        const left = e.left ? ` · ${e.left}${PHRASE.bagKept}` : "";
+        const room = e.room != null ? ` · ${TERM.warehouse} あと ${e.room}` : "";
         this.toast(
-          `${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${e.n}点・${e.value}${place ? `<span class="toast-sub">${esc(place)}${PHRASE.islandGuardVia}</span>` : ""}`,
+          `${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${e.n}点・${e.value}${room}${left}${place ? `<span class="toast-sub">${esc(place)}${PHRASE.islandGuardVia}</span>` : ""}`,
           3,
         );
         break;
@@ -1264,7 +1270,12 @@ export class Hud {
       }
       const n = p.haul.length + p.tools.length;
       const value = p.haul.reduce((v, k) => v + VALUABLES[k].value, 0);
-      return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${n}点・${value}`);
+      const room = Number.isFinite(s.stashRoom) ? Math.max(0, Math.floor(s.stashRoom)) : null;
+      if (room === 0) {
+        return tip(`${key("E")}${depotIcon()}${PHRASE.relayWarehouseFull} · ${TERM.cutAndExtract} ${clockIcon()}${DEPOT.leave} 秒`);
+      }
+      const roomBit = room != null ? ` · ${TERM.warehouse} あと ${room}` : "";
+      return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${n}点・${value}${roomBit}`);
     }
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {

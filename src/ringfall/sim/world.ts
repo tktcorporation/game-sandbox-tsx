@@ -771,33 +771,77 @@ export function depotInReach(s: State): number {
 }
 
 /**
- * The use key at a depot (primary: 納める): a bag with anything in it goes home; an empty one
- * means leaving the raid there. When valuables are sent home, one kind is also stocked silently
+ * Order bag valuables + tools for a depot send (same ranks as stash keepOrder, without keys/gear):
+ * wanted valuables first, then the rest by price, then tools.
+ */
+function depotSendOrder(s: State): ({ t: "v"; i: number } | { t: "tool"; i: number })[] {
+  const p = s.player;
+  const left = { ...s.stashWant };
+  const rankV = (k: ValuableKind) => ((left[k] ?? 0) > 0 ? ((left[k] = (left[k] ?? 0) - 1), 0) : 1);
+  const vs = p.haul.map((k, i) => ({ t: "v" as const, i, r: rankV(k), price: VALUABLES[k].value }));
+  const ts = p.tools.map((k, i) => ({ t: "tool" as const, i, r: 2, price: TOOLS[k].value }));
+  return [...vs, ...ts].sort((a, b) => a.r - b.r || b.price - a.price).map(({ t, i }) => (t === "v" ? { t, i } : { t, i }));
+}
+
+/**
+ * The use key at a depot (primary: 納める): a bag with anything in it sends what fits the raid's
+ * stash room (rest stays in the bag); room 0 with a bag starts leaving with the haul; an empty
+ * bag leaves the raid there. When valuables are sent home, one kind is also stocked silently
  * for this island's next offline defence (ux-design C2) — no separate verb or prompt.
  */
 function useDepot(s: State, index: number) {
   const p = s.player;
-  if (p.haul.length || p.tools.length) {
+  const bag = p.haul.length + p.tools.length;
+  if (bag && s.stashRoom <= 0) {
+    // 倉庫が満杯: do not send; allow 切り上げて生還 with the bag.
+    if (s.leaving) return;
+    s.events.push({ t: "deposit", n: 0, value: 0, left: bag, room: 0, full: true });
+    s.leaving = { depot: index, t: DEPOT.leave };
+    s.events.push({ t: "leaveStart" });
+    return;
+  }
+  if (bag) {
     // Something picked up while leaving breaks the leaving off, even when it is sent at once.
     if (s.leaving) {
       s.leaving = null;
       s.events.push({ t: "leaveCancel" });
     }
-    const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-    const stock = p.haul[0];
-    s.events.push({ t: "deposit", n: p.haul.length + p.tools.length, value });
-    s.sentAt.push(...haulOrigins(p));
-    s.sent.push(...p.haul);
-    s.sentTools.push(...p.tools);
-    s.sentVia[index] += value;
-    p.haul = [];
-    p.haulAt = [];
-    p.tools = [];
-    // Silent defence stock: the island DO spends these while the owner is away. Not a world pickup.
-    if (stock) {
-      const d = DEPOTS[index];
-      if (!s.leftParcels.some((l) => l.poi === d.poi)) s.leftParcels.push({ poi: d.poi, kind: stock });
+    const room = Number.isFinite(s.stashRoom) ? Math.max(0, Math.floor(s.stashRoom)) : bag;
+    const order = depotSendOrder(s);
+    const take = order.slice(0, Math.min(room, order.length));
+    const takeV = new Set(take.filter((x) => x.t === "v").map((x) => x.i));
+    const takeT = new Set(take.filter((x) => x.t === "tool").map((x) => x.i));
+    const sentHaul = p.haul.filter((_, i) => takeV.has(i));
+    const sentTools = p.tools.filter((_, i) => takeT.has(i));
+    const keepHaul = p.haul.filter((_, i) => !takeV.has(i));
+    const keepAt = haulOrigins(p).filter((_, i) => !takeV.has(i));
+    const keepTools = p.tools.filter((_, i) => !takeT.has(i));
+    const value = sentHaul.reduce((n, k) => n + VALUABLES[k].value, 0);
+    const stock = sentHaul[0];
+    const left = keepHaul.length + keepTools.length;
+    s.events.push({
+      t: "deposit",
+      n: sentHaul.length + sentTools.length,
+      value,
+      ...(left ? { left } : {}),
+      room: Number.isFinite(s.stashRoom) ? Math.max(0, s.stashRoom - (sentHaul.length + sentTools.length)) : undefined,
+      ...(sentHaul.length + sentTools.length === 0 ? { full: true } : {}),
+    });
+    if (sentHaul.length || sentTools.length) {
+      s.sentAt.push(...haulOrigins(p).filter((_, i) => takeV.has(i)));
+      s.sent.push(...sentHaul);
+      s.sentTools.push(...sentTools);
+      s.sentVia[index] += value;
+      if (Number.isFinite(s.stashRoom)) s.stashRoom = Math.max(0, s.stashRoom - (sentHaul.length + sentTools.length));
+      // Silent defence stock: the island DO spends these while the owner is away. Not a world pickup.
+      if (stock) {
+        const d = DEPOTS[index];
+        if (!s.leftParcels.some((l) => l.poi === d.poi)) s.leftParcels.push({ poi: d.poi, kind: stock });
+      }
     }
+    p.haul = keepHaul;
+    p.haulAt = keepAt;
+    p.tools = keepTools;
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });
@@ -831,7 +875,8 @@ export function stepDepots(s: State) {
   }
   const l = s.leaving;
   if (!l) return;
-  if (!up || p.haul.length || p.tools.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
+  // Haul may stay in the bag while leaving (倉庫が満杯 → 切り上げて生還); fight / step away still cancels.
+  if (!up || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
     s.leaving = null;
     s.events.push({ t: "leaveCancel" });
     return;

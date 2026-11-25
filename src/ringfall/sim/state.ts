@@ -505,7 +505,8 @@ export type GameEvent =
   /** A way in on foot was walked to for the first time this raid. */
   | { t: "entryFound"; id: EntryId }
   /** The bag was sent home from a depot: how many valuables, worth how much. */
-  | { t: "deposit"; n: number; value: number }
+  /** `left` = bag items not sent (no room); `full` = nothing sent because stash room was 0. */
+  | { t: "deposit"; n: number; value: number; left?: number; room?: number; full?: boolean }
   /** The player chose to leave at a depot, and the countdown started or was broken off. */
   | { t: "leaveStart" }
   | { t: "leaveCancel" }
@@ -684,6 +685,14 @@ export interface State {
   sentAt: number[];
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
+  /**
+   * Free stash slots left for depot sends this raid (set at start from the profile after takeKit).
+   * Decremented on each deposit; Infinity when the start omitted it (sim gate). 0 means 倉庫が満杯
+   * and the bag may still leave with the player.
+   */
+  stashRoom: number;
+  /** Wanted valuables at raid start (depot send priority); empty when omitted. */
+  stashWant: Partial<Record<ValuableKind, number>>;
   /**
    * Defence stock queued this raid when the player deposits at a depot (`leftParcels` only;
    * not world pickups). The sim gate never deposits, so the bench hash is unchanged.
@@ -906,6 +915,16 @@ export interface Start {
    * (方向 A: 工場の部隊). Left out, rival contested hubs stay empty (sim gate / no neighbours).
    */
   defence?: readonly { owner: string; factory: number }[];
+  /**
+   * Free stash slots for 中継ボックス sends this raid. Left out, unlimited (sim gate / campaigns:
+   * deposit never runs there, so hashes stay put when omitted).
+   */
+  stashRoom?: number;
+  /**
+   * Valuables the hideout / factory still want at raid start (for depot send order).
+   * Left out, depot sends in bag order.
+   */
+  stashWant?: Partial<Record<ValuableKind, number>>;
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1092,6 +1111,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     sentTools: [],
     sentAt: [],
     sentVia: DEPOTS.map(() => 0),
+    stashRoom: start.stashRoom ?? Infinity,
+    stashWant: { ...(start.stashWant ?? {}) },
     // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
     parcels: [],
     leftParcels: [],
