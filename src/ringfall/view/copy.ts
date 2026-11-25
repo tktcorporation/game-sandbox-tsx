@@ -254,17 +254,40 @@ export const PLAN_GOAL = "目的";
 export const NEWS_KEEP = 10;
 
 /**
- * お隣の拠点を取った／攻めきれなかった一行（リザルト／信号所）。
- * 【元】{お隣}の{拠点}を取った · トロフィー +n
- * 【案】… · トロフィー +n · 倉庫へ届く
- * 【理由】島の守りが倉庫へ届くことを一行に（方向 A）
+ * お隣の拠点を制圧した／攻めきれなかった一行（リザルト／信号所）。
+ * 【元】{お隣}の{拠点}を取った · トロフィー +n · 倉庫へ届く
+ * 【案】{お隣}の{拠点}を制圧した · … 【理由】核のプロンプトと同じ攻めの物語（TKT-204 案 E）
  */
 export function newsIncursion(owner: string, node: string, won: boolean, trop?: number): string {
   if (won) {
     const tropBit = trop != null && trop > 0 ? ` · ${TERM.trophy} +${trop}` : "";
-    return `${owner}の${node}を取った${tropBit} · 倉庫へ届く`;
+    return `${owner}の${node}を制圧した${tropBit} · 倉庫へ届く`;
   }
   return `${owner}の${node}を攻めきれなかった`;
+}
+
+/**
+ * Live core prompt for a rival-held hub (TKT-204 案 E).
+ * 【元】E 核 · 制圧を始める 浄水場 【案】E ツバキの浄水場を攻める
+ */
+export function attackCapturePrompt(whoHub: string): string {
+  return attackGoal(whoHub);
+}
+
+/**
+ * Mid-capture / toast while holding a rival hub's core (TKT-204 案 E).
+ * 【元】核 · 制圧 浄水場 【案】ツバキの浄水場を制圧
+ */
+export function attackCapturing(whoHub: string): string {
+  return `${whoHub}を制圧`;
+}
+
+/**
+ * Toast / result after seizing a rival hub (TKT-204 案 E).
+ * 【元】制圧した · 浄水場 【案】ツバキの浄水場を制圧した
+ */
+export function attackSeized(whoHub: string): string {
+  return `${whoHub}を制圧した`;
 }
 
 /**

@@ -51,8 +51,11 @@ const SAVE = {
   routes: [],
   depotSent: {},
   lastKit: null,
-  // 取られた行 → やり返す (TKT-204 案 F); hub still rival-held so the button shows.
-  news: ["ツバキに浄水場を取られた · 島の守りがツバキの倉庫へ"],
+  // 案 E: 制圧した行. 案 F: 取られた行 → やり返す (hub still rival-held).
+  news: [
+    "ツバキの浄水場を制圧した · トロフィー +33 · 倉庫へ届く",
+    "ツバキに浄水場を取られた · 島の守りがツバキの倉庫へ",
+  ],
   pending: [],
   goal: null,
   freedAt: {},
@@ -125,6 +128,22 @@ await pg.evaluate(() => window.advanceTime(500));
 
 // Camp with tip / 今日の作戦
 await snap(pg, "01-camp");
+
+// 案 E: core prompt wording (overlay — HUD clears #prompt every frame in camp).
+await pg.evaluate(() => {
+  document.getElementById("mp-howto-core-prompt")?.remove();
+  const el = document.createElement("p");
+  el.id = "mp-howto-core-prompt";
+  el.innerHTML = `<kbd>E</kbd> ツバキの浄水場を攻める`;
+  el.style.cssText =
+    "position:fixed;left:50%;top:60%;transform:translateX(-50%);margin:0;z-index:40;" +
+    "font-family:var(--jp);font-weight:800;font-size:16px;" +
+    "background:var(--plate-strong);padding:6px 12px;white-space:nowrap;pointer-events:none";
+  document.body.appendChild(el);
+});
+await pg.waitForTimeout(120);
+await snap(pg, "06-core-prompt");
+await pg.evaluate(() => document.getElementById("mp-howto-core-prompt")?.remove());
 
 // Departure: first-time 3-card guide (案 C) then map
 if (!(await pg.evaluate(() => window.ringfallCamp.openDepart()))) {

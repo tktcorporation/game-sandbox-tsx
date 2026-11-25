@@ -6,7 +6,16 @@ import { attackScouts, revengeNode, revengeNodeFromLine } from "../src/ringfall/
 import { TROPHY } from "../src/ringfall/meta/trophies";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
 import { newIsland, type Island } from "../src/ringfall/meta/island";
-import { TERM, attackScoutDef, attackScoutTrop, attackGoal } from "../src/ringfall/view/copy";
+import {
+  TERM,
+  attackScoutDef,
+  attackScoutTrop,
+  attackGoal,
+  attackCapturePrompt,
+  attackCapturing,
+  attackSeized,
+  newsIncursion,
+} from "../src/ringfall/view/copy";
 import { revengeable } from "../src/ringfall/meta/expeditions";
 
 const OWN = ["supply", "quarry", "relay", "station", "lodge", "yard", "smelter", "cannery", "coldstore"] as const;
@@ -49,5 +58,12 @@ if (TERM.revenge !== "やり返す") throw new Error("TERM.revenge");
 const cleared = { ...poiState, waterworks: { state: "own" as const } };
 if (revengeNodeFromLine(cleared, line) !== null) throw new Error("revenge gone after retake");
 
+if (attackCapturePrompt(water.title) !== "ツバキの浄水場を攻める") throw new Error("attackCapturePrompt");
+if (attackCapturing(water.title) !== "ツバキの浄水場を制圧") throw new Error("attackCapturing");
+if (attackSeized(water.title) !== "ツバキの浄水場を制圧した") throw new Error("attackSeized");
+const seized = newsIncursion("ツバキ", "浄水場", true, 33);
+if (!seized.includes("を制圧した") || seized.includes("を取った")) throw new Error(`newsIncursion ${seized}`);
+
 console.log("attack scout ok", rows.map((r) => `${r.title} front=${r.onFront} trop=+${r.trop}`).join(" | "));
 console.log("revenge ok");
+console.log("attack result copy ok", seized);
