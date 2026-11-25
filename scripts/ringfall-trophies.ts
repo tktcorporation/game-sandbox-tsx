@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { applySync } from "../src/ringfall/meta/expeditions";
 import { CONTESTED_SHORES } from "../src/ringfall/meta/neighbours";
 import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
-import { SEIZE, TROPHY, clampTrophies, trophyDelta, trophySwap } from "../src/ringfall/meta/trophies";
+import { SEIZE, TROPHY, clampTrophies, rivalTrophies, trophyDelta, trophySwap, trophiesTable } from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { NODES, POIS, nodeIndex, poiIndex } from "../src/ringfall/sim/map";
 
@@ -24,6 +24,9 @@ assert.equal(SEIZE.bonus, 2);
   assert.ok(up.gain > TROPHY.base);
   const down = trophySwap(1400, 1000);
   assert.ok(down.gain < TROPHY.base);
+  // TKT-201: ~200 above → about +40; ~200 below → about +20 (base 30 ± gap).
+  assert.equal(trophySwap(1000, 1200).gain, 40);
+  assert.equal(trophySwap(1000, 800).gain, 20);
 }
 
 const shore = CONTESTED_SHORES[0]!;
@@ -34,11 +37,19 @@ const shoreI = nodeIndex(shore);
   const after = [...before];
   before[shoreI] = rivalHold("AAAAAA");
   after[shoreI] = "own";
+  // Unknown rival → even (always +30).
   const d = trophyDelta(1000, before, after);
-  assert.ok(d.gained >= TROPHY.base - TROPHY.maxBonus);
+  assert.equal(d.gained, TROPHY.base);
   assert.equal(d.taken.length, 1);
   assert.equal(d.taken[0], shore);
   assert.equal(d.next, 1000 + d.gained);
+  // Real trophies: rival 200 above → +40.
+  const table = trophiesTable([{ code: "AAAAAA", trophies: 1200 }]);
+  const gap = trophyDelta(1000, before, after, (o) => rivalTrophies(o, 1000, table));
+  assert.equal(gap.gained, 40);
+  // Rival 200 below → +20.
+  const weak = trophyDelta(1000, before, after, (o) => rivalTrophies(o, 1000, trophiesTable([{ code: "AAAAAA", trophies: 800 }])));
+  assert.equal(weak.gained, 20);
 }
 
 {
@@ -67,14 +78,14 @@ const shoreI = nodeIndex(shore);
 
 {
   const p = newProfile(1);
-  assert.equal(p.v, 41);
+  assert.equal(p.v, 42);
   assert.equal(p.trophies, TROPHY.start);
   const raw = JSON.parse(JSON.stringify(p));
   raw.v = 31;
   delete raw.trophies;
   const old = parseProfile(raw, 1);
   assert.ok(old);
-  assert.equal(old.v, 41);
+  assert.equal(old.v, 42);
   assert.equal(old.trophies, TROPHY.start);
 }
 

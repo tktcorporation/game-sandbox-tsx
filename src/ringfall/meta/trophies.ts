@@ -67,13 +67,47 @@ export function trophySwap(attacker: number, defender: number): { gain: number; 
   return { gain, loss: gain };
 }
 
-/** Unknown rival → treat as even with the player (band mid). */
-export const rivalTrophies = (_owner: string, self: number): number => self;
+/**
+ * A rival's trophies from a known table (お隣 / AI). Unknown → treat as even with `self`
+ * (band mid), so a missing read does not invent a gap.
+ */
+export function rivalTrophies(owner: string, self: number, table?: ReadonlyMap<string, number>): number {
+  if (!table?.size) return self;
+  const direct = table.get(owner);
+  if (direct !== undefined) return direct;
+  if (owner.startsWith("ai-")) {
+    const bare = table.get(owner.slice(3));
+    if (bare !== undefined) return bare;
+  }
+  return self;
+}
+
+/**
+ * Build a code → trophies map from the neighbours list (server + AI). Used by settle / sync.
+ */
+export function trophiesTable(
+  neighbours: readonly { code: string; trophies?: number; ai?: true }[],
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const n of neighbours) {
+    if (n.trophies === undefined) continue;
+    map.set(n.code, n.trophies);
+    if (n.ai) map.set(`ai-${n.code}`, n.trophies);
+  }
+  return map;
+}
+
+/** Lookup bound to `self` and an optional neighbours table. */
+export const rivalTrophiesLookup =
+  (self: number, table?: ReadonlyMap<string, number>) =>
+  (owner: string): number =>
+    rivalTrophies(owner, self, table);
 
 /**
  * Net trophy change for one settle: contested coastal hubs taken from rivals / lost to rivals.
  * Non-contested rival nodes (legacy) do not move trophies — ownership change of 取り合う拠点 only
- * (design-direction 「トロフィーと物資」). `rivalTrophiesOf` supplies the other side's standing.
+ * (design-direction 「トロフィーと物資」). `rivalTrophiesOf` supplies the other side's standing
+ * (TKT-201: real neighbour / AI trophies from the map list; unknown → even with self).
  */
 export function trophyDelta(
   self: number,

@@ -8,7 +8,7 @@ import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
-import { SEIZE, TROPHY, trophyDelta } from "./trophies";
+import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -691,7 +691,7 @@ function store(p: Profile, items: Item[]): { profile: Profile; pending: Item[] }
  * and the map explored are kept too. The ways in walked to are learned only when the player got
  * off alive: a wipe forgets them.
  */
-export function settle(p: Profile, s: State): Settlement {
+export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
   const pl = s.player;
   // A record of a raid kept from before tools were carried has none.
   const tools = pl.tools ?? [];
@@ -756,7 +756,8 @@ export function settle(p: Profile, s: State): Settlement {
   // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
-  const trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
+  const selfTrop = p.trophies ?? TROPHY.start;
+  const trop = trophyDelta(selfTrop, beforeHolds, afterHolds, rivalTrop ?? ((o) => rivalTrophies(o, selfTrop)));
   if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).

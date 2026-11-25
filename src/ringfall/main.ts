@@ -11,6 +11,7 @@ import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./si
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { poisWith } from "./meta/hideout";
 import { pouchSlots } from "./meta/hideout";
@@ -281,7 +282,7 @@ function onEvent(e: GameEvent, s: State) {
     if (fresh !== hub.profile) hub.update(fresh);
     const before = hub.profile;
     profileBefore = before;
-    const settled = settle(before, s);
+    const settled = settle(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before))));
     settlement = settled;
     hub.reload(settled.profile);
     saveProfile(hub.profile);
