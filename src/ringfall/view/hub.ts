@@ -2,7 +2,7 @@ import { PLAYER } from "../sim/config";
 import { aiSalt, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
-import { attackScouts, type AttackScout } from "../meta/attack-scout";
+import { attackScouts, revengeNodeFromLine, type AttackScout } from "../meta/attack-scout";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -557,6 +557,10 @@ export class Hub {
           this.act(act, el.dataset.poi ?? "", el.dataset.kind ?? "");
           return;
         }
+        if (act === "revenge") {
+          this.act(act, el.dataset.node ?? el.dataset.arg ?? "");
+          return;
+        }
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
         this.act(act, arg);
       }
@@ -725,6 +729,14 @@ export class Hub {
     if (act === "open-signal") {
       sfx.click();
       return this.open("signal");
+    }
+    if (act === "revenge") {
+      // やり返す → 攻める一覧でその拠点を選んだ出撃（案 F）。
+      if (arg && this.revenge(arg as NodeId)) {
+        sfx.click();
+        this.close();
+      }
+      return;
     }
     if (act.startsWith("exp-")) {
       sfx.click();
@@ -988,16 +1000,30 @@ export class Hub {
 
   /**
    * Picks a hub on the 攻める list: frames the goal, chooses the nearest open start, and remembers
-   * the focus for the side panel. False when the hub is not on the front (or unknown).
+   * the focus for the side panel. False when the hub is unknown. With `force`, a shut (not-yet-front)
+   * hub is still focused so やり返す can open the list on it.
    */
-  selectAttack(id: NodeId): boolean {
+  selectAttack(id: NodeId, opts: { force?: boolean } = {}): boolean {
     const hit = this.attackTargets().find((t) => t.id === id);
-    if (!hit?.onFront) return false;
+    if (!hit) return false;
+    if (!hit.onFront && !opts.force) return false;
     this.attackFocus = id;
     this.peeked = null;
-    const starts = this.startPoints().filter((q) => q.open);
-    const near = [...starts].sort((a, b) => Math.hypot(a.x - hit.x, a.z - hit.z) - Math.hypot(b.x - hit.x, b.z - hit.z))[0];
-    if (near) this.choose(near.kind, near.id);
+    if (hit.onFront) {
+      const starts = this.startPoints().filter((q) => q.open);
+      const near = [...starts].sort((a, b) => Math.hypot(a.x - hit.x, a.z - hit.z) - Math.hypot(b.x - hit.x, b.z - hit.z))[0];
+      if (near) this.choose(near.kind, near.id);
+    }
+    return true;
+  }
+
+  /**
+   * やり返す (TKT-204 案 F): focus the hub they took (still rival-held) and open the departure on it
+   * via `focusPoi` (same path as 地図で見る).
+   */
+  revenge(id: NodeId): boolean {
+    if (!this.selectAttack(id, { force: true })) return false;
+    this.focusPoi = id;
     return true;
   }
 
@@ -1006,7 +1032,7 @@ export class Hub {
     const targets = this.attackTargets();
     if (!targets.length) return null;
     if (this.attackFocus) {
-      const hit = targets.find((t) => t.id === this.attackFocus && t.onFront);
+      const hit = targets.find((t) => t.id === this.attackFocus);
       if (hit) return hit;
     }
     return targets.find((t) => t.onFront) ?? null;
@@ -1152,7 +1178,13 @@ export class Hub {
 
   /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）と島の守り。 */
   private signalNews(): string {
-    const archive = (this.profile.news ?? []).map((line) => `<li>${esc(line)}</li>`);
+    const archive = (this.profile.news ?? []).map((line) => {
+      const node = revengeNodeFromLine(this.profile.poiState, line);
+      const btn = node
+        ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
+        : "";
+      return `<li>${esc(line)}${btn}</li>`;
+    });
     const aid = namedAid(this.profile).slice(0, 4).map(
       (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
     );

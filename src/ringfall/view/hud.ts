@@ -3,6 +3,8 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
+import { revengeNodeFromLine } from "../meta/attack-scout";
+import type { Island } from "../meta/island";
 import { aiLabel, goalCompass, PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
@@ -46,8 +48,21 @@ import { UI } from "./palette";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** The island's news from the server (its log), as the results show it: nothing when there is none. */
-const newsBlock = (news: readonly string[]) => (news.length ? `<h3>${TERM.islandNews}</h3><p>${news.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "");
+/**
+ * The island's news as the results / 起動時の一枚 show it.
+ * 「取られた」行に やり返す (TKT-204 案 F) when that hub is still rival-held.
+ */
+const newsBlock = (news: readonly string[], poiState?: Island) => {
+  if (!news.length) return "";
+  const rows = news.map((n) => {
+    const node = poiState ? revengeNodeFromLine(poiState, n) : null;
+    const btn = node
+      ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
+      : "";
+    return `<span class="news-line">${esc(n)}${btn}</span>`;
+  });
+  return `<h3>${TERM.islandNews}</h3><p class="island-news">${rows.join("")}</p>`;
+};
 /** Replaces an element's markup only when it changes: the objective card is redrawn every frame. */
 const setHtml = (el: HTMLElement, html: string) => {
   if (el.dataset.html === html) return;
@@ -1560,7 +1575,7 @@ export class Hud {
     $("stats").innerHTML = "";
     const lib = `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(after))}</p>`;
     const tropLine = trop ? `<p class="trop-line">${trop}</p>` : "";
-    $("home").innerHTML = lib + `<div id="island-news">${newsBlock(lines)}</div>` + tropLine;
+    $("home").innerHTML = lib + `<div id="island-news">${newsBlock(lines, after.poiState)}</div>` + tropLine;
     const tip = next || nextHandFor(after);
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1664,7 +1679,9 @@ export class Hud {
       : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
-    const dayHead = settled ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews)}</div>${tropLine}` : "";
+    const dayHead = settled
+      ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
+      : "";
     // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =
       settled?.income || settled?.spoils || settled?.liberated

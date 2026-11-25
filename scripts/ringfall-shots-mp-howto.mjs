@@ -51,7 +51,8 @@ const SAVE = {
   routes: [],
   depotSent: {},
   lastKit: null,
-  news: [],
+  // 取られた行 → やり返す (TKT-204 案 F); hub still rival-held so the button shows.
+  news: ["ツバキに浄水場を取られた · 島の守りがツバキの倉庫へ"],
   pending: [],
   goal: null,
   freedAt: {},
@@ -139,7 +140,7 @@ if (attackBtn) {
   await snap(pg, "02b-depart-attack");
 }
 
-// Signal station neighbours
+// Signal station neighbours + やり返す on 取られた
 await pg.keyboard.press("Escape");
 await pg.waitForTimeout(200);
 await pg.evaluate(() => window.ringfallCamp.walkTo("signal"));
@@ -148,6 +149,15 @@ await pg.keyboard.press("KeyE");
 await pg.evaluate(() => window.advanceTime(50));
 await pg.waitForTimeout(300);
 await snap(pg, "03-signal");
+
+// やり返す → depart with that hub selected (案 F)
+const revenge = await pg.$("#hub-signal-news button.revenge, .island-news .revenge");
+if (revenge) {
+  await revenge.click();
+  await pg.waitForFunction(() => !document.getElementById("depart")?.hidden, null, { timeout: 6000 }).catch(() => {});
+  await pg.waitForTimeout(300);
+  await snap(pg, "04-revenge-depart");
+}
 
 await browser.close();
 server.close();

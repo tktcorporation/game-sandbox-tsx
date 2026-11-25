@@ -12,6 +12,7 @@ import { islandHolds, type Island } from "./island";
 import { aiLabel, isContestedShore, neighbourNameByCode, type Neighbour } from "./neighbours";
 import { SEIZE, trophySwap, trophiesTable, rivalTrophies } from "./trophies";
 import type { Parcel } from "./parcels";
+import type { IslandLogEntry } from "./expeditions";
 
 /** One attackable contested hub as the depart screen lists it. */
 export interface AttackScout {
@@ -94,4 +95,29 @@ export function attackScouts(
     if (a.onFront !== b.onFront) return Number(b.onFront) - Number(a.onFront);
     return Math.hypot(a.x - from.x, a.z - from.z) - Math.hypot(b.x - from.x, b.z - from.z);
   });
+}
+
+/**
+ * Hub still held by the attacker after a 「取られた」 entry — the やり返す target (TKT-204 案 F).
+ * Null when the node is no longer rival-held (already taken back) or is not contested.
+ */
+export function revengeNode(poiState: Island, entry: Pick<IslandLogEntry, "t" | "node">): NodeId | null {
+  if (entry.t !== "taken") return null;
+  const id = entry.node as NodeId;
+  if (!isContestedShore(id) || nodeIndex(id) < 0) return null;
+  const who = rivalOf(poiState[id]?.state ?? "foe");
+  return who ? id : null;
+}
+
+/**
+ * Parse a stored 島の知らせ line for 「取られた」 and resolve the hub while it stays rival-held.
+ * 【形】{誰}に{拠点}を取られた · …
+ */
+export function revengeNodeFromLine(poiState: Island, line: string): NodeId | null {
+  const m = /^(.+?)に(.+?)を取られた/.exec(line.trim());
+  if (!m) return null;
+  const hub = m[2];
+  const n = NODES.find((x) => x.name === hub && isContestedShore(x.id));
+  if (!n) return null;
+  return rivalOf(poiState[n.id]?.state ?? "foe") ? n.id : null;
 }

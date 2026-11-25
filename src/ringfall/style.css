@@ -4972,7 +4972,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin-bottom: 6px;
   color: var(--mist);
 }
-/* The island's news on the signal station: one list (E4: no send/revenge button). */
+/* The island's news on the signal station (TKT-204 案 F: やり返す on 取られた). */
 #hub ul.island-news.signal-news {
   margin: 0;
   padding: 0;
@@ -4980,6 +4980,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 #hub ul.island-news.signal-news li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 4px 0;
@@ -5287,14 +5288,33 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--white);
   background: rgb(var(--own-rgb) / 0.7);
 }
-#hub .island-news .revenge {
-  margin: 0 0 0 auto;
+/* やり返す (TKT-204 案 F): 島の知らせ / 起動時の一枚 */
+.island-news .revenge,
+#hub .island-news .revenge,
+#results .island-news .revenge {
+  margin: 0 0 0 8px;
   padding: 4px 10px;
   border: 0;
+  border-radius: 0;
   background: var(--rival);
   color: var(--ink);
   font-size: 12px;
   font-weight: 800;
+  box-shadow: none;
+  transform: none;
+  vertical-align: middle;
+}
+.screen .island-news .revenge:hover {
+  transform: none;
+  box-shadow: none;
+  filter: brightness(1.08);
+}
+.island-news .news-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
 }
 
 #island-news:empty {

@@ -363,8 +363,17 @@ export function logLine(e: IslandLogEntry): string {
 /** What happened in a log entry, in a word, for the signal station's marks. */
 export const LOG_WORD: Record<IslandLogEntry["t"], string> = { ...COPY_LOG_WORD };
 
-/** Whether an entry is someone's attack on this island, answered by sending one back (仕返し). */
+/**
+ * Whether an entry is someone's attack on this island, answered by sending one back (旧・遠征の仕返し).
+ * Kept for older callers; UI revenge uses `revengeable` (TKT-204 案 F).
+ */
 export const answerable = (e: IslandLogEntry): boolean => (e.t === "noticed" || e.t === "landed" || e.t === "taken") && isIslandCode(e.by.code);
+
+/**
+ * 「取られた」行からやり返す対象になるか（TKT-204 案 F / CoC revenge）.
+ * AI の `ai-` 所有者も含む。拠点がまだ相手持ちのときだけボタンを出すのは呼び出し側。
+ */
+export const revengeable = (e: IslandLogEntry): boolean => e.t === "taken" && !!e.by.code && nodeIndex(e.node) >= 0;
 
 /**
  * Expeditions that still take a factory squad slot: not `gone`, and not `recalling`

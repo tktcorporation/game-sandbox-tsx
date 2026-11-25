@@ -5,7 +5,7 @@ import { collide, dist2d, groundAt } from "./sim/geom";
 import { huntSpot } from "./sim/objective";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type NodeId, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
@@ -1100,6 +1100,24 @@ $("restart").addEventListener("click", () => {
     organize.show(hub.profile);
     return;
   }
+  openCamp();
+});
+// やり返す (TKT-204 案 F): 取られた行 → 攻める一覧でその拠点を選んだ出撃.
+$("results").addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act=revenge]");
+  if (!el?.dataset.node) return;
+  if (!hub.revenge(el.dataset.node as NodeId)) return;
+  sfx.click();
+  if (awaySheetOpen) {
+    awaySheetOpen = false;
+    hud.endResults();
+    $("results").hidden = true;
+    paused = false;
+    $("pause").hidden = true;
+    askDepart(false);
+    return;
+  }
+  // Raid results: back to camp, then the hub's focusPoi opens the departure.
   openCamp();
 });
 $("organize").addEventListener("click", (e) => {

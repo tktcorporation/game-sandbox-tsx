@@ -37,6 +37,7 @@ export type TermId =
   | "arrivedAtWarehouse"
   | "attack"
   | "contest"
+  | "revenge"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -99,6 +100,11 @@ export const TERM = {
    * 【元】（なし） 【案】取り合う 【理由】誰と取り合う拠点かを先に見せる
    */
   contest: "取り合う",
+  /**
+   * Defence-log → attack (TKT-204 案 F / CoC revenge).
+   * 【元】（なし）／仕返し 【案】やり返す 【理由】取られた行から攻め先へ
+   */
+  revenge: "やり返す",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -443,7 +449,7 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
-  { bad: "仕返し", keep: "attack", note: "地図で攻める（E4）。信号所ボタンは置かない" },
+  { bad: "仕返し", keep: "revenge", note: "やり返す（TKT-204 案 F）。旧・遠征送りは廃止" },
   { bad: "取り返す", keep: "attack", note: "攻めるに統合（E4）" },
   /**
    * Exact match only in lint (送る ⊂ 倉庫へ送る). 中継ボックスの「倉庫へ送る」は別 TERM.

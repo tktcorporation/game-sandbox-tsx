@@ -2,11 +2,12 @@
  * TKT-204 案 B: attack scout list for the departure screen.
  * Run: `npx tsx scripts/ringfall-attack-scout.ts`
  */
-import { attackScouts } from "../src/ringfall/meta/attack-scout";
+import { attackScouts, revengeNode, revengeNodeFromLine } from "../src/ringfall/meta/attack-scout";
 import { TROPHY } from "../src/ringfall/meta/trophies";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
 import { newIsland, type Island } from "../src/ringfall/meta/island";
-import { attackScoutDef, attackScoutTrop, attackGoal } from "../src/ringfall/view/copy";
+import { TERM, attackScoutDef, attackScoutTrop, attackGoal } from "../src/ringfall/view/copy";
+import { revengeable } from "../src/ringfall/meta/expeditions";
 
 const OWN = ["supply", "quarry", "relay", "station", "lodge", "yard", "smelter", "cannery", "coldstore"] as const;
 
@@ -39,4 +40,14 @@ if (!ai) throw new Error("robotworks missing");
 if (!ai.ownerName.includes("AI")) throw new Error(`AI label ${ai.ownerName}`);
 if (!ai.title.includes(" · AI")) throw new Error(`AI title ${ai.title}`);
 
+const taken = { seq: 1, at: 0, t: "taken" as const, node: "waterworks" as const, by: { code: "TTHKQB", name: "ツバキ" } };
+if (!revengeable(taken)) throw new Error("revengeable");
+if (revengeNode(poiState, taken) !== "waterworks") throw new Error("revengeNode");
+const line = "ツバキに浄水場を取られた · 島の守りがツバキの倉庫へ";
+if (revengeNodeFromLine(poiState, line) !== "waterworks") throw new Error("revengeNodeFromLine");
+if (TERM.revenge !== "やり返す") throw new Error("TERM.revenge");
+const cleared = { ...poiState, waterworks: { state: "own" as const } };
+if (revengeNodeFromLine(cleared, line) !== null) throw new Error("revenge gone after retake");
+
 console.log("attack scout ok", rows.map((r) => `${r.title} front=${r.onFront} trop=+${r.trop}`).join(" | "));
+console.log("revenge ok");
