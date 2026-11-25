@@ -597,13 +597,23 @@ function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState 
  * again from the island as reported: a raid stands every garrison whole.
  */
 /**
- * Owner's report. Returns contested shores just retaken (for neighbour mirror sync) and any that
- * were refused for same-day shield.
+ * Owner's report. Returns contested shores that became the owner's this report (for neighbour mirror
+ * sync: foe→own and rival→own alike, TKT-201) and any refused for same-day shield.
+ * `contestedRetaken` is kept as the rival→own subset for older API callers.
  */
-function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: number): { contestedRetaken: { shore: string; from: string }[]; shielded: string[] } {
+function report(
+  s: IslandState,
+  op: Extract<IslandOp, { t: "report" }>,
+  now: number,
+): {
+  contestedTaken: { shore: string; from: string | null }[];
+  contestedRetaken: { shore: string; from: string }[];
+  shielded: string[];
+} {
   s.owner.name = op.player.name;
   s.factory = op.factory;
   s.day = op.day;
+  const contestedTaken: { shore: string; from: string | null }[] = [];
   const contestedRetaken: { shore: string; from: string }[] = [];
   const shielded: string[] = [];
   op.holds.forEach((h, i) => {
@@ -619,8 +629,18 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
       const gone = s.expeditions.filter((e) => e.target === i);
       s.expeditions = s.expeditions.filter((e) => e.target !== i);
       appendLog(s, now, "retaken", i, gone[0]?.by ?? { code: from, name: "" });
-      if (isContestedShore(NODE_IDS[i])) contestedRetaken.push({ shore: NODE_IDS[i], from });
-    } else if (h === "foe" || h === "own") s.holds[i] = h;
+      if (isContestedShore(NODE_IDS[i])) {
+        contestedTaken.push({ shore: NODE_IDS[i], from });
+        contestedRetaken.push({ shore: NODE_IDS[i], from });
+      }
+    } else if (h === "foe" || h === "own") {
+      const was = cur;
+      s.holds[i] = h;
+      // Contested shore claimed from the enemy (方向 A / TKT-201): mirror onto this week's neighbour.
+      if (h === "own" && was !== "own" && isContestedShore(NODE_IDS[i]) && op.retaken.includes(NODE_IDS[i])) {
+        contestedTaken.push({ shore: NODE_IDS[i], from: null });
+      }
+    }
   });
   // What the raid made of the expeditions it took in, while its lease stands; a report after it ran out says nothing of them.
   const live = s.lease && now < s.lease.until ? s.lease.ids : [];
@@ -681,7 +701,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
     // One held back as the report lands starts its node's fight when it may attack (`tick()`).
     else if (e.arrived && !e.holding) e.waiting = true;
   }
-  return { contestedRetaken, shielded };
+  return { contestedTaken, contestedRetaken, shielded };
 }
 
 /**
@@ -795,7 +815,11 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     if (s.owner.id !== op.player.id) return done(403, fail("not-owner"));
     op.holds = op.holds.map(normalizeHold);
     const r = report(s, op, now);
-    return done(200, { ok: true, holds: s.holds, contestedRetaken: r.contestedRetaken, shielded: r.shielded }, true);
+    return done(
+      200,
+      { ok: true, holds: s.holds, contestedTaken: r.contestedTaken, contestedRetaken: r.contestedRetaken, shielded: r.shielded },
+      true,
+    );
   }
   if (op.t === "contestedMirror") {
     const r = contestedMirror(s, op.shore, op.owner, op.at);
