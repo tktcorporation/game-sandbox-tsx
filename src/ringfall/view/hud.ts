@@ -143,10 +143,12 @@ export class Hud {
   onMapClosed: (() => void) | null = null;
 
   /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
-  /** Marks POIs that drop the hunt target on the raid map / minimap. */
-  setGoalPois(ids: readonly string[]) {
+  /** Marks POIs that drop the hunt target on the raid map / minimap (and optional source tags). */
+  setGoalPois(ids: readonly string[], tags: readonly { poi: string; tag: string }[] = []) {
     this.map.goalPois = ids;
+    this.map.goalTags = tags;
     this.minimap.goalPois = ids;
+    this.minimap.goalTags = tags;
   }
 
   toggleMap(force?: boolean) {

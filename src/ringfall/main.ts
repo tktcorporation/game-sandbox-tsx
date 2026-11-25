@@ -13,8 +13,7 @@ import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
-import { poisWith } from "./meta/hideout";
-import { pouchSlots } from "./meta/hideout";
+import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
@@ -1000,7 +999,7 @@ function start(go: Launch, from?: State) {
   hud.setPouch(pouchSlots(hub.profile.hideout));
   hud.setTrophies(hub.profile.trophies ?? 0);
   hud.bag.setProfile(hub.profile);
-  hud.setGoalPois(state.goal ? poisWith(state.goal) : []);
+  hud.setGoalPois(state.goal ? poisWith(state.goal) : [], state.goal ? goalTags(state.goal) : []);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();
