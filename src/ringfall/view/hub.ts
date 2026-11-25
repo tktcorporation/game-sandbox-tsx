@@ -18,7 +18,7 @@ import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, attackGoal, contestGateHint, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -56,8 +56,10 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
   const label = (n: (typeof NODES)[number], i: number): string => {
     const who = rivalOf(holds[i]);
     if (!who) return n.name;
+    const hit = neigh.find((x) => x.code === who || (who.startsWith("ai-") && x.code === who.slice(3)));
+    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名. AI → 「カゲウツ · AIの浄水場」(TKT-204 案 G).
+    if (hit) return `${hit.ai ? aiLabel(hit.name) : hit.name}の${n.name}`;
     const owner = neighbourNameByCode(who, neigh);
-    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名. Unknown code → 他のプレイヤー (not the slot's name).
     return owner ? `${owner}の${n.name}` : `他のプレイヤーの${n.name}`;
   };
   const near = NODES.map((n, i) => ({ n, i }))

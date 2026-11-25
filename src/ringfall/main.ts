@@ -39,7 +39,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
+import { aiLabel, awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -1029,7 +1029,8 @@ function finish() {
       : undefined;
     const nameOf = (owner: string) => {
       const n = neighboursFor(hub.profile).find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
-      return n ? (n.ai ? `${n.name}(AI)` : n.name) : owner;
+      if (!n) return owner;
+      return n.ai ? aiLabel(n.name) : n.name;
     };
     hub.recordNews(
       settlement.takenRival.map((t) => newsIncursion(nameOf(t.owner), NODES[nodeIndex(t.id)]?.name ?? t.id, true, tropPer)),

@@ -14,7 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import { isContestedShore, NEIGHBOUR_SLOTS, neighbourNameByCode, type Neighbour } from "../meta/neighbours";
-import { attackOwner, contestOwner } from "./copy";
+import { aiLabel, attackOwner, contestOwner } from "./copy";
 import { UI, alpha } from "./palette";
 
 /*
@@ -1044,18 +1044,20 @@ export class IslandMap {
     // A POI the enemy held as the raid began and the player cleared gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "foe";
     const poiText = (i: number) => (s.cleared[i] && hold(i) === "foe" ? `${POIS[i].name} ✓` : POIS[i].name);
-    // Owner display name (AI tagged). Used under hub marks and for 攻める / 取り合う lines.
+    // Owner display name (AI → 「名前 · AI」). Used under hub marks and for 攻める / 取り合う lines.
     const ownerName = (owner: string): string => {
       if (isAiOwner(owner)) {
         const n = neighbourNameByCode(owner, this.neighbours);
-        return n ? `${n} AI` : "AI";
+        return n ? aiLabel(n) : "AI";
       }
+      const n = this.neighbours.find((x) => x.code === owner);
+      if (n) return n.ai ? aiLabel(n.name) : n.name;
       return neighbourNameByCode(owner, this.neighbours) ?? "他のプレイヤー";
     };
     /**
      * Caption under a POI mark (TKT-204 案 A):
      * - rival contested → 「ツバキ · 攻める」
-     * - foe contested facing a neighbour → 「ツバキと取り合う」
+     * - foe contested facing a neighbour → 「カゲウツ · AIと取り合う」
      * - other rival → owner name only
      */
     const shoreCaption = (i: number): string | null => {
@@ -1071,7 +1073,7 @@ export class IslandMap {
       if (slot < 0) return null;
       const n = this.neighbours.find((x) => x.slot === slot);
       if (!n) return null;
-      return contestOwner(n.ai ? `${n.name} AI` : n.name);
+      return contestOwner(n.ai ? aiLabel(n.name) : n.name);
     };
     const attackable = (i: number): boolean => isContestedShore(POIS[i].id) && rivalOf(hold(i)) !== null;
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.

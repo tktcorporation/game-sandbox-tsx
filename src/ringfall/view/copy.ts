@@ -401,6 +401,9 @@ export function contestGateHint(gate: string): string {
   return `先に${gate}を取ると攻められる`;
 }
 
+/** Re-export for view callers (canonical: meta/neighbours.ts). */
+export { aiLabel } from "../meta/neighbours";
+
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;
 }

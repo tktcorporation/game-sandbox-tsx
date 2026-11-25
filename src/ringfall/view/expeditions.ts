@@ -248,7 +248,9 @@ export class ExpeditionPanel {
             const trop = n.trophies != null ? `<small class="exp-n-trop">${TERM.trophy} ${n.trophies.toLocaleString("ja-JP")}</small>` : "";
             const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}${lastMarks(n, Date.now())}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
             const reach = open && (this.conn.t === "ok" || n.ai);
-            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${esc(n.name)}${n.ai ? `<span class="ai-tag">AI</span>` : ""}</b>${trop}${held}${foot}${overnight(n, p.day)}</button>`;
+            // TKT-204 案 G: AI is 「名前 · AI」 same as map / news (span kept for style).
+            const who = n.ai ? `${esc(n.name)}<span class="ai-tag">AI</span>` : esc(n.name);
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${who}</b>${trop}${held}${foot}${overnight(n, p.day)}</button>`;
           })
           .join("")}</div>`
       : "";

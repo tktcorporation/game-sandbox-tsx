@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { goalCompass, PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
+import { aiLabel, goalCompass, PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -1648,7 +1648,8 @@ export class Hud {
     // incursion / 取り合う拠点の制圧行も newsKeep に入れ、後から setNews されても消えないようにする。
     const nameOf = (owner: string) => {
       const n = neighboursNowOnMap().find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
-      return n ? (n.ai ? `${n.name}(AI)` : n.name) : owner;
+      if (!n) return owner;
+      return n.ai ? aiLabel(n.name) : n.name;
     };
     const tropPer = settled?.takenRival?.length && settled.trophies?.gained
       ? Math.max(1, Math.round(settled.trophies.gained / settled.takenRival.length))

@@ -18,7 +18,7 @@ import { CODE_ALPHABET, CODE_LENGTH } from "./island-code";
 import { lentRivals, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Outgoing } from "./expeditions";
 import { LOCAL_AID, type Parcel } from "./parcels";
 import type { RivalExpedition } from "../sim/battle";
-import { CONTESTED_SHORES, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
+import { aiLabel, CONTESTED_SHORES, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
 import { TROPHY, clampTrophies } from "./trophies";
 import type { Island } from "./island";
 
@@ -49,12 +49,16 @@ export const AI = {
   every: [6, 9, 7, 11] as const,
 };
 
-/** The owners' names, a few a slot; the salt picks one. All of a length, so the cards keep their size. */
+/**
+ * AI owners' names (TKT-204 案 G): a pool that does not overlap common player short names
+ * (旧: ツバキ / ミナト / スバル など). Display always adds 「 · AI」 via `aiLabel()` in copy.ts.
+ * A few a slot; the salt picks one. Similar length so the cards keep their size.
+ */
 const NAMES: readonly (readonly string[])[] = [
-  ["ハヤテ", "ミナト", "コハク"],
-  ["ツバキ", "シオン", "アサギ"],
-  ["クロガネ", "ホムラ", "イカリ"],
-  ["カモメ", "スバル", "トキワ"],
+  ["カゲウツ", "イソナミ", "オキカゼ"],
+  ["ヤマビコ", "サワタリ", "ホシクズ"],
+  ["クロサキ", "キンロウ", "ギンカゼ"],
+  ["アラシヤマ", "シオサイ", "カスミメ"],
 ];
 
 /** A small integer hash of a few numbers. */
@@ -221,7 +225,7 @@ export function aiView(
     });
   const held = aiNodes(a, salt, day);
   const parcels = aiDefenceParcels(a, salt, day, held, seized);
-  return { code: a.code, owner: a.name, day, factory: aiFactory(day), protectedUntil: 0, nodes, expeditions, pings: [], parcels };
+  return { code: a.code, owner: aiLabel(a.name), day, factory: aiFactory(day), protectedUntil: 0, nodes, expeditions, pings: [], parcels };
 }
 
 /**
@@ -300,7 +304,7 @@ export function aiAttack(p: Seen, salt: number, taken: readonly number[], scoute
 /** That expedition as the warning the camp shows (来る遠征): it lands in the next raid (no clock: the island waits for the raid). */
 export function aiIncoming(p: Seen, salt: number, taken: readonly number[], scouted = true): Incoming[] {
   const x = aiAttack(p, salt, taken, scouted);
-  return x ? [{ id: 0, by: { code: x.island.code, name: x.island.name }, node: x.node, arriveAt: 0, state: "coming" }] : [];
+  return x ? [{ id: 0, by: { code: x.island.code, name: aiLabel(x.island.name) }, node: x.node, arriveAt: 0, state: "coming" }] : [];
 }
 
 /**
@@ -317,10 +321,17 @@ export function aiLent(p: Seen, salt: number, taken: readonly number[], scouted 
     if (CONTESTED_SHORES.includes(n.id)) continue;
     // Every slot's: an island whose slot a player's island has since taken still holds what it took, and stands its squad there.
     const a = aiByOwner(salt, owner);
-    if (a) out.push({ id: 0, by: { code: aiOwner(a.code), name: a.name }, target: n.id, kinds: aiKinds(p.day), state: "holding" });
+    if (a) out.push({ id: 0, by: { code: aiOwner(a.code), name: aiLabel(a.name) }, target: n.id, kinds: aiKinds(p.day), state: "holding" });
   }
   const x = aiAttack(p, salt, taken, scouted);
-  if (x && p.poiState[x.node]?.state === "own") out.push({ id: 0, by: { code: aiOwner(x.island.code), name: x.island.name }, target: x.node, kinds: x.scout ? [...AI.scout] : aiKinds(p.day), state: "coming" });
+  if (x && p.poiState[x.node]?.state === "own")
+    out.push({
+      id: 0,
+      by: { code: aiOwner(x.island.code), name: aiLabel(x.island.name) },
+      target: x.node,
+      kinds: x.scout ? [...AI.scout] : aiKinds(p.day),
+      state: "coming",
+    });
   return out;
 }
 
@@ -338,7 +349,8 @@ export const aiRivals = (lent: readonly LentIn[]): RivalExpedition[] => lentRiva
  */
 export function aiRaidNews(before: Seen, after: { poiState: Island }, salt: number, taken: readonly number[], now: number, scouted = true): IslandLogEntry[] {
   const out: IslandLogEntry[] = [];
-  const by = (a: AiIsland) => ({ code: a.code, name: a.name });
+  // News / defence log: always 「名前 · AI」 so it never looks like a real player (TKT-204 案 G).
+  const by = (a: AiIsland) => ({ code: a.code, name: aiLabel(a.name) });
   for (const n of NODES) {
     const was = rivalOf(before.poiState[n.id]?.state ?? "foe");
     const is = rivalOf(after.poiState[n.id]?.state ?? "foe");

@@ -61,11 +61,12 @@ const SAVE = {
 };
 
 // Crockford base32 island codes only (no I/L/O/U).
+// Real ツバキ vs AI カゲウツ · AI (TKT-204 案 G — names no longer collide).
 const NEAR = [
   { code: "TTHKQB", name: "ツバキ", held: 7, total: 22, day: 18, slot: 1, trophies: 1060, factory: 3, last: { at: Date.now() - 2 * 3600_000, captured: 1, home: true } },
-  { code: "AK7M2X", name: "ツバキ", held: 9, total: 21, day: 20, slot: 0, trophies: 1151, factory: 2, ai: true },
+  { code: "AK7M2X", name: "カゲウツ", held: 9, total: 21, day: 20, slot: 0, trophies: 1151, factory: 2, ai: true },
   { code: "MNT04X", name: "みなと", held: 4, total: 22, day: 11, slot: 2, trophies: 980 },
-  { code: "ASB811", name: "スバル", held: 9, total: 21, day: 19, slot: 3, trophies: 1155, factory: 2, ai: true },
+  { code: "ASB811", name: "アラシヤマ", held: 9, total: 21, day: 19, slot: 3, trophies: 1155, factory: 2, ai: true },
 ];
 
 const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
