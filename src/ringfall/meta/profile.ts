@@ -3,7 +3,7 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
+import { advanceDay, contestedOwned, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
@@ -11,6 +11,19 @@ import { capturedIds, momentum } from "../sim/front";
 import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
+import { ensureTeam, formTeam, parseTeam, selfOuterCount, teamSalt, type Team, type TeamSelf } from "./team";
+import {
+  applyFieldCaptures,
+  autoDefendField,
+  battleDue,
+  ensureBattle,
+  FIELD_NAME,
+  hubCounts,
+  markSortie,
+  parseTeamBattle,
+  settleBattle,
+  type TeamBattle,
+} from "./team-battle";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -27,7 +40,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 45;
+  v: 47;
   cash: number;
   stash: Item[];
   raids: number;
@@ -103,6 +116,9 @@ export interface Profile {
   pending: Item[];
   /**
    * Manual hunt target (a valuable kind). Null means auto: chase what the next hand's module needs.
+   * Lasts one sortie: `settle()` clears it when the raid ends and the player returns to camp
+   * (alive or wipe), so the next camp visit no longer shows 目標にしている / hunt pins for it.
+   * Guidance during that sortie is unchanged (`State.goal` is fixed at raid start).
    * v41 and older saves have none (auto).
    */
   goal: ValuableKind | null;
@@ -111,6 +127,18 @@ export interface Profile {
    * v44 and older saves start empty; sync / settle fill it when a hub is lost.
    */
   outerGuard: OuterGuard;
+  /**
+   * 4-person team (作り順④): self + AI の仲間 fill. Outer counts refresh with the day.
+   * v45 and older saves get a fresh auto-assigned team on load.
+   * Future: war power / battle field / scoring read `team` without reshaping it.
+   */
+  team: Team;
+  /**
+   * Active / last 部隊戦 on the field (作り順⑤). Null until first ensure.
+   * v46 and older saves get a fresh battle on load via `ensureBattle`.
+   * Step 6 (war power / bounty / held-time) reads `teamBattle.hooks` without reshaping.
+   */
+  teamBattle: TeamBattle | null;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -166,11 +194,19 @@ export function withStarters(stash: Item[]): Item[] {
 /** The stash entries that take room (`stashCap()`): all but the starter weapons. */
 export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !isStarter(i)).length;
 
+/** Seed-stable self for a fresh profile (tests / before identity is wired). */
+const seedSelf = (seed: number): TeamSelf => {
+  const id = `local-${(seed & 0xffff).toString(16).padStart(4, "0")}`;
+  return { id, name: `プレイヤー-${id.slice(-4)}` };
+};
+
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
+  const s = seed & 0xffff;
+  const team = formTeam(seedSelf(s), s, 1, 0);
   return {
-    v: 45,
+    v: 47,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -180,7 +216,7 @@ export function newProfile(seed = 1): Profile {
     entry: FIRST_ENTRY,
     entries: [FIRST_ENTRY],
     hideout: emptyHideout(),
-    seed: seed & 0xffff,
+    seed: s,
     depots: [],
     depotSent: {},
     seen: "",
@@ -203,7 +239,29 @@ export function newProfile(seed = 1): Profile {
     pending: [],
     goal: null,
     outerGuard: emptyOuterGuard(),
+    // 作り順④: auto-assign self + AI の仲間 (identity may replace self later via bindTeam).
+    team,
+    // 作り順⑤: open the first 部隊戦 on day 1 (AI foe fill).
+    teamBattle: ensureBattle(null, team, s, 1),
   };
+}
+
+/** Ensure / refresh the profile's 部隊戦 (open a match if none or the last one settled). */
+export function bindTeamBattle(p: Profile, salt: number): Profile {
+  const team = p.team?.members?.length ? p.team : formTeam(seedSelf(p.seed), salt, p.day, selfOuterCount(p));
+  const teamBattle = ensureBattle(p.teamBattle, team, salt, p.day);
+  if (teamBattle === p.teamBattle && team === p.team) return p;
+  return { ...p, team, teamBattle };
+}
+
+/**
+ * Bind / refresh the profile's team to the browser identity (or any TeamSelf).
+ * Keeps AI seats; updates self name/code and all outer counts.
+ */
+export function bindTeam(p: Profile, self: TeamSelf, salt: number): Profile {
+  const team = ensureTeam(p.team, self, salt, p.day, selfOuterCount(p));
+  if (JSON.stringify(team) === JSON.stringify(p.team)) return p;
+  return { ...p, team };
 }
 
 /**
@@ -564,6 +622,11 @@ export interface Settlement {
    * View-only: 「倉庫へ届いた」 must not claim overflow that 「倉庫に入らなかった」 already lists.
    */
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
+  /**
+   * 部隊戦 that just closed this settle (作り順⑤), when the period ended.
+   * View-only for the results card; the profile already holds the next / settled battle.
+   */
+  fieldBattle?: { result: "win" | "loss" | "draw"; ours: number; theirs: number; name: string };
 }
 
 /** Whether the profile still has items waiting for 倉庫の整理 (blocks departure from the gate). */
@@ -686,7 +749,8 @@ function store(p: Profile, items: Item[]): { profile: Profile; pending: Item[] }
  * Puts what came off the island into the stash.
  * What was sent home from a depot arrives however the raid ended; the depots switched on
  * and the map explored are kept too. The ways in walked to are learned only when the player got
- * off alive: a wipe forgets them.
+ * off alive: a wipe forgets them. A manual hunt target (`Profile.goal`) is cleared on return so
+ * it lasts only that one sortie.
  */
 export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
   const pl = s.player;
@@ -722,17 +786,28 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     opened.push(r.id);
     spent.add(i);
   }
-  const day = raidDay(s);
+  // Field sorties (作り順⑤): captures write field holds, not home-island poiState / depots / entries.
+  const fieldRaid = !!s.teamField;
+  const day = fieldRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
   const change = dayChange(p, day);
   const threat = s.threat ?? 0;
   const { profile, pending } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
   // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
-  const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
-  // A record of a raid kept from before ways in were learned has walked to none.
-  const learned = s.outcome === "extracted" ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e)) : [];
+  // Field raids enable synthetic depots for every "own" field node — never copy those into the home profile.
+  const depots = fieldRaid
+    ? [...p.depots]
+    : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
+  const depotSent = fieldRaid
+    ? { ...p.depotSent }
+    : Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
+  // Field raids start on the battlefield entry without unlocking it as a home way in.
+  const learned = fieldRaid
+    ? ([] as EntryId[])
+    : s.outcome === "extracted"
+      ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e))
+      : [];
   const entries = knownEntries([...p.entries, ...learned]);
   const freedAt = { ...p.freedAt };
   for (const id of change.gained) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
@@ -772,6 +847,36 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   if (outerGuard !== (p.outerGuard ?? emptyOuterGuard())) Object.assign(night, { outerGuard });
+  // 作り順④: refresh team outer counts (self from island; AI mates by day). Keep seats + salt.
+  if (night.team?.members?.length) {
+    const self = night.team.members.find((m) => !m.ai);
+    if (self) {
+      const salt = night.team.salt ?? teamSalt(self.id);
+      const team = ensureTeam(night.team, { id: self.id, name: self.name, code: self.code || undefined }, salt, night.day, selfOuterCount(night));
+      if (JSON.stringify(team) !== JSON.stringify(night.team)) Object.assign(night, { team });
+    }
+  }
+  // 作り順⑤: tick 部隊戦 — field captures, auto-defence, period settle, open next.
+  let fieldBattle: Settlement["fieldBattle"];
+  {
+    let tb = night.teamBattle ?? p.teamBattle ?? null;
+    const ours = night.team ?? p.team;
+    if (ours?.members?.length) {
+      if (!tb) tb = ensureBattle(null, ours, night.seed, p.day);
+      if (fieldRaid) tb = markSortie(tb, p.day);
+      if (fieldRaid) tb = applyFieldCaptures(tb, capturedIds(s));
+      // Overnight on the field: foe takes one hub if the player did not sortie that day.
+      tb = autoDefendField(tb, p.day);
+      if (battleDue(tb, night.day)) {
+        tb = settleBattle(tb);
+        const n = hubCounts(tb.holds);
+        fieldBattle = { result: tb.result!, ours: n.ours, theirs: n.theirs, name: FIELD_NAME };
+      }
+      // Open the next match once the period is settled.
+      tb = ensureBattle(tb, ours, night.seed, night.day);
+      Object.assign(night, { teamBattle: tb });
+    }
+  }
   // The nodes the player holds once the night is over pay their day's credits.
   const homePay = heldIncome(night);
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
@@ -783,7 +888,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
   // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
-  const fresh = { ...next, stash: withStarters(next.stash) };
+  // Manual 目標 lasts one sortie: clear on return so camp no longer shows 目標にしている.
+  const fresh = { ...next, stash: withStarters(next.stash), goal: null };
   fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
   const takenRival = trop.taken.flatMap((id) => {
     const owner = rivalOf(beforeHolds[nodeIndex(id)] ?? "foe");
@@ -809,6 +915,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       : {}),
     ...(takenRival.length ? { takenRival } : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),
+    ...(fieldBattle ? { fieldBattle } : {}),
   };
 }
 
@@ -973,12 +1080,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v42 and older may hold `cycle` / `cycleDay` / `liberations` (島の解放); v43 drops them — the island never resets.
  * v43 and older contest only the four shore hubs; v44 marks outer-edge contested hubs (作り順②) for stack consistency (ownership still in poiState).
  * v44 and older have no `outerGuard`; v45 adds anti-snowball (作り順③: island shield + loss cap).
+ * v45 and older have no `team`; v46 adds 4-person teams with AI の仲間 fill (作り順④).
+ * v46 and older have no `teamBattle`; v47 adds 部隊戦 on the field (作り順⑤).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1047,14 +1156,23 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v43: 島の解放（cycle / cycleDay / liberations）を外す。島は終わりなく育つ。
   // v44: 外側の取り合う拠点（作り順②）。専用フィールドは無し（poiState の rival が持ち主）。
   // v45: 作り順③の島の盾・喪失上限（`outerGuard`）。
+  // v46: 作り順④の 4 人チーム（`team`、空きは AI の仲間）。
+  // v47: 作り順⑤の部隊戦（`teamBattle`、荒地の戦場）。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
       : [];
   const outerGuard =
     typeof o.v === "number" && o.v >= 45 ? parseOuterGuard(o.outerGuard) : emptyOuterGuard();
+  const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
+  const savedTeam = typeof o.v === "number" && o.v >= 46 ? parseTeam(o.team) : null;
+  const team =
+    savedTeam ??
+    formTeam(seedSelf(seedN), seedN, day, contestedOwned({ poiState }).length);
+  const savedBattle = typeof o.v === "number" && o.v >= 47 ? parseTeamBattle(o.teamBattle) : null;
+  const teamBattle = ensureBattle(savedBattle, team, seedN, day);
   return {
-    v: 45,
+    v: 47,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1064,7 +1182,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     entry,
     entries,
     hideout,
-    seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
+    seed: seedN,
     depots,
     depotSent,
     seen: (typeof o.v === "number" && o.v >= 25) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
@@ -1086,6 +1204,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     pending,
     goal,
     outerGuard,
+    team,
+    teamBattle,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,

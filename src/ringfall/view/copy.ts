@@ -40,6 +40,13 @@ export type TermId =
   | "revenge"
   | "shielding"
   | "lostToday"
+  | "team"
+  | "aiMate"
+  | "outerHubs"
+  | "teamBattle"
+  | "battleField"
+  | "foeTeam"
+  | "fieldHubs"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -117,6 +124,41 @@ export const TERM = {
    * 【元】（なし） 【案】今日取られた 【理由】喪失上限が見える。内部名は出さない
    */
   lostToday: "今日取られた",
+  /**
+   * 4-person team board (作り順④).
+   * 【元】（なし） 【案】チーム 【理由】部隊戦の片側。新しい別名を増やさない
+   */
+  team: "チーム",
+  /**
+   * AI fill seat on a team (作り順④).
+   * 【元】（なし）／AIの味方 【案】AIの仲間 【理由】味方は戦場の語。仲間は席の埋め
+   */
+  aiMate: "AIの仲間",
+  /**
+   * Outer contested hub count on the team board (作り順④).
+   * 【元】（なし）／拠点 【案】外側の拠点 【理由】取り合う外側だけを数えると分かる
+   */
+  outerHubs: "外側の拠点",
+  /**
+   * Team battle mode (作り順⑤).
+   * 【元】（なし） 【案】部隊戦 【理由】design-direction の語。別名を増やさない
+   */
+  teamBattle: "部隊戦",
+  /**
+   * On-screen name of the team-battle field (作り順⑤).
+   * 【元】（なし） 【案】荒地の戦場 【理由】自島と別の場だと一目で分かる
+   */
+  battleField: "荒地の戦場",
+  /**
+   * Opposing team on the field (作り順⑤).
+   * 【元】（なし）／敵チーム 【案】相手チーム 【理由】部隊戦の片側。チームと揃える
+   */
+  foeTeam: "相手チーム",
+  /**
+   * Field hub count readout (作り順⑤).
+   * 【元】（なし）／拠点 【案】戦場の拠点 【理由】自島の外側の拠点と混ぜない
+   */
+  fieldHubs: "戦場の拠点",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -450,6 +492,31 @@ export function lostTodayLine(lost: number, cap: number): string {
 }
 
 /**
+ * Team board seat line (作り順④): outer hub count.
+ * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種が見える（力そのものはまだ出さない）
+ */
+export function teamOuterLine(outer: number): string {
+  return `${TERM.outerHubs} ${outer}`;
+}
+
+/**
+ * Field battle status line (作り順⑤).
+ * 【元】（なし） 【案】荒地の戦場 · あと 2 日 · 戦場の拠点 2/5 【理由】期間と持ち分が一行で分かる
+ */
+export function fieldBattleLine(daysLeft: number, ours: number, total: number): string {
+  return `${TERM.battleField} · あと ${daysLeft} 日 · ${TERM.fieldHubs} ${ours}/${total}`;
+}
+
+/**
+ * Field battle result line (作り順⑤).
+ * 【元】（なし） 【案】部隊戦 · 勝ち · 戦場の拠点 3/5 【理由】勝敗は拠点数だけ（得点は⑥）
+ */
+export function fieldResultLine(result: "win" | "loss" | "draw", ours: number, total: number): string {
+  const say = result === "win" ? "勝ち" : result === "loss" ? "負け" : "引き分け";
+  return `${TERM.teamBattle} · ${say} · ${TERM.fieldHubs} ${ours}/${total}`;
+}
+
+/**
  * Scout loot line under an 攻める row (TKT-204 案 B).
  * 【元】（なし） 【案】トロフィー +32 【理由】取ればいくつ増えるかを先に見せる
  */
@@ -479,8 +546,9 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
 /** Guide next / done button labels (TKT-204 案 C). */
 export const mpHowtoNext = (last: boolean): string => (last ? "分かった" : "次へ");
 
-/** Re-export for view callers (canonical: meta/neighbours.ts). */
+/** Re-export for view callers (canonical: meta/neighbours.ts / meta/team.ts). */
 export { aiLabel } from "../meta/neighbours";
+export { memberLabel } from "../meta/team";
 
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;

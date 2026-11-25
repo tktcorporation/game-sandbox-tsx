@@ -702,6 +702,10 @@ export interface State {
   goalNeed: number;
   goalHave: number;
   /**
+   * 部隊戦 field sortie (作り順⑤): captures update field holds in settle, not home poiState.
+   */
+  teamField: boolean;
+  /**
    * Defence stock queued this raid when the player deposits at a depot (`leftParcels` only;
    * not world pickups). The sim gate never deposits, so the bench hash is unchanged.
    */
@@ -933,6 +937,11 @@ export interface Start {
   goal?: ValuableKind | null;
   goalHave?: number;
   goalNeed?: number;
+  /**
+   * 部隊戦 field sortie (作り順⑤): captures write field holds, not home-island poiState.
+   * Left out, a normal own-island raid.
+   */
+  teamField?: boolean;
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1124,6 +1133,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     goal: start.goal ?? null,
     goalHave: start.goalHave ?? 0,
     goalNeed: start.goalNeed ?? 0,
+    teamField: !!start.teamField,
     // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
     parcels: [],
     leftParcels: [],

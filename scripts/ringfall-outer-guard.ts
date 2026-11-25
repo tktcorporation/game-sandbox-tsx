@@ -10,12 +10,14 @@ import {
   canLoseOuter,
   emptyOuterGuard,
   guardOn,
+  mergeOuterGuard,
   OUTER_GUARD,
   recordOuterLoss,
   shieldRemainingMs,
   utcDay,
   utcDayEnd,
 } from "../src/ringfall/meta/outer-guard";
+import { applySync } from "../src/ringfall/meta/expeditions";
 import {
   EXPEDITION,
   islandOp,
@@ -23,9 +25,11 @@ import {
   isShielded,
   markIslandShield,
   NODE_IDS,
+  outerTakenOn,
   type IslandState,
 } from "../worker/island";
 import { CONTESTED_SHORES } from "../src/ringfall/meta/neighbours";
+import { newProfile } from "../src/ringfall/meta/profile";
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 10, 25, 12, 0, 0); // noon UTC — rest of day left
@@ -67,6 +71,12 @@ function op(s: IslandState, body: Parameters<typeof islandOp>[1], at: number) {
   assert.equal(canLoseOuter(g1, next), true);
   assert.deepEqual(guardOn(g1, next), { utcDay: utcDay(next), lost: 0, island: false });
   assert.equal(OUTER_GUARD.lossCap, 1, "lossCap should be the tunable constant 1");
+  // mergeOuterGuard keeps local AI protection when the server snapshot is empty.
+  const local = recordOuterLoss(emptyOuterGuard(), T1);
+  const merged = mergeOuterGuard(local, emptyOuterGuard(), T1);
+  assert.equal(merged.island, true);
+  assert.equal(merged.lost, 1);
+  assert.equal(canLoseOuter(merged, T1), false);
   console.log("pure: lossCap + island shield until UTC day end");
 }
 
@@ -86,7 +96,7 @@ function op(s: IslandState, body: Parameters<typeof islandOp>[1], at: number) {
   assert.ok(isIslandShielded(s, T1), "island shield not raised after first loss");
   assert.ok(isShielded(s, NODE_IDS.indexOf(a), T1), "taken hub not per-hub shielded");
   assert.ok(isShielded(s, NODE_IDS.indexOf(b), T1), "remaining own hub not island-shielded");
-  assert.equal(s.taken.n, 1);
+  assert.equal(outerTakenOn(s, T1), 1);
   assert.equal(s.shielded?.island, true);
 
   const second = op(s, { t: "contestedMirror", shore: b, owner: B.code, name: B.name, at: T1 + 1000 }, T1 + 1000);
@@ -103,11 +113,11 @@ function op(s: IslandState, body: Parameters<typeof islandOp>[1], at: number) {
   console.log(`server: took ${a}, blocked ${b} same day, took ${b} next day`);
 }
 
-// --- Loss cap alone: even without island flag, taken.n >= lossCap blocks ---
+// --- Loss cap alone: even without island flag, outerTaken.n >= lossCap blocks ---
 {
   const shore = CONTESTED_SHORES.find((id) => NODE_IDS.includes(id))!;
   const s = island({ [shore]: "own", supply: "own" }, T0);
-  s.taken = { day: utcDay(T1), n: OUTER_GUARD.lossCap };
+  s.outerTaken = { day: utcDay(T1), n: OUTER_GUARD.lossCap };
   // Force no island flag so we exercise the cap path.
   s.shielded = { day: utcDay(T1), nodes: [], island: false };
   const blocked = op(s, { t: "contestedMirror", shore, owner: B.code, name: B.name, at: T1 }, T1);
@@ -115,6 +125,35 @@ function op(s: IslandState, body: Parameters<typeof islandOp>[1], at: number) {
   assert.equal((blocked.body as { error?: string }).error, "day-limit");
   assert.equal(s.holds[NODE_IDS.indexOf(shore)], "own");
   console.log("server: lossCap alone refuses contestedMirror");
+}
+
+// --- Expedition take of a non-outer / foe node must not burn the outer loss cap ---
+{
+  const shore = CONTESTED_SHORES.find((id) => NODE_IDS.includes(id))!;
+  const s = island({ [shore]: "own", supply: "own", quarry: "foe" }, T0);
+  // Simulate an expedition capture of foe quarry (inner): bumps `taken`, not `outerTaken`.
+  s.taken = { day: utcDay(T1), n: EXPEDITION.perDay };
+  s.outerTaken = { day: utcDay(T1), n: 0 };
+  s.shielded = { day: 0, nodes: [], island: false };
+  assert.equal(outerTakenOn(s, T1), 0);
+  const ok = op(s, { t: "contestedMirror", shore, owner: B.code, name: B.name, at: T1 }, T1);
+  assert.equal(ok.status, 200, `outer take should still work after inner expedition takes: ${JSON.stringify(ok.body)}`);
+  assert.equal(outerTakenOn(s, T1), 1);
+  console.log("server: expedition perDay does not burn OUTER_GUARD.lossCap");
+}
+
+// --- applySync keeps local AI protection when server view is empty ---
+{
+  const now = Date.now();
+  const p = newProfile(1);
+  p.outerGuard = recordOuterLoss(emptyOuterGuard(), now);
+  const synced = applySync(p, {
+    outerGuard: { utcDay: utcDay(now), lost: 0, island: false },
+  });
+  assert.equal(synced.profile.outerGuard?.island, true, "AI local shield cleared by empty server guard");
+  assert.equal(synced.profile.outerGuard?.lost, 1);
+  assert.equal(canLoseOuter(synced.profile.outerGuard, now), false);
+  console.log("client: applySync merges local AI outerGuard with server");
 }
 
 // --- markIslandShield helper ---

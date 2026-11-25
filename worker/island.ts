@@ -169,6 +169,12 @@ export interface IslandState {
   /** Nodes taken from the island by expeditions on UTC day `day`: the day's limit counts these, not the log, which drops old entries. */
   taken: { day: number; n: number };
   /**
+   * Own contested outer hubs lost this UTC day (作り順③ loss cap). Separate from `taken`
+   * (EXPEDITION.perDay), so a take of an enemy-held or inner node does not burn the outer cap.
+   * Optional on older islands (migrate / missing → 0).
+   */
+  outerTaken?: { day: number; n: number };
+  /**
    * Contested hubs taken on UTC day `day` (方向 A / TKT-195): those node indices cannot change hands
    * again until the next UTC day. Optional on older islands (migrate fills empty).
    * `island` (作り順③): after a loss, remaining own outer hubs are shielded for the rest of that UTC day.
@@ -275,6 +281,9 @@ export function garrisonGuards(code: string, i: number): Guard[] {
 /** Nodes taken from the island by expeditions on the UTC day of `t`. */
 const takenOn = (s: IslandState, t: number) => (s.taken.day === utcDay(t) ? s.taken.n : 0);
 
+/** Own contested outer hubs lost on the UTC day of `t` (作り順③). */
+export const outerTakenOn = (s: IslandState, t: number) => (s.outerTaken?.day === utcDay(t) ? s.outerTaken.n : 0);
+
 /** Whether the island's remaining own outer hubs are shielded at `t` (作り順③). */
 export function isIslandShielded(s: IslandState, t: number): boolean {
   const sh = s.shielded;
@@ -309,16 +318,24 @@ export function markIslandShield(s: IslandState, at: number) {
 
 /**
  * Loss-cap for taking an own contested outer hub at `t` (作り順③).
- * Non-contested expedition takes still use `EXPEDITION.perDay`.
+ * Counts only outer-owner losses (`outerTaken`), not every expedition capture.
  */
 export function outerLossCapReached(s: IslandState, t: number): boolean {
-  return takenOn(s, t) >= OUTER_GUARD.lossCap;
+  return outerTakenOn(s, t) >= OUTER_GUARD.lossCap;
+}
+
+/** Record one own contested outer hub lost at `at` (loss cap + island shield). */
+export function recordOuterTaken(s: IslandState, at: number) {
+  const day = utcDay(at);
+  s.outerTaken = { day, n: outerTakenOn(s, at) + 1 };
+  markIslandShield(s, at);
 }
 
 function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, by: Attacker) {
   if (t === "taken") {
     s.taken = { day: utcDay(at), n: takenOn(s, at) + 1 };
-    if (isContestedShore(NODE_IDS[node])) markIslandShield(s, at);
+    // Hold still shows the pre-flip owner here (caller updates holds after / separately).
+    if (isContestedShore(NODE_IDS[node]) && s.holds[node] === "own") recordOuterTaken(s, at);
   }
   if (t === "taken" || t === "retaken") shieldNode(s, node, at);
   s.log.push({ seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by } });
@@ -366,8 +383,8 @@ export function publicView(s: IslandState, now: number) {
     protectedUntil: Math.max(newPlayerUntil, raidShieldUntil),
     /** Island shield end (UTC day end) while 作り順③ shield is up; 0 when none. */
     shieldUntil: raidShieldUntil,
-    /** Outer hubs lost this UTC day / loss cap (作り順③). */
-    outerLost: takenOn(s, now),
+    /** Own outer hubs lost this UTC day / loss cap (作り順③). */
+    outerLost: outerTakenOn(s, now),
     outerLossCap: OUTER_GUARD.lossCap,
     nodes: NODE_IDS.map((id, i) => ({ id, hold: s.holds[i], open: expeditionRefusal(s, i, now) === null })),
     expeditions: s.expeditions.map((e) => ({
@@ -849,10 +866,7 @@ function contestedMirror(s: IslandState, shore: string, owner: string, at: numbe
   s.holds[i] = next;
   // Drop expeditions aiming at this shore when ownership flips.
   s.expeditions = s.expeditions.filter((e) => e.target !== i);
-  if (takingFromOwner) {
-    s.taken = { day: utcDay(at), n: takenOn(s, at) + 1 };
-    markIslandShield(s, at);
-  }
+  if (takingFromOwner) recordOuterTaken(s, at);
   shieldNode(s, i, at);
   s.log.push({ seq: ++s.seq, at, t: owner === s.owner.code ? "retaken" : "taken", node: shore, by: who });
   if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);

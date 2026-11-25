@@ -5,7 +5,7 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { neighbourNameByCode } from "../meta/neighbours";
 import { itemColor, itemName, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
@@ -1702,10 +1702,16 @@ export class Hud {
     const tropLine = settled?.trophies
       ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
       : "";
+    // 作り順⑤: 部隊戦 result when the period just closed.
+    const fieldLine = settled?.fieldBattle
+      ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs))}</p>`
+      : s.teamField
+        ? `<p class="field-result">${esc(TERM.battleField)}</p>`
+        : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s);
     const dayHead = settled
-      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
+      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}${fieldLine}`
       : "";
     // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =

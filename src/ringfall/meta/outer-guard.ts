@@ -67,6 +67,25 @@ export function recordOuterLoss(g: OuterGuard | null | undefined, now: number): 
   return { utcDay: cur.utcDay, lost: cur.lost + 1, island: true };
 }
 
+/**
+ * Merge local and server guards for the current UTC day (作り順③).
+ * AI takes are browser-only (`reportHolds` sends them as foe), so the server never
+ * records them — keep the stronger of local and server (max lost, OR island).
+ */
+export function mergeOuterGuard(
+  local: OuterGuard | null | undefined,
+  server: OuterGuard | null | undefined,
+  now: number,
+): OuterGuard {
+  const a = guardOn(local, now);
+  const b = guardOn(server, now);
+  return {
+    utcDay: utcDay(now),
+    lost: Math.max(a.lost, b.lost),
+    island: a.island || b.island,
+  };
+}
+
 /** Ms left on the island shield, or 0 when none. */
 export function shieldRemainingMs(g: OuterGuard | null | undefined, now: number): number {
   if (!isIslandProtected(g, now)) return 0;
