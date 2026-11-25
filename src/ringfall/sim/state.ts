@@ -484,8 +484,6 @@ export type GameEvent =
   | { t: "calm"; squad: number }
   | { t: "poiStart"; poi: number }
   | { t: "poiClear"; poi: number }
-  /** The titan fell in the decisive battle: the island is free (`FINALE`). */
-  | { t: "liberated" }
   | { t: "reinforce"; x: number; z: number }
   | { t: "careDrop"; x: number; z: number }
   | { t: "careLand"; x: number; z: number }
@@ -720,8 +718,6 @@ export interface State {
   away: number;
   /** The raid ended by walking back into the camp. */
   home: boolean;
-  /** The decisive battle is on (`Start.finale`). */
-  finale: boolean;
   /** Who holds each node of the front (`NODES` order) this raid: as the island stood at the start, then as it changes hands. */
   nodes: NodeHold[];
   /**
@@ -904,8 +900,6 @@ export interface Start {
   routes?: RouteId[];
   /** Who holds each POI (meta/island.ts); left out, every POI is held. The titan's pad is always held. */
   island?: Partial<Record<PoiId, PoiHold>>;
-  /** The titan's pad is open to the decisive battle (`FINALE`): the raid's objective is the titan, and its fall frees the island. */
-  finale?: boolean;
   /** The threat for this raid, 0 to `THREAT.max`; left out, 0. */
   threat?: number;
   /** The mod kinds the profile knows; left out, `MOD_START`. */
@@ -1141,7 +1135,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     found: from ? [] : [entry.id],
     nodes,
     capture: null,
-    finale: !!start.finale,
     contacts: [],
     factionT: 0,
     contactT: 0,

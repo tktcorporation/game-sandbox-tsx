@@ -1,6 +1,5 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { ZIPS } from "../sim/map";
-import { finaleOpen } from "../meta/island";
 import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
@@ -84,6 +83,21 @@ export function drawAttackFlag(g: CanvasRenderingContext2D, x: number, y: number
   g.lineTo(x, y - s * 0.06);
   g.closePath();
   g.fill();
+  g.stroke();
+  g.restore();
+}
+
+/**
+ * Subtle dashed ring on a contested hub the player holds (作り順②): others can take it.
+ * Rival green, thin, no caption — the ring alone marks「取られうる」without a new term.
+ */
+export function drawExposedRing(g: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+  g.save();
+  g.strokeStyle = alpha(color, 0.7);
+  g.lineWidth = Math.max(1, r * 0.12);
+  g.setLineDash([Math.max(2, r * 0.35), Math.max(2, r * 0.28)]);
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
   g.stroke();
   g.restore();
 }
@@ -348,8 +362,6 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   capture?: { node: number; t: number } | null;
   /** The day's battle (sim/battle.ts): its squads, and the nodes the sides are taking. */
   battle?: Battle | null;
-  /** The titan's pad is open to the decisive battle (`FINALE`): a gold ring round it. */
-  finale?: boolean;
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
   /** The raid's bins, for the flares still lying on the tall buildings' top floors; without them every flare bin is drawn as not yet searched. */
@@ -379,7 +391,6 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     found: [],
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
-    finale: finaleOpen(p),
   };
 }
 
@@ -507,6 +518,10 @@ export class IslandMap {
    * Sea-corner islands and 海の道 lines were removed (TKT-204 案 A) — attack cues sit on the hubs.
    */
   neighbours: readonly Neighbour[] = [];
+  /**
+   * Own outer hubs are island-shielded (作り順③): skip the dashed「取られうる」ring while the shield lasts.
+   */
+  islandShielded = false;
   /**
    * The minimap (the HUD's corner): half the side of the square it shows round the player, in metres,
    * and 0 for a map. It draws who holds the ground, the nodes, the ways off as marks, the teammate and
@@ -1076,6 +1091,8 @@ export class IslandMap {
       return contestOwner(n.ai ? aiLabel(n.name) : n.name);
     };
     const attackable = (i: number): boolean => isContestedShore(POIS[i].id) && rivalOf(hold(i)) !== null;
+    /** Own contested outer hub: can be taken by others (dashed ring); off while island-shielded. */
+    const exposed = (i: number): boolean => !this.islandShielded && isContestedShore(POIS[i].id) && hold(i) === "own";
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
     // The POI names written: goal POIs and nodes that changed hands come first (and are never
@@ -1360,16 +1377,10 @@ export class IslandMap {
         if (attackable(i)) {
           drawAttackFlag(g, p.x + r * 1.55, p.y - r * 0.85, (this.mini ? 9 : 11) * dpr, RIVAL_CSS);
         }
-      }
-      if (poi.boss && s.finale) {
-        // Open to the decisive battle: a gold ring, pulsing.
-        g.save();
-        g.lineWidth = 3 * dpr;
-        g.strokeStyle = alpha(UI.r3, Number((0.7 + 0.3 * Math.sin(performance.now() / 300)).toFixed(2)));
-        g.beginPath();
-        g.arc(p.x, p.y, r * 1.75, 0, Math.PI * 2);
-        g.stroke();
-        g.restore();
+        // Own outer contested hub: dashed ring — others can take it (作り順②).
+        if (exposed(i) && !plain) {
+          drawExposedRing(g, p.x, p.y, r * 1.7, RIVAL_CSS);
+        }
       }
       if (poi.boss) {
         // The titan's eye, in the robots' red.

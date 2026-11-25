@@ -1,7 +1,7 @@
-import { FINALE, FRONT, META, type HealKind, type Rarity } from "../sim/config";
+import { FRONT, META, type HealKind, type Rarity } from "../sim/config";
 import type { PoiHold } from "../sim/island";
 import { parseHold, rivalOf } from "../sim/holds";
-import { DEPOTS, LANDING_NODES, NODES, POIS, poiIndex, UNLOCKS, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
+import { DEPOTS, NODES, POIS, poiIndex, UNLOCKS, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
 import { capturedIds, nodeHolds, type NodeHold } from "../sim/front";
 import { type Battle } from "../sim/battle";
 import { type State } from "../sim/state";
@@ -121,43 +121,11 @@ export const rivalNodes = (holds: readonly NodeHold[]): Partial<Record<NodeId, s
 /** The nodes the player holds on an island day. */
 export const playerNodes = (p: Pick<IslandDay, "poiState">): NodeId[] => NODES.filter((n) => p.poiState[n.id].state === "own").map((n) => n.id);
 
-/** Whether the titan's pad is open to the decisive battle (`FINALE`): the player holds enough nodes, one of them bordering the pad. */
-export const finaleOpen = (p: Pick<IslandDay, "poiState">): boolean => {
-  const mine = playerNodes(p);
-  return mine.length >= FINALE.nodes && LANDING_NODES.pad.some((id) => mine.includes(id));
-};
-
-/**
- * 島の解放までの進み（2026-11-24／方向 A）: 自分の拠点だけを数える（お隣に取られた拠点は N に入れない）。
- * 取り合う海岸 4 拠点も自分のときは数える。取らなくても 16 には届く（`nonContestedNodeCount`）。
- * `nodes` = あと何拠点で 16／`landing` = 16 以上だが発着場の隣が無い／`finale` = 決戦が開いている。
- */
-export type LiberationStatus = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
-
-/** 発着場に隣接する拠点の表示名（採掘場・中継塔）。 */
-export const padNeighbourNames = (): string[] => LANDING_NODES.pad.map((id) => NODES.find((n) => n.id === id)?.name ?? id);
-
-/** Freeable nodes that are not contested with a neighbour (16 must remain reachable with only these). */
+/** Freeable nodes that are not contested outer hubs (作り順②). */
 export const nonContestedNodeCount = (): number => NODES.filter((n) => !CONTESTED_SHORES.includes(n.id)).length;
 
 /** Contested coastal hubs the player holds (方向 A). */
 export const contestedOwned = (p: Pick<IslandDay, "poiState">): NodeId[] => playerNodes(p).filter((id) => CONTESTED_SHORES.includes(id));
-
-/** From a profile / island day. */
-export function liberationStatus(p: Pick<IslandDay, "poiState">): LiberationStatus {
-  const mine = playerNodes(p);
-  if (mine.length >= FINALE.nodes && LANDING_NODES.pad.some((id) => mine.includes(id))) return { kind: "finale" };
-  if (mine.length >= FINALE.nodes) return { kind: "landing", need: padNeighbourNames() };
-  return { kind: "nodes", left: FINALE.nodes - mine.length };
-}
-
-/** From a raid's node holds (`State.nodes` / `NodeHold[]`). */
-export function liberationStatusOf(holds: readonly NodeHold[]): LiberationStatus {
-  const mine = NODES.filter((_, i) => holds[i] === "own").map((n) => n.id);
-  if (mine.length >= FINALE.nodes && LANDING_NODES.pad.some((id) => mine.includes(id))) return { kind: "finale" };
-  if (mine.length >= FINALE.nodes) return { kind: "landing", need: padNeighbourNames() };
-  return { kind: "nodes", left: FINALE.nodes - mine.length };
-}
 
 /** What the nodes the player holds open together (`UNLOCKS`): the best of each, the squads summed. */
 export function unlocked(p: Pick<IslandDay, "poiState">): Required<Pick<NodeUnlock, "shop" | "squad" | "scout" | "shore">> & { depart: NodeId[]; heals: HealKind[]; turret: number } {

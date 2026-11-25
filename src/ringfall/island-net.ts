@@ -11,7 +11,7 @@ import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, pvpSeaOpen, type Neighbour } from "./meta/neighbours";
 import { aiByCode, aiChanges, aiIncoming, aiLent, aiRefresh, aiView, withAi } from "./meta/ai-islands";
-import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
+import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import { pushNews } from "./view/copy";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
@@ -342,6 +342,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
     synced.holds = view.body.nodes;
     synced.incoming = incomingOf(view.body);
     synced.parcels = view.body.parcels;
+    synced.outerGuard = outerGuardFromView(view.body);
   }
   if (!log.ok && !view.ok && !report) return view;
   // The neighbours read again with every sync, so the camp's maps and the horizon show them without the factory's panel opened.

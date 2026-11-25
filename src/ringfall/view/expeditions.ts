@@ -11,8 +11,9 @@ import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
 import { NODES, nodeIndex } from "../sim/map";
-import { TERM } from "./copy";
+import { lostTodayLine, shieldLine, TERM } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
+import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
@@ -214,8 +215,18 @@ export class ExpeditionPanel {
     // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
     // Trophy is the signal station's primary ranking readout (map table removed): large number first.
     const trop = `<div class="exp-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>`;
+    // 作り順③: island shield / loss cap under the trophy (protected state + remaining time).
+    const now = Date.now();
+    const remain = shieldRemainingMs(p.outerGuard, now);
+    const guard = guardOn(p.outerGuard, now);
+    const shield =
+      remain > 0
+        ? `<p class="exp-shield">${esc(shieldLine(remain))}</p>`
+        : guard.lost > 0
+          ? `<p class="exp-shield">${esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))}</p>`
+          : "";
     // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
-    const head = `${trop}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
+    const head = `${trop}${shield}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
     // Island codes: folded away from daily entry (お隣 cards are the primary).

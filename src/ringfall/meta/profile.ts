@@ -1,4 +1,4 @@
-import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, FINALE, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
@@ -9,6 +9,8 @@ import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, rec
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
 import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
+import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
+import { isContestedShore } from "./neighbours";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -25,7 +27,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 42;
+  v: 45;
   cash: number;
   stash: Item[];
   raids: number;
@@ -56,20 +58,14 @@ export interface Profile {
   /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
   known: ModKind[];
   /**
-   * Kept for save compat / map (`freedAt`); round 強度 comes from `cycle` via `raidThreat()`.
-   * Not chosen on a contract board (removed).
+   * Kept for save compat / map (`freedAt`). Island liberation / cycle 強度 is gone (v43);
+   * raids play at 強度 0 unless a start names `threat` (sim gate / tests).
    */
   threat: number;
   /** The highest 強度 each POI was freed at. */
   freedAt: Partial<Record<PoiId, number>>;
   /** The camp's factory's level (`FACTORY`): 0 is the factory the camp starts with. */
   factory: number;
-  /** The rounds of the island behind the player (`FINALE`): 0 on the first; each raises every raid's 強度. */
-  cycle: number;
-  /** The day the round under way began. */
-  cycleDay: number;
-  /** The days each round behind the player took, oldest first. */
-  liberations: number[];
   /** What the last raid took out of the stash, so the shelves pick it again while the stash still holds it (`recallLoadout()`). */
   lastKit: KitPicks | null;
   /** The expeditions this island's factory sent to other players' islands, as they last stood (meta/expeditions.ts). */
@@ -110,6 +106,11 @@ export interface Profile {
    * v41 and older saves have none (auto).
    */
   goal: ValuableKind | null;
+  /**
+   * Anti-snowball for outer hubs (作り順③): losses this UTC day and island shield.
+   * v44 and older saves start empty; sync / settle fill it when a hub is lost.
+   */
+  outerGuard: OuterGuard;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -169,7 +170,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 42,
+    v: 45,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -190,9 +191,6 @@ export function newProfile(seed = 1): Profile {
     threat: 0,
     freedAt: {},
     factory: 0,
-    cycle: 0,
-    cycleDay: 1,
-    liberations: [],
     lastKit: null,
     expeditions: [],
     logSeq: 0,
@@ -204,14 +202,15 @@ export function newProfile(seed = 1): Profile {
     news: [],
     pending: [],
     goal: null,
+    outerGuard: emptyOuterGuard(),
   };
 }
 
-/** The 強度 every raid of the profile's round plays at: `FINALE.threat` a round freed. */
-export const roundThreat = (p: Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (p.cycle ?? 0) * FINALE.threat);
-
-/** The 強度 the next raid plays at: the round's alone. */
-export const raidThreat = (p: Partial<Pick<Profile, "cycle">>) => roundThreat(p);
+/**
+ * The 強度 the next raid plays at. Island liberation / cycle is gone (v43): always 0 for a
+ * profile. A start may still name `threat` for tests and the sim gate.
+ */
+export const raidThreat = (_p?: unknown) => 0;
 
 /** The seed of the raid after one started from `seed`. */
 export const nextSeed = (seed: number) => ((Math.imul(seed + 1, 1103515245) + 12345) >>> 8) & 0xffff;
@@ -547,8 +546,6 @@ export interface Settlement {
    * away on other islands (`awayIncome()` folded in — 方向 A: 拠点の収入に一本化).
    */
   income: number;
-  /** The raid won the decisive battle (`FINALE`): the days the round took, and the rounds now behind the player; left out, it did not. */
-  liberated?: { days: number; cycle: number };
   /** Credits for the nodes the raid took after its first, got off alive (`MOMENTUM.spoils`); left out, none. */
   spoils?: number;
   /** The 強度 the raid was played at. */
@@ -762,20 +759,21 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).
   let nightParcels = night.parcels ?? parcels;
+  let outerGuard = p.outerGuard ?? emptyOuterGuard();
+  const lostAt = Date.now();
   for (const n of NODES) {
     const before = p.poiState[n.id]?.state;
     const after = night.poiState[n.id]?.state;
-    if (before === "own" && after !== "own") nightParcels = nightParcels.filter((q) => q.poi !== n.id);
+    if (before === "own" && after !== "own") {
+      nightParcels = nightParcels.filter((q) => q.poi !== n.id);
+      // 作り順③: each outer hub lost this settle raises the island shield / loss count.
+      if (isContestedShore(n.id) && rivalOf(after ?? "foe")) outerGuard = recordOuterLoss(outerGuard, lostAt);
+    }
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
+  if (outerGuard !== (p.outerGuard ?? emptyOuterGuard())) Object.assign(night, { outerGuard });
   // The nodes the player holds once the night is over pay their day's credits.
   const homePay = heldIncome(night);
-  // The decisive battle won (`FINALE`): the titan fell with its pad open. The round's days are kept, and the
-  // island and the factory start over for the next round; the income above is the freed island's last.
-  const liberated = !!s.finale && day.titan ? { days: p.day - p.cycleDay + 1, cycle: p.cycle + 1 } : null;
-  // Other players' nodes stay theirs into the next round (the titan was the enemy's; nobody else's holding is undone unseen), and
-  // the expeditions out are called home: the factory that kept them starts over.
-  if (liberated) Object.assign(night, { poiState: { ...newIsland(), ...Object.fromEntries(Object.entries(night.poiState).filter(([, v]) => rivalOf(v.state) !== null)) }, factory: 0, cycle: liberated.cycle, cycleDay: night.day, liberations: [...p.liberations, liberated.days].slice(-50), expeditions: recallAll(night.expeditions) });
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
   // 方向 A: 遠征で持つ拠点の収入も拠点の収入に合算（リザルトの別行は出さない）。
@@ -803,7 +801,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     day: p.day,
     ...change,
     income,
-    ...(liberated && { liberated }),
     ...(spoils > 0 && { spoils }),
     threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
@@ -973,12 +970,15 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v1–v40 has nothing contested-hub-specific on Profile (ownership lives in poiState rival holds);
  * v41 marks 方向 A 取り合う拠点 (TKT-195) for stack consistency.
  * v41 and older have no `pending` / `goal`; v42 adds 倉庫の整理待ち and the hunt target.
+ * v42 and older may hold `cycle` / `cycleDay` / `liberations` (島の解放); v43 drops them — the island never resets.
+ * v43 and older contest only the four shore hubs; v44 marks outer-edge contested hubs (作り順②) for stack consistency (ownership still in poiState).
+ * v44 and older have no `outerGuard`; v45 adds anti-snowball (作り順③: island shield + loss cap).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1035,7 +1035,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const goal =
     typeof o.v === "number" && o.v >= 42 && typeof o.goal === "string" && o.goal in VALUABLES ? (o.goal as ValuableKind) : null;
   const v27 = typeof o.v === "number" && o.v >= 27;
-  const v28 = typeof o.v === "number" && o.v >= 28;
   const v32 = typeof o.v === "number" && o.v >= 32;
   const trophies = v32 && Number.isFinite(o.trophies) ? Math.max(TROPHY.min, Math.min(TROPHY.max, Math.floor(o.trophies as number))) : TROPHY.start;
   // Old quests / board / taken / records / events are dropped without reading (save compat).
@@ -1045,12 +1044,17 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v40: 島の知らせの控え（`news`）。v39 以前は無し。
   // v41: 取り合う海岸拠点（方向 A）。専用フィールドは無し（poiState の rival が持ち主）。
   // v42: 倉庫の整理待ち（`pending`）と入手先の目標（`goal`）。
+  // v43: 島の解放（cycle / cycleDay / liberations）を外す。島は終わりなく育つ。
+  // v44: 外側の取り合う拠点（作り順②）。専用フィールドは無し（poiState の rival が持ち主）。
+  // v45: 作り順③の島の盾・喪失上限（`outerGuard`）。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
       : [];
+  const outerGuard =
+    typeof o.v === "number" && o.v >= 45 ? parseOuterGuard(o.outerGuard) : emptyOuterGuard();
   return {
-    v: 42,
+    v: 45,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1081,10 +1085,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     news,
     pending,
     goal,
-    // A save from before the island had an ending is on its first round, begun on day 1.
-    cycle: v28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
-    cycleDay: v28 && Number.isInteger(o.cycleDay) && (o.cycleDay as number) >= 1 ? Math.min(day, o.cycleDay as number) : 1,
-    liberations: v28 && Array.isArray(o.liberations) ? o.liberations.filter((n): n is number => Number.isInteger(n) && n > 0).slice(-50) : [],
+    outerGuard,
+    // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
     freedAt,

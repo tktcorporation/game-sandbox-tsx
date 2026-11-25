@@ -21,6 +21,7 @@ import type { RivalExpedition } from "../sim/battle";
 import { aiLabel, CONTESTED_SHORES, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
 import { TROPHY, clampTrophies } from "./trophies";
 import type { Island } from "./island";
+import { canLoseOuter, OUTER_GUARD, type OuterGuard } from "./outer-guard";
 
 /** The numbers of the game's islands. */
 export const AI = {
@@ -225,7 +226,20 @@ export function aiView(
     });
   const held = aiNodes(a, salt, day);
   const parcels = aiDefenceParcels(a, salt, day, held, seized);
-  return { code: a.code, owner: aiLabel(a.name), day, factory: aiFactory(day), protectedUntil: 0, nodes, expeditions, pings: [], parcels };
+  return {
+    code: a.code,
+    owner: aiLabel(a.name),
+    day,
+    factory: aiFactory(day),
+    protectedUntil: 0,
+    shieldUntil: 0,
+    outerLost: 0,
+    outerLossCap: OUTER_GUARD.lossCap,
+    nodes,
+    expeditions,
+    pings: [],
+    parcels,
+  };
 }
 
 /**
@@ -281,7 +295,9 @@ type Seen = { day: number; poiState: Island; expeditions: readonly Outgoing[] };
  * facing node. At most one a day, none before `AI.start`; but while the player has not `scouted` (the
  * browser keeps it), the first island the player's ground faces sends its scout (`AI.scout`) at once.
  */
-export function aiAttack(p: Seen, salt: number, taken: readonly number[], scouted = true): { island: AiIsland; node: NodeId; scout?: true } | null {
+export function aiAttack(p: Seen & { outerGuard?: OuterGuard }, salt: number, taken: readonly number[], scouted = true): { island: AiIsland; node: NodeId; scout?: true } | null {
+  // 作り順③: island shield / loss cap — no further AI takes while protected.
+  if (!canLoseOuter(p.outerGuard, Date.now())) return null;
   const holds = (id: NodeId) => p.poiState[id]?.state === "own";
   // The first time the player's ground reaches the sea facing one of them, that island sends a scout at once (from day 2 on).
   if (!scouted && p.day >= AI.scoutDay) {

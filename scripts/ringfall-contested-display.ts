@@ -5,14 +5,14 @@
  */
 import assert from "node:assert/strict";
 import { applySync, mergeHolds } from "../src/ringfall/meta/expeditions";
-import { CONTESTED_SHORES, type Neighbour } from "../src/ringfall/meta/neighbours";
+import { ROUTE_SHORES, type Neighbour } from "../src/ringfall/meta/neighbours";
 import { newProfile } from "../src/ringfall/meta/profile";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { NODES } from "../src/ringfall/sim/map";
 import { rivalFrontPick } from "../src/ringfall/view/hub";
 import { nextAttack } from "../src/ringfall/view/copy";
 
-const shore = CONTESTED_SHORES[0]!; // station
+const shore = ROUTE_SHORES[0]!; // station — on the front beside supply
 const shoreName = NODES.find((n) => n.id === shore)!.name;
 const neighCode = "NEGH01";
 const neighName = "ツバキ";

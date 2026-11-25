@@ -38,6 +38,8 @@ export type TermId =
   | "attack"
   | "contest"
   | "revenge"
+  | "shielding"
+  | "lostToday"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -105,6 +107,16 @@ export const TERM = {
    * 【元】（なし）／仕返し 【案】やり返す 【理由】取られた行から攻め先へ
    */
   revenge: "やり返す",
+  /**
+   * Island-wide shield after an outer hub is taken (作り順③).
+   * 【元】（なし）／保護中（新規島） 【案】守り中 【理由】取られたあとの島全体の盾。新規保護と語を分けず「守り」に寄せる
+   */
+  shielding: "守り中",
+  /**
+   * Loss-cap readout for outer hubs (作り順③).
+   * 【元】（なし） 【案】今日取られた 【理由】喪失上限が見える。内部名は出さない
+   */
+  lostToday: "今日取られた",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -339,28 +351,6 @@ export function awaySheetParts(
   return { lines, trop };
 }
 
-/** 島の解放までの一行（野営・レイド中・リザルト）。材料はプレイヤー向けの語だけ。 */
-export type LiberationCopy = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
-
-export function liberationLine(s: LiberationCopy): string {
-  if (s.kind === "finale") return "決戦 · 発着場";
-  if (s.kind === "landing") return `島の解放まで · ${s.need.join("か")}`;
-  return `島の解放まで · 拠点 あと ${s.left}`;
-}
-
-/**
- * リザルト用: 前日との差。拠点の残りが変わったときだけ `あと a → b`。
- * 種類が違う（決戦が開いた等）ときは「前の一行 → 後の一行」。
- */
-export function liberationDelta(before: LiberationCopy, after: LiberationCopy): string {
-  if (before.kind === "nodes" && after.kind === "nodes") {
-    if (before.left === after.left) return liberationLine(after);
-    return `島の解放まで · 拠点 あと ${before.left} → ${after.left}`;
-  }
-  if (before.kind === after.kind && liberationLine(before) === liberationLine(after)) return liberationLine(after);
-  return `${liberationLine(before)} → ${liberationLine(after)}`;
-}
-
 /** 島の知らせ: 核 · 制圧で拠点を戻した行（旧・取り返した）。 */
 export function newsRetaken(at: string): string {
   return `${at}を制圧した · 倉庫へ届く`;
@@ -439,6 +429,27 @@ export function attackScoutDef(factory: number, guard: number): string {
 }
 
 /**
+ * Island shield remaining time (作り順③).
+ * 【元】（なし） 【案】守り中 · あと 3:24 【理由】残り時間が分かる（CoC の盾タイマー）
+ */
+export function shieldLine(remainMs: number): string {
+  const sec = Math.max(0, Math.ceil(remainMs / 1000));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const clock = h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+  return `${TERM.shielding} · あと ${clock}`;
+}
+
+/**
+ * Outer-hub loss cap readout (作り順③).
+ * 【元】（なし） 【案】今日取られた 1/1 【理由】喪失上限が見える
+ */
+export function lostTodayLine(lost: number, cap: number): string {
+  return `${TERM.lostToday} ${lost}/${cap}`;
+}
+
+/**
  * Scout loot line under an 攻める row (TKT-204 案 B).
  * 【元】（なし） 【案】トロフィー +32 【理由】取ればいくつ増えるかを先に見せる
  */
@@ -453,7 +464,7 @@ export function attackScoutTrop(trop: number): string {
 export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   {
     title: TERM.seaIslands,
-    body: `海に面した拠点を、${TERM.seaIslands}と${TERM.contest}。`,
+    body: `外側の拠点を、${TERM.seaIslands}と${TERM.contest}。`,
   },
   {
     title: `${TERM.front}の拠点`,

@@ -16,7 +16,7 @@ import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
-import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
+import { departDepots, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
@@ -26,6 +26,7 @@ import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { contestedDefence, contestedParcels } from "./meta/contested-defence";
+import { isIslandProtected } from "./meta/outer-guard";
 import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -381,7 +382,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   };
   raidLent = [];
   void syncOwn(p, true, raid).then((r) => {
-    // The islands of expeditions called home (a liberation, or the factory's panel) are told, now or at the next sync.
+    // The islands of expeditions called home (the factory's panel) are told, now or at the next sync.
     void flushRecalls(
       () => hub.profile,
       (q) => hub.update(q),
@@ -981,7 +982,6 @@ function start(go: Launch, from?: State) {
       away: squadsAway(hub.profile),
       rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
     },
-    finale: finaleOpen(hub.profile),
     // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
     ...(defence.length ? { defence } : {}),
     ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
@@ -1014,6 +1014,7 @@ function start(go: Launch, from?: State) {
   $("pause").hidden = true;
   hud.show(true);
   hud.setKnown(hub.profile.entries);
+  hud.setIslandShielded(isIslandProtected(hub.profile.outerGuard, Date.now()));
   hud.setPouch(pouchSlots(hub.profile.hideout));
   hud.setTrophies(hub.profile.trophies ?? 0);
   hud.bag.setProfile(hub.profile);
