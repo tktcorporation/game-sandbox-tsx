@@ -684,8 +684,10 @@ function openCamp() {
     $("results").hidden = true;
     paused = false;
     $("pause").hidden = true;
-    lock();
-    if (needsOrganize(hub.profile)) organize.ensure(hub.profile);
+    if (needsOrganize(hub.profile)) {
+      if (document.pointerLockElement) document.exitPointerLock();
+      organize.ensure(hub.profile);
+    } else lock();
     return;
   }
   // The expeditions on the game's own islands stand as their clock has them, so the settle pays the nodes they hold.
@@ -722,14 +724,16 @@ function openCamp() {
   keepAwake(true);
   fade(true, true);
   requestAnimationFrame(() => fade(false));
-  lock();
   // タイトルから野営に立ったときだけ、留守中の対人を一度同期して一枚で出す。
   if (!awayBooted) {
     awayBooted = true;
     void deliverAwayNews(beforeSnap);
   }
-  // Reload with pending: open 整理 over the camp, not over the title.
-  if (needsOrganize(hub.profile)) organize.ensure(hub.profile);
+  // Reload with pending: open 整理 over the camp (not the title). Leave the pointer free so the buttons work.
+  if (needsOrganize(hub.profile)) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    organize.ensure(hub.profile);
+  } else lock();
 }
 
 /**
@@ -776,6 +780,7 @@ function openPanel(id: StationId) {
 function askDepart(walk: boolean) {
   // 整理待ちのあいだは門から出撃しない。
   if (needsOrganize(hub.profile)) {
+    if (document.pointerLockElement) document.exitPointerLock();
     organize.show(hub.profile);
     return;
   }

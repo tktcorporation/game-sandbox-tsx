@@ -1757,6 +1757,31 @@ body.touch #hub-close kbd {
   /* Footer stays in its grid row; lists scroll inside. */
   overflow: hidden;
 }
+/* Capacity sits above the stash list on wide; full-width above both columns when tabs show. */
+.hub-cap-strip {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.hub-cap-strip[hidden] {
+  display: none !important;
+}
+.hub-cols:not(.one) > .hub-tabs[hidden] ~ .hub-cap-strip {
+  grid-column: 1;
+}
+.hub-cols:not(.one) > .hub-tabs[hidden] ~ #hub-stash-col {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+}
+.hub-cols:not(.one) > .hub-tabs[hidden] ~ #hub-side-col {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  min-height: 0;
+}
+.hub-cols.one > .hub-cap-strip {
+  display: none !important;
+}
 .hub-col {
   display: flex;
   flex-direction: column;
@@ -5278,7 +5303,19 @@ body.touch .bag-card:nth-last-child(n + 3) {
   #hub .hub-cols:not(.one),
   #organize .hub-cols {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  #hub .hub-cols:not(.one) > .hub-cap-strip {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  #hub .hub-cols:not(.one) > .hub-tabs:not([hidden]) {
+    grid-row: 1;
+  }
+  #hub .hub-cols:not(.one) > #hub-stash-col,
+  #hub .hub-cols:not(.one) > #hub-side-col {
+    grid-column: 1;
+    grid-row: 3;
   }
   #hub .hub-cols:not(.one)[data-tab="stash"] #hub-side-col,
   #hub .hub-cols:not(.one)[data-tab="side"] #hub-stash-col,
@@ -5286,7 +5323,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   #organize .hub-cols[data-tab="stash"] #org-pending-col {
     display: none;
   }
-  /* Side column title duplicates the tab; keep 倉庫's cap head (count + bar). */
+  /* Side / organize column titles duplicate the tabs. Cap strip stays for used/cap + full note. */
   #hub .hub-cols:not(.one) #hub-side-col > h3,
   #organize .hub-cols .hub-col > h3 {
     display: none;

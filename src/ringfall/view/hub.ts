@@ -1350,7 +1350,8 @@ export class Hub {
     $("hub-title").textContent = panel.title;
     $("hub-cash").textContent = yen(p.cash);
     $("hub-record").textContent = `${TERM.sortie} ${p.raids} ・ 生還 ${p.extracted}`;
-    // Count + capacity bar; full lock-note sits beside the count.
+    // Count + capacity bar above the lists (always visible in narrow tabs too).
+    $("hub-cap-strip").hidden = !panel.stash;
     $("hub-stash-count").innerHTML = panel.stash ? capMeter(stashUsed(p), stashCap(p.hideout), warehouseFullNote(p)) : "";
     $("hub").dataset.station = st;
     $("hub-stash-col").hidden = !panel.stash;
