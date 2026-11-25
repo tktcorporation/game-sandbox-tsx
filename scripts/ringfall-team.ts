@@ -5,7 +5,8 @@
  * Proves TEAM.size seats, AI fill, outer-hub growth, Profile v46 migrate, and ensureTeam refresh.
  */
 import assert from "node:assert/strict";
-import { CONTESTED_OUTER } from "../src/ringfall/sim/contested-outer";
+import { CONTESTED_OUTER_IDS } from "../src/ringfall/meta/contested-outer-table";
+import type { NodeId } from "../src/ringfall/sim/map";
 import { newIsland } from "../src/ringfall/meta/island";
 import { bindTeam, newProfile, parseProfile, type Profile } from "../src/ringfall/meta/profile";
 import {
@@ -49,8 +50,8 @@ const SELF = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "テスト", co
   assert.notEqual(a.code, other.code, "different salt → different code");
   const byDay = [1, 5, 10, 20, 40].map((d) => aiMateOuter(SALT, 0, d));
   assert.ok(byDay[4]! >= byDay[0]!, `outer should climb: ${byDay.join(",")}`);
-  assert.ok(byDay.every((n) => n >= 0 && n <= CONTESTED_OUTER.length));
-  console.log(`ai outer: ${byDay.join(" / ")} on days 1 5 10 20 40 (cap ${CONTESTED_OUTER.length})`);
+  assert.ok(byDay.every((n) => n >= 0 && n <= CONTESTED_OUTER_IDS.length));
+  console.log(`ai outer: ${byDay.join(" / ")} on days 1 5 10 20 40 (cap ${CONTESTED_OUTER_IDS.length})`);
 }
 
 // --- ensureTeam refreshes self outer, keeps AI seats ---
@@ -104,11 +105,11 @@ const SELF = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "テスト", co
   assert.equal(bound.team.members.filter((m) => m.ai).length, TEAM.size - 1);
   // Holding outer hubs updates self count.
   const poiState = { ...bound.poiState };
-  for (const id of CONTESTED_OUTER.slice(0, 2)) poiState[id] = { state: "own" };
+  for (const id of CONTESTED_OUTER_IDS.slice(0, 2) as NodeId[]) poiState[id] = { state: "own" };
   const held: Profile = { ...bound, poiState };
   const refreshed = bindTeam(held, SELF, SALT);
   assert.equal(refreshed.team.members[0]!.outer, 2);
-  console.log(`bind: self outer ${refreshed.team.members[0]!.outer} / ${CONTESTED_OUTER.length}`);
+  console.log(`bind: self outer ${refreshed.team.members[0]!.outer} / ${CONTESTED_OUTER_IDS.length}`);
 }
 
 // --- Contested island empty still yields a team ---
