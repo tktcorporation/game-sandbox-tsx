@@ -3595,6 +3595,103 @@ body.touch #camp-prompt {
   font-size: 16px;
   color: var(--mate-light);
 }
+/* TKT-204 案 B: CoC-style 攻める list with scout lines. */
+#depart-attack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  flex: 0 1 auto;
+  max-height: 38%;
+}
+#depart-attack[hidden] {
+  display: none;
+}
+#depart-attack-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--rival);
+}
+#depart-attack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.screen #depart-attack-list .attack-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--plate);
+  color: var(--paper);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+}
+.screen #depart-attack-list .attack-row:hover:not(:disabled):not(.shut) {
+  background: rgb(var(--ink-rgb) / 0.9);
+  transform: none;
+  box-shadow: none;
+}
+.screen #depart-attack-list .attack-row.on {
+  background: rgb(var(--rival-rgb) / 0.35);
+  box-shadow: inset 3px 0 0 var(--rival);
+}
+.screen #depart-attack-list .attack-row.shut {
+  opacity: 0.65;
+  cursor: default;
+}
+#depart-attack-list .attack-row .ico {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+#depart-attack-list .attack-row .pick-lock {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+#depart-attack-list .attack-row .pick-lock .ico {
+  width: 14px;
+  height: 14px;
+}
+#depart-attack-list .attack-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+#depart-attack-list .attack-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+#depart-attack-list .attack-title b {
+  font-size: 14px;
+  font-weight: 800;
+}
+#depart-attack-list .attack-body small {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+}
+#depart-attack-list .attack-body .scout-trop {
+  color: var(--hot);
+}
+#depart-attack-list .attack-body .scout-gate {
+  color: var(--peach);
+}
 #depart-list {
   display: grid;
   grid-template-columns: auto 1fr;

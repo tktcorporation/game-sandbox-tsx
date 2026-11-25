@@ -1,7 +1,8 @@
 import { PLAYER } from "../sim/config";
-import { neighboursFor } from "../island-net";
+import { aiSalt, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
+import { attackScouts, type AttackScout } from "../meta/attack-scout";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -518,6 +519,11 @@ export class Hub {
    * Cleared once the departure opens on it.
    */
   focusPoi: PoiId | null = null;
+  /**
+   * Contested hub chosen on the 攻める list (TKT-204 案 B). Drives the departure goal and
+   * nearest-start pick; set by `selectAttack()` / やり返す (案 F).
+   */
+  attackFocus: NodeId | null = null;
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
   private exped: ExpeditionPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -971,6 +977,42 @@ export class Hub {
   }
 
   /**
+   * Contested hubs another player holds, for the departure's 攻める list (TKT-204 案 B).
+   * Front ones first; includes shut rows that need a gate taken first.
+   */
+  attackTargets(): AttackScout[] {
+    const p = this.profile;
+    const at = this.startPoints().find((q) => q.on) ?? { x: CAMP.wake.x, z: CAMP.wake.z };
+    return attackScouts(p.poiState, p.day, neighboursFor(p), p.trophies ?? TROPHY.start, p.parcels ?? [], aiSalt(), at);
+  }
+
+  /**
+   * Picks a hub on the 攻める list: frames the goal, chooses the nearest open start, and remembers
+   * the focus for the side panel. False when the hub is not on the front (or unknown).
+   */
+  selectAttack(id: NodeId): boolean {
+    const hit = this.attackTargets().find((t) => t.id === id);
+    if (!hit?.onFront) return false;
+    this.attackFocus = id;
+    this.peeked = null;
+    const starts = this.startPoints().filter((q) => q.open);
+    const near = [...starts].sort((a, b) => Math.hypot(a.x - hit.x, a.z - hit.z) - Math.hypot(b.x - hit.x, b.z - hit.z))[0];
+    if (near) this.choose(near.kind, near.id);
+    return true;
+  }
+
+  /** The scout row the departure highlights: explicit focus, else the nearest front rival hub. */
+  attackPick(): AttackScout | null {
+    const targets = this.attackTargets();
+    if (!targets.length) return null;
+    if (this.attackFocus) {
+      const hit = targets.find((t) => t.id === this.attackFocus && t.onFront);
+      if (hit) return hit;
+    }
+    return targets.find((t) => t.onFront) ?? null;
+  }
+
+  /**
    * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
    * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
    */
@@ -1312,9 +1354,10 @@ export class Hub {
     this.fixStart();
     const p = this.profile;
     const front = this.frontPick();
-    const rival = rivalFrontPick(p);
+    // TKT-204 案 B/D: 攻める一覧の選択（なければ前線の相手持ち）を野営と同じ言い方で。
+    const attack = this.attackPick();
+    const rival = attack ? { name: attack.title, x: attack.x, z: attack.z } : rivalFrontPick(p);
     const teach = teachFrontCapture(p) && front;
-    // TKT-204 案 D: 出撃の目的を野営の「{誰}の{拠点}を攻める」と同じ言い方に揃える。
     const goal = finaleOpen(p)
       ? esc(`${liberationLine({ kind: "finale" })}`)
       : rival

@@ -401,6 +401,22 @@ export function contestGateHint(gate: string): string {
   return `先に${gate}を取ると攻められる`;
 }
 
+/**
+ * Scout defence line under an 攻める row (TKT-204 案 B).
+ * 【元】（なし） 【案】工場 Lv3 · 島の守り 1 【理由】CoC の攻撃前の守り要約
+ */
+export function attackScoutDef(factory: number, guard: number): string {
+  return `${TERM.factory} Lv${factory} · ${TERM.islandGuard} ${guard}`;
+}
+
+/**
+ * Scout loot line under an 攻める row (TKT-204 案 B).
+ * 【元】（なし） 【案】トロフィー +32 【理由】取ればいくつ増えるかを先に見せる
+ */
+export function attackScoutTrop(trop: number): string {
+  return `${TERM.trophy} +${trop}`;
+}
+
 /** Re-export for view callers (canonical: meta/neighbours.ts). */
 export { aiLabel } from "../meta/neighbours";
 

@@ -123,13 +123,21 @@ await pg.evaluate(() => window.advanceTime(500));
 // Camp with tip / 今日の作戦
 await snap(pg, "01-camp");
 
-// Departure map (sea lines + corner neighbours, or after: hub flags)
+// Departure map (after B: 攻める list + hub flags)
 if (!(await pg.evaluate(() => window.ringfallCamp.openDepart()))) {
   console.error("openDepart failed");
 }
 await pg.waitForFunction(() => !document.getElementById("depart")?.hidden, null, { timeout: 6000 }).catch(() => {});
 await pg.waitForTimeout(300);
 await snap(pg, "02-depart");
+
+// Prefer an 攻める row when present (案 B scout list)
+const attackBtn = await pg.$("#depart-attack-list button[data-attack]:not(.shut)");
+if (attackBtn) {
+  await attackBtn.click();
+  await pg.waitForTimeout(200);
+  await snap(pg, "02b-depart-attack");
+}
 
 // Signal station neighbours
 await pg.keyboard.press("Escape");
