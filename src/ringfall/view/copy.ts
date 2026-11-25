@@ -36,6 +36,7 @@ export type TermId =
   | "returningAlive"
   | "arrivedAtWarehouse"
   | "attack"
+  | "contest"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -93,6 +94,11 @@ export const TERM = {
    * 【元】取り返す 【案】攻める — docs/ringfall/glossary.md (adopted).
    */
   attack: "攻める",
+  /**
+   * Contested coastal hub not yet held by anyone (TKT-204 案 A).
+   * 【元】（なし） 【案】取り合う 【理由】誰と取り合う拠点かを先に見せる
+   */
+  contest: "取り合う",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -361,6 +367,22 @@ export function nextFrontCapture(name: string): string {
 /** Next-hand line for a rival hold on the front (E4: 攻める). */
 export function nextAttack(name: string): string {
   return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${name}を${TERM.attack}`;
+}
+
+/**
+ * Map label under a rival-held contested hub.
+ * 【元】ツバキ 【案】ツバキ · 攻める 【理由】取るのが攻めだと分かる（TKT-204 案 A）
+ */
+export function attackOwner(who: string): string {
+  return `${who} · ${TERM.attack}`;
+}
+
+/**
+ * Map label under a contested hub still held by the enemy, facing a neighbour.
+ * 【元】観測所 【案】ツバキと取り合う 【理由】誰と取り合うかを先に見せる（TKT-204 案 A）
+ */
+export function contestOwner(who: string): string {
+  return `${who}と${TERM.contest}`;
 }
 
 export function moduleRaiseReady(moduleName: string): string {
