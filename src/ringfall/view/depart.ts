@@ -2,7 +2,7 @@ import { sfx } from "./sfx";
 import { neighboursOnMap } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type NodeId, type RegionId } from "../sim/map";
-import { PHRASE, TERM, attackScoutDef, attackScoutTrop } from "./copy";
+import { PHRASE, TERM, attackScoutDef, attackScoutTrop, bountyMark } from "./copy";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
 import { IslandMap, islandScene, VIEW_PAD } from "./map";
@@ -169,9 +169,10 @@ export class DepartPicker {
         const shut = !t.onFront;
         const cls = ["attack-row", on?.id === t.id ? "on" : "", shut ? "shut" : ""].filter(Boolean).join(" ");
         // Shut row: short gate name only (full contestGateHint stays on #depart-warn; wordy ≤18).
+        const bounty = !shut && t.bounty ? `<small class="scout-bounty">${esc(bountyMark())}</small>` : "";
         const scout = shut
           ? `<small class="scout-gate">${esc(t.gate ? `先に${t.gate}` : TERM.front)}</small>`
-          : `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.trop))}</small>`;
+          : `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.trop))}</small>${bounty}`;
         const lock = shut ? `<span class="pick-lock">${lockIcon()}</span>` : "";
         // Split owner / hub so wordy counts each ≤18 (AI names stay short alone).
         return `<button type="button" class="${cls}" data-attack="${t.id}" aria-label="${esc(t.title)}">${flagIcon(SIDE.rival)}${lock}<span class="attack-body"><span class="attack-title"><b>${esc(t.ownerName)}</b><b>の${esc(t.hubName)}</b></span>${scout}</span></button>`;

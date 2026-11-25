@@ -47,6 +47,9 @@ export type TermId =
   | "battleField"
   | "foeTeam"
   | "fieldHubs"
+  | "warPower"
+  | "bounty"
+  | "warScore"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -159,6 +162,21 @@ export const TERM = {
    * 【元】（なし）／拠点 【案】戦場の拠点 【理由】自島の外側の拠点と混ぜない
    */
   fieldHubs: "戦場の拠点",
+  /**
+   * War power from outer hubs on the field (作り順⑥).
+   * 【元】（なし） 【案】力 【理由】design-direction の語。部隊の厚さの名前
+   */
+  warPower: "力",
+  /**
+   * Leader bounty on the strongest rival (作り順⑥).
+   * 【元】（なし） 【案】懸賞金 【理由】design-direction の語。先頭への上乗せ
+   */
+  bounty: "懸賞金",
+  /**
+   * Rolling hold-time + team-battle score (作り順⑥).
+   * 【元】（なし） 【案】得点 【理由】design-direction の語。シーズン無しの競争層
+   */
+  warScore: "得点",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -493,7 +511,7 @@ export function lostTodayLine(lost: number, cap: number): string {
 
 /**
  * Team board seat line (作り順④): outer hub count.
- * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種が見える（力そのものはまだ出さない）
+ * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種。力そのものは fieldBoard の「力」
  */
 export function teamOuterLine(outer: number): string {
   return `${TERM.outerHubs} ${outer}`;
@@ -522,6 +540,30 @@ export function fieldResultLine(result: "win" | "loss" | "draw", ours: number, t
  */
 export function attackScoutTrop(trop: number): string {
   return `${TERM.trophy} +${trop}`;
+}
+
+/**
+ * War power line on the field board (作り順⑥).
+ * 【元】（なし） 【案】力 12 【理由】外側の拠点が部隊戦の厚さになると分かる
+ */
+export function warPowerLine(power: number): string {
+  return `${TERM.warPower} ${power}`;
+}
+
+/**
+ * Rolling score line on the signal station (作り順⑥).
+ * 【元】（なし） 【案】得点 42 【理由】持ち時間＋部隊戦の合計
+ */
+export function warScoreLine(total: number): string {
+  return `${TERM.warScore} ${total}`;
+}
+
+/**
+ * Bounty mark under an 攻める row (作り順⑥).
+ * 【元】（なし） 【案】懸賞金 【理由】先頭を取ると上乗せがあると分かる
+ */
+export function bountyMark(): string {
+  return TERM.bounty;
 }
 
 /**

@@ -7,8 +7,8 @@
  * overnight auto-defence reuse island mechanics on field holds. End of period → simple win /
  * loss / draw by hubs held; the next battle can start. No seasons.
  *
- * Not yet (作り順⑥): war power from island holdings, raid targeting, leader bounty, held-time
- * scoring — hooks below (`TeamBattle.hooks` / `warPowerOf` / `scoreHeldMs`).
+ * 作り順⑥ fills war power / bounty target on `hooks`, and weights overnight defence by power
+ * (meta/war-score.ts). Held-time scoring lives on Profile.warScore, not field hub ms.
  */
 import { TEAM, aiMateIsland, aiMateOuter, formTeam, teamIdFor, type Team, type TeamMember, type TeamSelf } from "./team";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../sim/team-field";
 import type { NodeId } from "../sim/map";
 import type { PoiHold } from "../sim/holds";
+import { bountyTargetOf, fieldHoldsOvernight, warPowerOf as powerOf } from "./war-score";
 
 export { TEAM_BATTLE, FIELD_NAME, FIELD_HUBS, fieldHubByNode, fieldHubOf };
 export type { FieldHubId };
@@ -29,15 +30,17 @@ export type { FieldHubId };
 export type FieldHold = "ours" | "theirs";
 
 /**
- * Step-6 hooks stored on the battle (unused in step 5 — leave shape stable for saves).
- * war power / held-time / bounty read these without reshaping `TeamBattle`.
+ * Step-6 hooks on the battle (shape stable since ⑤).
+ * War power / bounty target are set at match start; held-time score is on Profile.warScore.
  */
 export type TeamBattleHooks = {
-  /** Reserved: war power derived from island outer holdings (作り順⑥). */
+  /** Our team's war power at match start (sum of outer hubs). */
   warPower?: number;
-  /** Reserved: ms each hub was held in the scoring window (作り順⑥). */
+  /** Foe team's war power at match start. */
+  foeWarPower?: number;
+  /** Legacy field-hub held ms — unused; outer-hold scoring is Profile.warScore. */
   heldMs?: Partial<Record<FieldHubId, number>>;
-  /** Reserved: leader bounty target member id (作り順⑥). */
+  /** Leader bounty target (foe member id with most outer hubs). */
   bountyTarget?: string;
 };
 
@@ -122,21 +125,25 @@ export const battleIdFor = (teamId: string, started: number): string => {
 /**
  * Open a fresh battle: pair with one foe team (AI), split field hubs.
  * Real-team matchmaking is not in this step — always AI foe fill.
+ * 作り順⑥: snapshot war power and bounty target into hooks.
  */
 export function startBattle(ours: Team, salt: number, day: number): TeamBattle {
   // Prefer the team's fixed salt (作り順④) so foe AI seats stay stable across reloads.
   const s = (ours.salt || salt) >>> 0;
   const match = hash(...[...ours.id].map((c) => c.charCodeAt(0)), day, s) >>> 0;
+  const foe = formFoeTeam(s, day, match);
+  const warPower = powerOf(ours);
+  const foeWarPower = powerOf(foe);
+  const bountyTarget = bountyTargetOf(foe) ?? undefined;
   return {
     id: battleIdFor(ours.id || teamIdFor("local"), day),
     started: day,
     days: TEAM_BATTLE.days,
-    foe: formFoeTeam(s, day, match),
+    foe,
     holds: openingHolds(),
     sortied: [],
     result: null,
-    // Step-6 hooks left empty for now.
-    hooks: {},
+    hooks: { warPower, foeWarPower, ...(bountyTarget ? { bountyTarget } : {}) },
   };
 }
 
@@ -199,16 +206,26 @@ export function applyFieldCaptures(b: TeamBattle, captured: readonly NodeId[]): 
 }
 
 /**
- * Overnight auto-defence on the field (作り順⑤ minimal):
- * if the player did not sortie on the day that just ended, the foe takes one of our hubs
- * (first in FIELD_HUBS order). Hook for step 6: replace with war-power-weighted targeting.
+ * Overnight auto-defence on the field (作り順⑤ + ⑥):
+ * if the player did not sortie on the day that just ended, the foe tries to take one of our hubs
+ * (first in FIELD_HUBS order). 作り順⑥: when our war power ≥ foe's (defendGap), the field holds.
  */
-export function autoDefendField(b: TeamBattle, endedDay: number): TeamBattle {
+export function autoDefendField(
+  b: TeamBattle,
+  endedDay: number,
+  oursTeam?: Pick<Team, "members"> | null,
+): TeamBattle {
   if (b.result) return b;
   if (b.sortied.includes(endedDay)) return b;
-  const ours = FIELD_HUBS.find((h) => b.holds[h.id] === "ours");
-  if (!ours) return b;
-  return { ...b, holds: { ...b.holds, [ours.id]: "theirs" } };
+  const ourPower = oursTeam ? powerOf(oursTeam) : (b.hooks.warPower ?? 0);
+  const foePower = b.hooks.foeWarPower ?? powerOf(b.foe);
+  // Refresh snapshot so mid-period outer losses thin the overnight defence.
+  const hooks =
+    oursTeam && ourPower !== b.hooks.warPower ? { ...b.hooks, warPower: ourPower } : b.hooks;
+  if (fieldHoldsOvernight(ourPower, foePower)) return hooks === b.hooks ? b : { ...b, hooks };
+  const hub = FIELD_HUBS.find((h) => b.holds[h.id] === "ours");
+  if (!hub) return hooks === b.hooks ? b : { ...b, hooks };
+  return { ...b, hooks, holds: { ...b.holds, [hub.id]: "theirs" } };
 }
 
 /** Close the battle with a simple hub-count result. */
@@ -270,14 +287,13 @@ export function mergeFieldHolds(
   return out;
 }
 
-/**
- * Step-6 hook: war power from outer holdings (not applied in step 5).
- * Returns 0 until 作り順⑥ fills it in.
- */
-export const warPowerOf = (_ours: Team, _hooks?: TeamBattleHooks): number => 0;
+/** War power from a team's outer holdings (作り順⑥). Prefer live team; fall back to hooks. */
+export const warPowerOf = (ours: Team | null | undefined, hooks?: TeamBattleHooks): number =>
+  ours?.members?.length ? powerOf(ours) : (hooks?.warPower ?? 0);
 
 /**
- * Step-6 hook: held-time score over a recent window (not applied in step 5).
+ * @deprecated Held-time score lives on Profile.warScore (`scoreHeldPoints` in war-score.ts).
+ * Kept so older imports keep compiling; always 0 from battle hooks.
  */
 export const scoreHeldMs = (_hooks?: TeamBattleHooks): number => 0;
 
@@ -301,8 +317,24 @@ export function parseTeamBattle(raw: unknown): TeamBattle | null {
     ? o.sortied.filter((d): d is number => typeof d === "number" && Number.isFinite(d)).map((d) => Math.floor(d))
     : [];
   const result = o.result === "win" || o.result === "loss" || o.result === "draw" ? o.result : null;
-  const hooks: TeamBattleHooks =
-    o.hooks && typeof o.hooks === "object" ? { ...(o.hooks as TeamBattleHooks) } : {};
+  const rawHooks = o.hooks && typeof o.hooks === "object" ? (o.hooks as Record<string, unknown>) : {};
+  const hooks: TeamBattleHooks = {
+    ...(typeof rawHooks.warPower === "number" && Number.isFinite(rawHooks.warPower)
+      ? { warPower: Math.max(0, Math.floor(rawHooks.warPower)) }
+      : {}),
+    ...(typeof rawHooks.foeWarPower === "number" && Number.isFinite(rawHooks.foeWarPower)
+      ? { foeWarPower: Math.max(0, Math.floor(rawHooks.foeWarPower)) }
+      : {}),
+    ...(typeof rawHooks.bountyTarget === "string" && rawHooks.bountyTarget.trim()
+      ? { bountyTarget: rawHooks.bountyTarget.trim() }
+      : {}),
+  };
+  // Fill missing power from foe members when migrating a v47 save that had empty hooks.
+  if (hooks.foeWarPower === undefined) hooks.foeWarPower = powerOf({ members: foe.members } as Team);
+  if (hooks.bountyTarget === undefined) {
+    const t = bountyTargetOf({ members: foe.members } as Team);
+    if (t) hooks.bountyTarget = t;
+  }
   return {
     id: o.id.trim(),
     started: Math.max(1, Math.floor(o.started)),

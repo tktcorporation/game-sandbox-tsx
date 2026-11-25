@@ -12,11 +12,11 @@ import { errorText } from "../meta/island-errors";
 import { bindTeam, bindTeamBattle, type Profile } from "../meta/profile";
 import { loadIdentity } from "../meta/identity";
 import { NODES, nodeIndex } from "../sim/map";
-import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM } from "./copy";
+import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM, warPowerLine, warScoreLine } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 import { outerCap, TEAM, type Team } from "../meta/team";
-import { battleOpen, daysLeft, hubCounts, TEAM_BATTLE, type TeamBattle } from "../meta/team-battle";
+import { battleOpen, daysLeft, hubCounts, TEAM_BATTLE, warPowerOf, type TeamBattle } from "../meta/team-battle";
 import { FIELD_HUBS } from "../sim/team-field";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -259,7 +259,7 @@ export class ExpeditionPanel {
   }
 
   /**
-   * 作り順④: four seats with outer-hub counts (部隊戦の力・得点はまだ出さない).
+   * 作り順④: four seats with outer-hub counts (力・得点は fieldBoard に出す).
    * AI seats show 「 · AI」 like neighbours; caption uses TERM.aiMate once for the fill.
    */
   private teamBoard(team: Team | undefined): string {
@@ -277,8 +277,7 @@ export class ExpeditionPanel {
   }
 
   /**
-   * 作り順⑤: 部隊戦 field status — name, days left, hub bar, foe seats, sortie button.
-   * War power / bounty / held-time scoring are not shown yet (⑥).
+   * 作り順⑤+⑥: 部隊戦 field status — name, days left, hub bar, foe seats, 力 / 得点, sortie.
    */
   private fieldBoard(battle: TeamBattle | null | undefined): string {
     if (!battle) return "";
@@ -300,10 +299,14 @@ export class ExpeditionPanel {
       .slice(0, TEAM.size)
       .map((m) => `<span class="field-foe">${esc(memberLabel(m))}</span>`)
       .join("");
+    // 作り順⑥: live team power (outer hubs) and rolling score.
+    const power = warPowerOf(p.team, battle.hooks);
+    const score = p.warScore?.total ?? 0;
+    const meta = `<p class="field-meta"><small>${esc(warPowerLine(power))}</small><small>${esc(warScoreLine(score))}</small></p>`;
     const go = open
       ? `<button type="button" data-act="field-sortie">${esc(TERM.teamBattle)}へ${esc(TERM.sortie)}</button>`
       : "";
-    return `<div class="field-board"><div class="mod-head"><strong>${TERM.teamBattle}</strong><small>${esc(TERM.battleField)}</small></div><p class="field-status">${status}</p>${bar}<div class="field-hubs">${hubs}</div><div class="field-foe-row"><small>${esc(TERM.foeTeam)}</small>${foe}</div>${go}</div>`;
+    return `<div class="field-board"><div class="mod-head"><strong>${TERM.teamBattle}</strong><small>${esc(TERM.battleField)}</small></div><p class="field-status">${status}</p>${bar}<div class="field-hubs">${hubs}</div>${meta}<div class="field-foe-row"><small>${esc(TERM.foeTeam)}</small>${foe}</div>${go}</div>`;
   }
 
   /** Neighbours as a board, plus a looked-up island's nodes (read-only; no send button). */

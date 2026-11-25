@@ -2084,6 +2084,15 @@ body.touch #hub-close kbd {
 .field-hub.ours {
   color: var(--sky);
 }
+.field-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 2px 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+}
 .field-foe-row {
   display: flex;
   flex-wrap: wrap;
@@ -3839,6 +3848,9 @@ body.touch #camp-prompt {
 }
 #depart-attack-list .attack-body .scout-trop {
   color: var(--hot);
+}
+#depart-attack-list .attack-body .scout-bounty {
+  color: var(--amber);
 }
 #depart-attack-list .attack-body .scout-gate {
   color: var(--peach);
