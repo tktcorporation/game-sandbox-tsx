@@ -1563,6 +1563,16 @@ body.camp #pause .keys .raid {
   font-size: 13px;
   padding: 4px 10px;
 }
+/* Disabled 倉庫に入れる / 確定: muted grey, not the hot yellow (same as #hub .hub-foot button:disabled). */
+#organize .org-acts button:disabled,
+#organize .hub-foot button:disabled {
+  background: var(--slate-dim);
+  color: var(--mist);
+  box-shadow: none;
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
 #organize .hub-foot {
   display: flex;
   align-items: center;
@@ -1571,6 +1581,23 @@ body.camp #pause .keys .raid {
 }
 #organize .hub-foot[hidden] {
   display: flex;
+}
+#organize .org-row i {
+  font-style: normal;
+  font-family: var(--num);
+  color: var(--muted);
+}
+/* Type section headers on 棚 / 屋台 / 整理. */
+.item-section {
+  margin: 10px 0 2px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--mist);
+}
+.item-section:first-child {
+  margin-top: 0;
 }
 .src-guide {
   display: grid;

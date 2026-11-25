@@ -17,6 +17,7 @@ import {
 } from "../src/ringfall/meta/profile";
 import { stashCap } from "../src/ringfall/meta/hideout";
 import { newRun, starterKit } from "../src/ringfall/sim/state";
+import { ITEM_SECTION, rows } from "../src/ringfall/view/hub";
 
 const errors: string[] = [];
 const check = (ok: boolean, what: string) => {
@@ -68,6 +69,22 @@ while (cur.pending.length) {
   cur = r!.profile;
 }
 check(!needsOrganize(cur), "done");
+
+// Stacked rows: identical heals collapse; sell still removes one.
+{
+  const stacked = rows([
+    { t: "heal", kind: "cell" },
+    { t: "heal", kind: "cell" },
+    { t: "valuable", kind: "wire" },
+    { t: "valuable", kind: "wire" },
+    { t: "valuable", kind: "parts" },
+  ]);
+  check(stacked.length === 3, `rows stack length ${stacked.length}`);
+  check(stacked[0]!.index.length === 2 && stacked[0]!.item.t === "heal", "heals stacked");
+  check(stacked[1]!.item.t === "valuable" && stacked[1]!.index.length === 2, "wire stacked");
+  check(stacked[2]!.item.t === "valuable" && stacked[2]!.index.length === 1, "parts alone");
+  check(ITEM_SECTION.weapon === "武器" && ITEM_SECTION.valuable === "回収品", "section labels");
+}
 
 if (errors.length) {
   for (const e of errors) console.error(`FAIL ${e}`);

@@ -204,9 +204,21 @@ export const itemColor = (i: Item) =>
 const itemShade = (i: Item) =>
   i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" || i.t === "tool" ? RARITY_CSS[3] : "var(--white)";
 
-/** Weapons, armour and keys are listed one by one; heals and valuables are counted. */
-function rows(stash: Item[]): { item: Item; index: number[] }[] {
-  const out: { item: Item; index: number[] }[] = [];
+/** Player-facing type headers (棚・屋台・整理). Existing kit / objective words only. */
+export const ITEM_SECTION: Record<Item["t"], string> = {
+  weapon: "武器",
+  armor: "アーマー",
+  key: "鍵",
+  tool: "道具",
+  heal: "回復",
+  valuable: "回収品",
+};
+
+export type StashRow = { item: Item; index: number[] };
+
+/** Weapons, armour and keys are listed one by one; heals, valuables and tools are counted. */
+export function rows(stash: Item[]): StashRow[] {
+  const out: StashRow[] = [];
   stash.forEach((item, n) => {
     if (item.t === "heal" || item.t === "valuable" || item.t === "tool") {
       const row = out.find((r) => r.item.t === item.t && (r.item as { kind: string }).kind === item.kind);
@@ -217,6 +229,18 @@ function rows(stash: Item[]): { item: Item; index: number[] }[] {
   const order = { weapon: 0, armor: 1, key: 2, tool: 3, heal: 4, valuable: 5 };
   // The starter weapons head the weapons.
   return out.sort((a, b) => order[a.item.t] - order[b.item.t] || Number(isStarter(b.item)) - Number(isStarter(a.item)));
+}
+
+/** Inserts a type header before each new `Item.t` group (order from `rows`). */
+export function withSectionHeaders(list: StashRow[], rowHtml: (row: StashRow) => string): string {
+  let last: Item["t"] | null = null;
+  return list
+    .map((row) => {
+      const head = row.item.t !== last ? `<h4 class="item-section">${ITEM_SECTION[row.item.t]}</h4>` : "";
+      last = row.item.t;
+      return head + rowHtml(row);
+    })
+    .join("");
 }
 
 /**
@@ -1318,19 +1342,18 @@ export class Hub {
     this.fixStart();
     if (panel.stash) {
       const used = new Set([...this.load.weapons, ...this.load.keys, ...(this.load.armor === null ? [] : [this.load.armor])]);
+      const list = rows(p.stash);
       $("hub-stash").innerHTML =
-        rows(p.stash)
-          .map(({ item, index }) => {
-            const on = kit && used.has(index[0]);
-            // When the start is a depot, each pick shows what it costs of the depot's allowance.
-            const cost = kit && this.from && itemCost(item) > 0 ? `枠 ${itemCost(item)}` : "";
-            // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
-            const fixed = isStarter(item);
-            const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
-            const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
-            return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
-          })
-          .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
+        withSectionHeaders(list, ({ item, index }) => {
+          const on = kit && used.has(index[0]);
+          // When the start is a depot, each pick shows what it costs of the depot's allowance.
+          const cost = kit && this.from && itemCost(item) > 0 ? `枠 ${itemCost(item)}` : "";
+          // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
+          const fixed = isStarter(item);
+          const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
+          const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
+          return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
+        }) || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
     $("hub-side-title").textContent = shop
       ? TERM.wares
@@ -1350,9 +1373,13 @@ export class Hub {
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);
       // Full lock-note sits beside the stash count (capMeter). Buys stay shut while full.
-      $("hub-side").innerHTML = shelfTiers(p) + wares(p)
-        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
-        .join("");
+      const goods = wares(p).map((item, n) => ({ item, index: [n] }));
+      $("hub-side").innerHTML =
+        shelfTiers(p) +
+        withSectionHeaders(goods, ({ item, index }) => {
+          const n = index[0]!;
+          return `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`;
+        });
     } else $("hub-side").innerHTML = this.kitPanel();
     // The shelves' footer: what the next raid takes out, in a line.
     $("hub-foot").hidden = !kit;
