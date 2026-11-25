@@ -861,8 +861,15 @@ export class Hub {
    * Keeps the chosen start one the profile allows: a depot still on, a region with a known way in
    * or a depot on (else the reservoir, whose first way in is always known), a known way in of it,
    * and a depot when the region has no known way in.
+   * Field sorties (作り順⑤) keep the battlefield entry — home-island unlocks do not apply.
    */
   private fixStart() {
+    if (this.fieldSortie) {
+      this.from = null;
+      this.region = FIELD_REGION;
+      this.entry = FIELD_ENTRY;
+      return;
+    }
     const p = this.profile;
     if (this.from && !departDepots(p).includes(this.from)) this.from = null;
     if (!canStartIn(p, this.region)) {
@@ -1061,22 +1068,24 @@ export class Hub {
   launch(): Launch | null {
     this.fixStart();
     // Field sorties never start from a depot (allowance / home island).
-    const from = this.fieldSortie ? null : this.from;
+    const field = this.fieldSortie;
+    const from = field ? null : this.from;
     const taken = takeKit(this.profile, this.startLoad(), from);
     if (!taken) return null;
     const { profile, kit } = taken;
-    const field = this.fieldSortie;
+    const region = field ? FIELD_REGION : this.region;
+    const entry = field ? FIELD_ENTRY : (this.entry ?? this.profile.entry);
     // The start is remembered for the next departure, which opens on it (home raids only).
-    if (!field) this.set({ ...profile, region: this.region, entry: this.entry ?? this.profile.entry });
+    if (!field) this.set({ ...profile, region, entry });
     else this.set(profile);
     this.load = emptyLoadout();
     this.fieldSortie = false;
     return {
       kit,
-      region: this.region,
+      region,
       seed: this.profile.seed,
       from: from ?? undefined,
-      entry: this.entry ?? this.profile.entry,
+      entry,
       ...(field ? { teamField: true } : {}),
     };
   }

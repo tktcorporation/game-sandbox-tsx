@@ -786,7 +786,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     opened.push(r.id);
     spent.add(i);
   }
-  // Field sorties (作り順⑤): captures write field holds, not home-island poiState.
+  // Field sorties (作り順⑤): captures write field holds, not home-island poiState / depots / entries.
   const fieldRaid = !!s.teamField;
   const day = fieldRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
@@ -795,10 +795,19 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const { profile, pending } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
   // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
-  const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
-  // A record of a raid kept from before ways in were learned has walked to none.
-  const learned = s.outcome === "extracted" ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e)) : [];
+  // Field raids enable synthetic depots for every "own" field node — never copy those into the home profile.
+  const depots = fieldRaid
+    ? [...p.depots]
+    : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
+  const depotSent = fieldRaid
+    ? { ...p.depotSent }
+    : Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
+  // Field raids start on the battlefield entry without unlocking it as a home way in.
+  const learned = fieldRaid
+    ? ([] as EntryId[])
+    : s.outcome === "extracted"
+      ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e))
+      : [];
   const entries = knownEntries([...p.entries, ...learned]);
   const freedAt = { ...p.freedAt };
   for (const id of change.gained) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);

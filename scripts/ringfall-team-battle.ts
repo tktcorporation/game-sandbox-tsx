@@ -139,14 +139,23 @@ const SALT = 42;
     entry: "outskirts",
   });
   assert.equal(s.teamField, true);
+  // Owned field hubs (and non-field "cleared" nodes) switch depots on in the raid — must not stick to the home profile.
+  assert.ok(s.depots.some(Boolean), "field raid enables synthetic depots");
+  assert.ok(s.found.includes("outskirts"), "field start walks the battlefield entry");
   // Force extract without captures.
   s.outcome = "extracted";
   s.player.haul = [];
+  const depotsBefore = [...p0.depots];
+  const depotSentBefore = JSON.stringify(p0.depotSent);
+  const entriesBefore = [...p0.entries];
   const settled = settle(p0, s);
   assert.equal(JSON.stringify(settled.profile.poiState), homeBefore, "home island unchanged by field raid");
+  assert.deepEqual(settled.profile.depots, depotsBefore, "field depots stay off the home profile");
+  assert.equal(JSON.stringify(settled.profile.depotSent), depotSentBefore, "field sends do not level home depots");
+  assert.deepEqual(settled.profile.entries, entriesBefore, "battlefield entry is not learned as a home way in");
   assert.ok(settled.profile.teamBattle);
   assert.ok(settled.profile.teamBattle!.sortied.includes(p0.day));
-  console.log("field raid: home poiState intact, sortie marked");
+  console.log("field raid: home poiState/depots/entries intact, sortie marked");
 }
 
 console.log("ringfall-team-battle: ok");
