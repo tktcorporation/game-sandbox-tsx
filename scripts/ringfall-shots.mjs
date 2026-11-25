@@ -1782,7 +1782,8 @@ lap("island");
     else await walkOutOfGate(pg);
     await pg.evaluate(() => window.ringfallStep(1500));
     const r0 = await readOf(pg);
-    if (r0.threat !== 3 || !/強度 3/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
+    // Island liberation / cycle 強度 is gone: profile raids play at 0 (no 「強度 N」 on the card).
+    if (r0.threat !== 0 || /強度/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
     await pg.evaluate(() => window.ringfallMods.wear(["leech", "scrambler", "capacitor"]));
     await pg.evaluate(() => window.advanceTime(100));
     const chips = await pg.locator("#mods i").allTextContents();
@@ -1821,7 +1822,7 @@ lap("island");
     await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
     const r2 = await readOf(pg);
     const cards = await pg.locator("#home .analyse [data-analyse]").count();
-    if (r2.screen !== "results" || r2.settled?.threat !== 3 || r2.settled?.analysable?.length !== 3 || cards !== 3) errors.push(`mods: the results offer ${JSON.stringify(r2.settled && { threat: r2.settled.threat, analysable: r2.settled.analysable })} (${cards} cards)`);
+    if (r2.screen !== "results" || r2.settled?.threat !== 0 || r2.settled?.analysable?.length !== 3 || cards !== 3) errors.push(`mods: the results offer ${JSON.stringify(r2.settled && { threat: r2.settled.threat, analysable: r2.settled.analysable })} (${cards} cards)`);
     await pg.locator("#home .analyse").scrollIntoViewIfNeeded().catch(() => undefined);
     await pg.screenshot({ path: tag("83-results-analysis.png", "m33-results-analysis.png") });
     const card = "#home .analyse [data-analyse=scrambler]";
