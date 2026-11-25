@@ -2000,6 +2000,51 @@ body.touch #hub-close kbd {
   font-size: 13px;
   font-weight: 800;
 }
+/* 作り順④: 4-person team board on the signal station. */
+.team-board {
+  margin: 0 0 12px;
+  padding: 0 0 4px;
+}
+.team-board .mod-head {
+  margin-bottom: 6px;
+}
+.team-board .mod-head strong {
+  font-size: 14px;
+}
+.team-fill {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-left: 8px;
+}
+.team-seats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.team-seat {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--plate);
+  text-align: left;
+}
+.team-seat.mine {
+  box-shadow: inset 3px 0 0 var(--sky);
+}
+.team-seat b {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--white);
+}
+.team-seat small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.team-seat .exp-held {
+  margin: 2px 0;
+}
 /* What a pick costs of a depot start's allowance. */
 #hub .item b.cost {
   color: var(--mate-light);

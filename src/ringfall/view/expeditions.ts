@@ -3,17 +3,19 @@
  *
  * 能動的な遠征送信・出ている遠征一覧は置かない。本パネルはお隣の偵察、トロフィー、島の番号の確認を担う（`#hub-exped`）。
  */
-import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
+import { aiOvernight, aiSalt, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { expeditionsOut, numbered, dropStale, recallAll, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
-import type { Profile } from "../meta/profile";
+import { bindTeam, type Profile } from "../meta/profile";
+import { loadIdentity } from "../meta/identity";
 import { NODES, nodeIndex } from "../sim/map";
-import { lostTodayLine, shieldLine, TERM } from "./copy";
+import { lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
+import { outerCap, TEAM, type Team } from "../meta/team";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
@@ -83,7 +85,10 @@ export class ExpeditionPanel {
     const p0 = refreshAi(this.get());
     // Codex / PR6: 出ている遠征 UI 削除後もセーブやセッションに残る遠征は引き上げ → flushRecalls が DELETE。
     const retired = recallAll(dropStale(p0.expeditions, Date.now()).filter((e) => e.state !== "sending" && e.id > 0));
-    if (retired !== p0.expeditions || p0 !== this.get()) this.put({ ...p0, expeditions: retired });
+    // 作り順④: refresh team seats / outer counts against this browser's identity.
+    const who = loadIdentity();
+    const teamBound = bindTeam({ ...p0, expeditions: retired }, { id: who.id, name: who.name, code: who.code }, aiSalt());
+    if (teamBound !== this.get()) this.put(teamBound);
     // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
     this.neighbours = neighboursFor(this.get());
     if (this.conn.t !== "ok") this.conn = { t: "wait" };
@@ -225,8 +230,10 @@ export class ExpeditionPanel {
         : guard.lost > 0
           ? `<p class="exp-shield">${esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))}</p>`
           : "";
+    // 作り順④: team board (4 seats + outer hub counts) before お隣.
+    const team = this.teamBoard(p.team);
     // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
-    const head = `${trop}${shield}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
+    const head = `${trop}${shield}${team}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
     // Island codes: folded away from daily entry (お隣 cards are the primary).
@@ -243,6 +250,24 @@ export class ExpeditionPanel {
               `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button></div>` +
               `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="友達の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div></details>`;
     return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${browse}<div class="exp-foot">${own}</div></div></div>`;
+  }
+
+  /**
+   * 作り順④: four seats with outer-hub counts (部隊戦の力・得点はまだ出さない).
+   * AI seats show 「 · AI」 like neighbours; caption uses TERM.aiMate once for the fill.
+   */
+  private teamBoard(team: Team | undefined): string {
+    if (!team?.members?.length) return "";
+    const cap = Math.max(1, outerCap());
+    const seats = team.members.slice(0, TEAM.size).map((m) => {
+      const who = m.ai ? `${esc(m.name)}<span class="ai-tag">AI</span>` : esc(memberLabel(m));
+      const held = `<span class="exp-held" style="--w:${Math.round((100 * m.outer) / cap)}%"></span>`;
+      const foot = `<small>${esc(teamOuterLine(m.outer))}</small>`;
+      const mine = m.ai ? "" : " mine";
+      return `<div class="team-seat${mine}"><b>${who}</b>${held}${foot}</div>`;
+    });
+    const fill = team.members.some((m) => m.ai) ? `<small class="team-fill">${esc(TERM.aiMate)}</small>` : "";
+    return `<div class="team-board"><div class="mod-head"><strong>${TERM.team}</strong>${fill}</div><div class="team-seats">${seats.join("")}</div></div>`;
   }
 
   /** Neighbours as a board, plus a looked-up island's nodes (read-only; no send button). */

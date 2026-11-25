@@ -1163,7 +1163,7 @@ export class Hub {
   }
 
   /**
-   * The signal station's panel (信号所): お隣・島の知らせの控え（遠征ボタンなし・E4）.
+   * The signal station's panel (信号所): チーム・お隣・島の知らせの控え（遠征ボタンなし・E4）.
    * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
    */
   private signalPanel(): string {

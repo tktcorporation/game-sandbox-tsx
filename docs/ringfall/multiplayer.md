@@ -216,6 +216,7 @@ API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束�
 - **新しいプレイヤーの保護**：始めて数日の島には攻めが来ない。
 - **その日の守り（方向 A）**：取られた拠点は、その日のうちは取られない。
 - **島の盾・喪失上限（作り順③）**：外側の拠点を 1 つ取られたら、残りの自分の外側拠点は **その UTC 日の終わりまで** 取れない（既存の `shielded` に `island` 旗）。1 UTC 日に失える外側拠点は最大 `OUTER_GUARD.lossCap`（**1**）。野営・信号所に「守り中 · あと …」／「今日取られた n/1」。`npx tsx scripts/ringfall-outer-guard.ts`。[design-direction.md](design-direction.md)
+- **4 人チーム（作り順④）**：全員が 4 人チームに属する。空きは **AIの仲間**（お隣の AI の島とは別。自分の島と外側拠点を持つ）。Profile **v46** `team`（`meta/team.ts`）。信号所に 4 席と各人の外側の拠点数。部隊戦の場・力・懸賞金・得点はまだ無い（⑤⑥）。`npx tsx scripts/ringfall-team.ts`。[design-direction.md](design-direction.md)
 - **来る遠征の上限**：（レガシー）1 つの島に同時に来る遠征隊の数と、1 日に取られる拠点の数に上限を置く。
 - **取れない拠点**：発着場（タイタン）は取れない。島から締め出されることが無いようにするため。内側の拠点、野営、倉庫、作業場、工場も取れない。取られうるのは外側の拠点すべて（作り順②・`sim/contested-outer.ts`）。[design-direction.md](design-direction.md)
 

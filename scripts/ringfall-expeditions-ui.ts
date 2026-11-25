@@ -430,12 +430,14 @@ function island(freed: string[], rival: string[] = []): Profile {
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(current?.v === 45 && current.expeditions.length === 1 && current.expeditions[0]!.state === "recalling" && current.expeditions[0]!.id === 2 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not recall its expeditions / keep log and nodes taken back");
-  check(v27?.v === 45 && v27.expeditions.length === 1 && v27.expeditions[0]!.state === "recalling" && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not recall its expeditions / keep log and nodes taken back");
+  check(current?.v === 46 && current.expeditions.length === 1 && current.expeditions[0]!.state === "recalling" && current.expeditions[0]!.id === 2 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not recall its expeditions / keep log and nodes taken back");
+  check(v27?.v === 46 && v27.expeditions.length === 1 && v27.expeditions[0]!.state === "recalling" && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not recall its expeditions / keep log and nodes taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, expeditions: [{ code: A, node: "relay", sentAt: 5, id: 0, units: 3, state: "sending" }] })))?.expeditions.length === 0, "saves: a sending expedition was kept after send UI removal");
-  check(v26?.v === 45 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(v26?.v === 46 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
   check(current?.outerGuard && current.outerGuard.lost === 0 && !current.outerGuard.island, "saves: outerGuard missing on current");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 44 })))?.outerGuard.lost === 0, "saves: v44 did not gain empty outerGuard");
+  check(current?.team?.members.length === 4 && current.team.members.filter((m) => m.ai).length === 3, "saves: team missing or not 4 with AI fill");
+  check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 45, team: undefined })))?.team.members.length === 4, "saves: v45 did not gain a 4-person team");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");

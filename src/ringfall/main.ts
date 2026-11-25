@@ -11,7 +11,7 @@ import { POI_AT } from "./sim/areas";
 import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { analyse, bindTeam, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
@@ -591,8 +591,11 @@ let profileBefore: Profile | null = null;
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const loaded = loadProfile();
+// 作り順④: bind the 4-person team to this browser's identity (AI の仲間 fill empty seats).
+const who0 = loadIdentity();
+const withTeam = bindTeam({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, { id: who0.id, name: who0.name, code: who0.code }, aiSalt());
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
-const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => {
+const hub = new Hub(withTeam, () => {
   // 地図で見る: goal already set in the hub; open the departure framed on that POI / nearest start.
   if (hub.focusPoi && camping && !running) {
     const poi = hub.focusPoi;

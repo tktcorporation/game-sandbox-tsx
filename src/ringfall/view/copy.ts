@@ -40,6 +40,9 @@ export type TermId =
   | "revenge"
   | "shielding"
   | "lostToday"
+  | "team"
+  | "aiMate"
+  | "outerHubs"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -117,6 +120,21 @@ export const TERM = {
    * 【元】（なし） 【案】今日取られた 【理由】喪失上限が見える。内部名は出さない
    */
   lostToday: "今日取られた",
+  /**
+   * 4-person team board (作り順④).
+   * 【元】（なし） 【案】チーム 【理由】部隊戦の片側。新しい別名を増やさない
+   */
+  team: "チーム",
+  /**
+   * AI fill seat on a team (作り順④).
+   * 【元】（なし）／AIの味方 【案】AIの仲間 【理由】味方は戦場の語。仲間は席の埋め
+   */
+  aiMate: "AIの仲間",
+  /**
+   * Outer contested hub count on the team board (作り順④).
+   * 【元】（なし）／拠点 【案】外側の拠点 【理由】取り合う外側だけを数えると分かる
+   */
+  outerHubs: "外側の拠点",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -450,6 +468,14 @@ export function lostTodayLine(lost: number, cap: number): string {
 }
 
 /**
+ * Team board seat line (作り順④): outer hub count.
+ * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種が見える（力そのものはまだ出さない）
+ */
+export function teamOuterLine(outer: number): string {
+  return `${TERM.outerHubs} ${outer}`;
+}
+
+/**
  * Scout loot line under an 攻める row (TKT-204 案 B).
  * 【元】（なし） 【案】トロフィー +32 【理由】取ればいくつ増えるかを先に見せる
  */
@@ -479,8 +505,9 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
 /** Guide next / done button labels (TKT-204 案 C). */
 export const mpHowtoNext = (last: boolean): string => (last ? "分かった" : "次へ");
 
-/** Re-export for view callers (canonical: meta/neighbours.ts). */
+/** Re-export for view callers (canonical: meta/neighbours.ts / meta/team.ts). */
 export { aiLabel } from "../meta/neighbours";
+export { memberLabel } from "../meta/team";
 
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;
