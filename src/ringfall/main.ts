@@ -811,7 +811,7 @@ function campFrame() {
   const p = hub.profile;
   // One next hand on the line (design-direction): grow the base if ready, else sortie at the gate.
   const tip = p.raids === 0 ? `${TERM.gate}から${TERM.sortie}` : hub.nextHand().replace(/^次：/, "");
-  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
+  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), trophies: p.trophies ?? 0, touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
 }
 
 /** Ground under the look ray, for a local ping (view only). */
@@ -916,6 +916,7 @@ function start(go: Launch, from?: State) {
   hud.show(true);
   hud.setKnown(hub.profile.entries);
   hud.setPouch(pouchSlots(hub.profile.hideout));
+  hud.setTrophies(hub.profile.trophies ?? 0);
   hud.bag.setProfile(hub.profile);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);

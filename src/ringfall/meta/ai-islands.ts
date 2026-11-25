@@ -19,6 +19,7 @@ import { lentRivals, type Incoming, type IslandLogEntry, type IslandView, type L
 import { LOCAL_AID, type Parcel } from "./parcels";
 import type { RivalExpedition } from "../sim/battle";
 import { CONTESTED_SHORES, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
+import { TROPHY, clampTrophies } from "./trophies";
 import type { Island } from "./island";
 
 /** The numbers of the game's islands. */
@@ -134,8 +135,26 @@ export function aiLast(a: AiIsland, salt: number, day: number, now: number): Non
   return { at, captured, home: hash(salt, a.slot, day, 9) % 5 !== 0 };
 }
 
+/**
+ * Ranking standings for an AI neighbour: near `TROPHY.start`, nudged by how many nodes it holds
+ * so the map can show a number beside the name (お隣の組み合わせは本物の島のトロフィーで組む).
+ */
+export const aiTrophies = (a: AiIsland, salt: number, day: number): number =>
+  clampTrophies(TROPHY.start + (aiHeld(a, salt, day) - AI.held.first) * 20 + ((hash(salt, a.slot, 41) % 41) - 20));
+
 /** Its island as a neighbour of the player on day `day`, at `now`. */
-export const aiNeighbour = (a: AiIsland, salt: number, day: number, now: number): Neighbour => ({ code: a.code, name: a.name, held: aiHeld(a, salt, day), total: NODES.length, day, slot: a.slot, last: aiLast(a, salt, day, now), ai: true });
+export const aiNeighbour = (a: AiIsland, salt: number, day: number, now: number): Neighbour => ({
+  code: a.code,
+  name: a.name,
+  held: aiHeld(a, salt, day),
+  total: NODES.length,
+  day,
+  slot: a.slot,
+  factory: aiFactory(day),
+  trophies: aiTrophies(a, salt, day),
+  last: aiLast(a, salt, day, now),
+  ai: true,
+});
 
 const nodeSalt = (id: string) => {
   let h = 0;

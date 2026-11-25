@@ -208,6 +208,33 @@ kbd {
   display: none;
 }
 
+/* CoC-style ranking readout: always top-left (camp has its own; this is the raid HUD). */
+#hud-trophy {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  background: var(--plate);
+  pointer-events: none;
+  font-family: var(--jp);
+  box-shadow: inset 3px 0 0 var(--sky);
+}
+#hud-trophy small {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+}
+#hud-trophy b {
+  font-family: var(--num);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--white);
+  line-height: 1;
+}
+
 #compass {
   position: absolute;
   top: 14px;
@@ -413,7 +440,8 @@ body.touch #obj-raid .why {
 
 #objective {
   position: absolute;
-  top: 16px;
+  /* Below #hud-trophy (CoC left stack: trophies, then the day's ask). */
+  top: 48px;
   left: 18px;
   display: grid;
   grid-template-columns: auto auto;
@@ -2293,9 +2321,18 @@ body.touch #vitals {
  * Three short rows that end above the vitals (top 92px): objective and haul, raid clock and
  * alert state, the nearest exit. The empty ::after takes a full row to break after the haul.
  */
+body.touch #hud-trophy {
+  top: max(8px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  padding: 3px 8px 3px 6px;
+}
+body.touch #hud-trophy b {
+  font-size: 16px;
+}
 body.touch #objective {
   left: max(12px, env(safe-area-inset-left));
-  top: 10px;
+  /* Below the always-on trophy badge. */
+  top: 38px;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2935,6 +2972,9 @@ body:not(.playing) #banner {
   font-family: var(--num);
   font-size: 24px;
   color: var(--hot);
+}
+#camp-head .camp-trop b {
+  color: var(--white);
 }
 #camp-hint {
   font-size: 13px;
@@ -4845,6 +4885,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 .exp-near small.shut {
   color: var(--muted);
+}
+#hub .exp-near small.exp-n-trop {
+  color: var(--muted);
+  font-weight: 800;
 }
 .exp-held {
   height: 4px;
