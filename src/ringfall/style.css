@@ -1637,6 +1637,12 @@ body.camp #pause .keys .raid {
   font-size: 12px;
   padding: 2px 8px;
 }
+/* Already the hunt target: lit so a second look does not look like an unset button. */
+.src-goal.on {
+  background: rgb(var(--hot-rgb) / 0.22);
+  color: var(--hot-light);
+  box-shadow: inset 0 0 0 1px rgb(var(--hot-rgb) / 0.55);
+}
 .req .srcs {
   display: block;
   margin-top: 2px;

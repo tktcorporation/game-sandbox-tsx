@@ -582,7 +582,7 @@ let analysed: ModKind | null = null;
 const loaded = loadProfile();
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => {
-  // 地図で見る: open the departure framed on that POI's region / nearest start.
+  // 地図で見る: goal already set in the hub; open the departure framed on that POI / nearest start.
   if (hub.focusPoi && camping && !running) {
     const poi = hub.focusPoi;
     hub.focusPoi = null;

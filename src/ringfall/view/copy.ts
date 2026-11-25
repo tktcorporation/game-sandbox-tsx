@@ -52,6 +52,7 @@ export type TermId =
   | "whereFound"
   | "seeOnMap"
   | "setGoal"
+  | "goalActive"
   | "goal";
 
 /**
@@ -124,10 +125,15 @@ export const TERM = {
   confirmOrganize: "確定",
   /** Entry on a material row to open sources. */
   whereFound: "どこで取れる",
-  /** Sources → departure map on that POI. */
+  /** Sources → set that valuable as the goal and open the departure map on that POI. */
   seeOnMap: "地図で見る",
   /** Mark a valuable as the hunt target. */
   setGoal: "目標にする",
+  /**
+   * Shown instead of 目標にする while that valuable is already the hunt target.
+   * 【元】目標にする（押しても状態が分からない） 【案】目標にしている 【理由】いまの目標が一目で分かる
+   */
+  goalActive: "目標にしている",
   /** Raid toast / map prefix for the hunt target. */
   goal: "目標",
 } as const satisfies Record<TermId, string>;
