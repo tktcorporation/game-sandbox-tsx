@@ -5286,11 +5286,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
   #organize .hub-cols[data-tab="stash"] #org-pending-col {
     display: none;
   }
-  /* Column titles duplicate the tabs — hide them to save height. */
-  #hub .hub-cols:not(.one) .hub-col > h3,
-  #hub .hub-cols:not(.one) .hub-col > .hub-cap-head,
+  /* Side column title duplicates the tab; keep 倉庫's cap head (count + bar). */
+  #hub .hub-cols:not(.one) #hub-side-col > h3,
   #organize .hub-cols .hub-col > h3 {
     display: none;
+  }
+  #hub .hub-cols:not(.one) .hub-cap-head {
+    margin: 0 0 4px;
   }
   .hub-inner {
     height: min(720px, 100%);
