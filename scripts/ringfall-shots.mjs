@@ -19,7 +19,6 @@ import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
 import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
-import { finaleShots } from "./ringfall-shots-finale.mjs";
 import { expeditionShots } from "./ringfall-shots-expeditions.mjs";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
 import { audited, clearAudit, judge } from "./ringfall-ui-audit.mjs";
@@ -1742,17 +1741,15 @@ const islandDay = {
 lap("island");
 
 /*
- * Mod parts and the round's 強度. A profile on cycle 3 plays at 強度 3 (desktop and phone), which
- * the raid plays at and the objective card names, and the map marks each POI's best; three
- * parts worn show on the HUD (desktop and phone), the vitals still clear of the objective card;
- * a part on the ground is drawn and named by the prompt, and the use key swaps it in for the
- * oldest; home alive, the results offer the parts for analysis, and analysing one learns its kind.
+ * Mod parts. The map marks each POI's best 強度; three parts worn show on the HUD (desktop and
+ * phone), the vitals still clear of the objective card; a part on the ground is drawn and named
+ * by the prompt, and the use key swaps it in for the oldest; home alive, the results offer the
+ * parts for analysis, and analysing one learns its kind.
  */
 {
   const modGame = {
     v: 28, cash: 2400, stash: [], raids: 8, extracted: 6, time: 5000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 2468, day: 9,
     depots: ["supply"], threat: 0, known: ["leech", "hush", "grip", "medic", "probe", "damper"], freedAt: { supply: 3 },
-    cycle: 3, cycleDay: 1, liberations: [5, 6, 7],
     hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
     poiState: { supply: { state: "freed", lastVisit: 8, since: 0 } },
   };
@@ -1785,7 +1782,8 @@ lap("island");
     else await walkOutOfGate(pg);
     await pg.evaluate(() => window.ringfallStep(1500));
     const r0 = await readOf(pg);
-    if (r0.threat !== 3 || !/強度 3/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
+    // Island liberation / cycle 強度 is gone: profile raids play at 0 (no 「強度 N」 on the card).
+    if (r0.threat !== 0 || /強度/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
     await pg.evaluate(() => window.ringfallMods.wear(["leech", "scrambler", "capacitor"]));
     await pg.evaluate(() => window.advanceTime(100));
     const chips = await pg.locator("#mods i").allTextContents();
@@ -1824,7 +1822,7 @@ lap("island");
     await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
     const r2 = await readOf(pg);
     const cards = await pg.locator("#home .analyse [data-analyse]").count();
-    if (r2.screen !== "results" || r2.settled?.threat !== 3 || r2.settled?.analysable?.length !== 3 || cards !== 3) errors.push(`mods: the results offer ${JSON.stringify(r2.settled && { threat: r2.settled.threat, analysable: r2.settled.analysable })} (${cards} cards)`);
+    if (r2.screen !== "results" || r2.settled?.threat !== 0 || r2.settled?.analysable?.length !== 3 || cards !== 3) errors.push(`mods: the results offer ${JSON.stringify(r2.settled && { threat: r2.settled.threat, analysable: r2.settled.analysable })} (${cards} cards)`);
     await pg.locator("#home .analyse").scrollIntoViewIfNeeded().catch(() => undefined);
     await pg.screenshot({ path: tag("83-results-analysis.png", "m33-results-analysis.png") });
     const card = "#home .analyse [data-analyse=scrambler]";
@@ -2315,8 +2313,6 @@ lap("movement");
 await bagShots({ browser, port, out, errors });
 lap("bag");
 await upgradeShots({ browser, port, out, errors });
-// The decisive battle: the camp's card, the pad ringed on the departure map, the raid's objective.
-await finaleShots({ browser, port, out, errors });
 await expeditionShots({ browser, port, out, errors });
 lap("upgrades");
 }

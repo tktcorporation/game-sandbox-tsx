@@ -5,6 +5,7 @@
  * Pure: the answer read here, the requests in island-net.ts.
  */
 import { isAiOwner } from "../sim/holds";
+import { CONTESTED_OUTER_IDS } from "./contested-outer-table";
 import { isIslandCode } from "./island-code";
 import type { NodeId } from "../sim/map";
 
@@ -48,12 +49,17 @@ export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[]
 ];
 
 /**
- * Coastal hubs contested with a neighbour (方向 A / TKT-195): 観測所・浄水場・ロボット工場・追跡レーダー.
- * Holding one counts toward 「島の解放まで · 拠点 あと N」; 16 is still reachable without them.
+ * Outer-edge hubs contested with neighbours (作り順② / design-direction.md): every freeable hub on
+ * the island's outer edge (sea or world bound). Ids come from the Worker-safe table
+ * (`contested-outer-table.ts`), kept in sync with `outerFacingHubs()` by
+ * `scripts/ringfall-contested-outer.ts`. The four `NEIGHBOUR_SLOTS[].shore` remain the sea-route faces.
  */
-export const CONTESTED_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
+export const CONTESTED_SHORES: readonly NodeId[] = CONTESTED_OUTER_IDS as readonly NodeId[];
 
 export const isContestedShore = (id: NodeId | string): boolean => (CONTESTED_SHORES as readonly string[]).includes(id);
+
+/** The four hubs that open a sea route to a neighbour slot (unchanged from direction A). */
+export const ROUTE_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
 
 /** Whether the sea route to neighbour slot `k` is open: the player holds the node facing it. */
 export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);

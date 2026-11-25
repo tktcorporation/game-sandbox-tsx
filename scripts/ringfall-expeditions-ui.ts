@@ -327,7 +327,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(squadsAway(out) === 1 && squadsRemaining(out) === factorySquads(out) - 1, "sending: a send being made does not take its squad");
   check(done.length === 1 && done[0].state === "coming" && done[0].id === 9 && done[0].units === 4, "sending: the answer did not make it the server's expedition");
   check(refused.length === 0, "sending: a refused send kept its squad");
-  check(refreshOutgoing(out.expeditions, A, { [B]: { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [] } })[0] === pending, "sending: a refresh made a send being made gone");
+  check(refreshOutgoing(out.expeditions, A, { [B]: { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, shieldUntil: 0, outerLost: 0, outerLossCap: 1, nodes: [], expeditions: [] } })[0] === pending, "sending: a refresh made a send being made gone");
   check(parseOutgoing(JSON.parse(JSON.stringify(out.expeditions))).length === 1, "sending: a save dropped a send being made");
   // Unanswered: kept for SENDING_MS, then dropped; other expeditions stay however old.
   const held: Outgoing = { code: B, node: "yard", sentAt: 0, id: 3, units: 2, state: "holding" };
@@ -339,14 +339,14 @@ function island(freed: string[], rival: string[] = []): Profile {
   // A refresh asked for the island's view while the send was out; the send was answered before the view was applied.
   const asked = numbered(list);
   const answered = answerSend(list, pending, 9, 3);
-  const older = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [{ id: 3, by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
+  const older = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, shieldUntil: 0, outerLost: 0, outerLossCap: 1, nodes: [], expeditions: [{ id: 3, by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
   const raced = refreshOutgoing(answered, A, { [B]: older }, asked);
   console.log(`sending: answered while the view was out -> ${raced.map((o) => `${o.node}:${o.state}`).join(" ")}`);
   check(raced.find((o) => o.node === "relay")?.state === "coming" && raced.find((o) => o.node === "yard")?.state === "holding", "sending: a send answered while a view of its island was out was judged by that older view");
   // A defeated expedition and its replacement at the same node: each is matched by its own number.
   const dead: Outgoing = { code: B, node: "yard", sentAt: 0, id: 3, units: 2, state: "attacking" };
   const fresh: Outgoing = { code: B, node: "yard", sentAt: 1, id: 7, units: 2, state: "coming" };
-  const view = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [{ id: 7, by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
+  const view = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, shieldUntil: 0, outerLost: 0, outerLossCap: 1, nodes: [], expeditions: [{ id: 7, by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
   const both = refreshOutgoing([dead, fresh], A, { [B]: view });
   console.log(`replaced: the defeated one ${both[0].state}, its replacement ${both[1].state}`);
   check(both[0].state === "gone" && both[1].state === "holding", "replaced: a defeated expedition took its replacement's state (paid twice for one node)");
@@ -425,16 +425,17 @@ function island(freed: string[], rival: string[] = []): Profile {
 {
   const p = { ...newProfile(4), expeditions: [{ code: A, node: "relay" as const, sentAt: 5, id: 2, units: 3, state: "holding" as const }], logSeq: 7, retaken: ["quarry" as const, "relay" as const] };
   const current = parseProfile(JSON.parse(JSON.stringify(p)));
-  const { cycle: _cycle, cycleDay: _cycleDay, liberations: _liberations, ...beforeV28 } = p;
-  const v27 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV28, v: 27 })));
-  const { expeditions: _expeditions, logSeq: _logSeq, retaken: _retaken, ...beforeV27 } = beforeV28;
+  const v27 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 27 })));
+  const { expeditions: _expeditions, logSeq: _logSeq, retaken: _retaken, ...beforeV27 } = p;
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(current?.v === 41 && current.expeditions.length === 1 && current.expeditions[0]!.state === "recalling" && current.expeditions[0]!.id === 2 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not recall its expeditions / keep log and nodes taken back");
-  check(v27?.v === 41 && v27.expeditions.length === 1 && v27.expeditions[0]!.state === "recalling" && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not recall its expeditions / keep log and nodes taken back");
+  check(current?.v === 45 && current.expeditions.length === 1 && current.expeditions[0]!.state === "recalling" && current.expeditions[0]!.id === 2 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not recall its expeditions / keep log and nodes taken back");
+  check(v27?.v === 45 && v27.expeditions.length === 1 && v27.expeditions[0]!.state === "recalling" && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not recall its expeditions / keep log and nodes taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, expeditions: [{ code: A, node: "relay", sentAt: 5, id: 0, units: 3, state: "sending" }] })))?.expeditions.length === 0, "saves: a sending expedition was kept after send UI removal");
-  check(v26?.v === 41 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(v26?.v === 45 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(current?.outerGuard && current.outerGuard.lost === 0 && !current.outerGuard.island, "saves: outerGuard missing on current");
+  check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 44 })))?.outerGuard.lost === 0, "saves: v44 did not gain empty outerGuard");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");

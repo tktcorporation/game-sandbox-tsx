@@ -27,9 +27,6 @@ const SAVE = {
   seed: 4242,
   day: 14,
   factory: 3,
-  cycle: 0,
-  cycleDay: 14,
-  liberations: [],
   stash: [
     { t: "weapon", kind: "pike", rarity: 0, starter: true },
     { t: "weapon", kind: "talon", rarity: 0, starter: true },

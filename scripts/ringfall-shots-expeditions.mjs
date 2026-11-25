@@ -20,7 +20,6 @@ const KEY = "ringfall.profile.v1";
 const HELD = ["supply", "quarry", "relay", "station", "waterworks", "lodge"];
 const SAVE = {
   v: 29, cash: 5000, raids: 12, extracted: 9, time: 9000, region: "reservoir", entry: "beach", seed: 77, day: 13, factory: 2,
-  cycle: 0, cycleDay: 1, liberations: [],
   stash: [], entries: ["beach", "checkpoint", "jetty"], depots: HELD, seen: "f".repeat(4000),
   quests: { progress: {}, done: [] },
   poiState: { ...Object.fromEntries(HELD.map((id) => [id, { state: "freed" }])), yard: { state: "rival:Z3P9TR" } },

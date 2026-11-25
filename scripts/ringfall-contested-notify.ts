@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { applySync, logLine, newsVisible } from "../src/ringfall/meta/expeditions";
-import { CONTESTED_SHORES } from "../src/ringfall/meta/neighbours";
+import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { newProfile } from "../src/ringfall/meta/profile";
 import { TROPHY } from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
@@ -14,7 +14,8 @@ import { NODES } from "../src/ringfall/sim/map";
 import { awaySheetParts, newsWipedEnemy } from "../src/ringfall/view/copy";
 import { islandOp, type IslandState } from "../worker/island";
 
-const shore = CONTESTED_SHORES[0]!;
+const shore = ROUTE_SHORES[0]!; // station
+const other = ROUTE_SHORES[1]!; // waterworks
 const shoreName = NODES.find((n) => n.id === shore)!.name;
 const attacker = { code: "ATK001", name: "ツバキ" };
 
@@ -22,11 +23,11 @@ const attacker = { code: "ATK001", name: "ツバキ" };
   // Pure: contestedFailed drops shores that were captured.
   const tried = [
     { id: shore, owner: "DEF001" },
-    { id: CONTESTED_SHORES[1]!, owner: "DEF002" },
+    { id: other, owner: "DEF002" },
   ];
   assert.deepEqual(
     contestedFailed({ stats: { contestedTried: tried, captured: [shore] } }),
-    [{ shore: CONTESTED_SHORES[1]!, owner: "DEF002" }],
+    [{ shore: other, owner: "DEF002" }],
   );
   assert.deepEqual(contestedFailed({ stats: { contestedTried: tried, captured: tried.map((t) => t.id) } }), []);
 }

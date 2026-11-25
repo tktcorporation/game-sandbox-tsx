@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { applySync } from "../src/ringfall/meta/expeditions";
-import { CONTESTED_SHORES } from "../src/ringfall/meta/neighbours";
+import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
 import { SEIZE, TROPHY, clampTrophies, rivalTrophies, trophyDelta, trophySwap, trophiesTable } from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
@@ -29,7 +29,7 @@ assert.equal(SEIZE.bonus, 2);
   assert.equal(trophySwap(1000, 800).gain, 20);
 }
 
-const shore = CONTESTED_SHORES[0]!;
+const shore = ROUTE_SHORES[0]!; // station
 const shoreI = nodeIndex(shore);
 
 {
@@ -78,14 +78,14 @@ const shoreI = nodeIndex(shore);
 
 {
   const p = newProfile(1);
-  assert.equal(p.v, 42);
+  assert.equal(p.v, 44);
   assert.equal(p.trophies, TROPHY.start);
   const raw = JSON.parse(JSON.stringify(p));
   raw.v = 31;
   delete raw.trophies;
   const old = parseProfile(raw, 1);
   assert.ok(old);
-  assert.equal(old.v, 42);
+  assert.equal(old.v, 44);
   assert.equal(old.trophies, TROPHY.start);
 }
 

@@ -520,7 +520,6 @@ export class Soundscape {
       case "nodeThreat":
         sfx.threat();
         break;
-      case "liberated":
       case "coreTaken":
         sfx.coreTaken();
         break;

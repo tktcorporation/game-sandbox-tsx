@@ -1,5 +1,5 @@
 /*
- * Contested coastal hub defence for a home-island raid (方向 A / TKT-195):
+ * Contested outer-hub defence for a home-island raid (作り順② / 方向 A mechanics):
  * owner's 工場の部隊 + 島の守り → Start.defence / Start.parcels for newRun().
  */
 import { FACTORY_TOP } from "../sim/config";
@@ -14,7 +14,7 @@ import { aiByOwner, aiFactory } from "./ai-islands";
 export type DefenceEntry = { owner: string; factory: number };
 
 /**
- * Factory levels of rivals who hold a contested coastal hub on this island.
+ * Factory levels of rivals who hold a contested outer hub on this island.
  * AI owners use `aiFactory(day)`; real neighbours use `Neighbour.factory` when known,
  * else the same day-based curve as AI (judgment: summaries without factory yet).
  */

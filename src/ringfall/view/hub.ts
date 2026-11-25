@@ -1,7 +1,6 @@
 import { PLAYER } from "../sim/config";
 import { aiSalt, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
-import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { attackScouts, revengeNodeFromLine, type AttackScout } from "../meta/attack-scout";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
@@ -11,7 +10,7 @@ import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBui
 // buyPrice / canStartIn / onSale used by sourceGuide
 import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
-import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, shopRarity, unlocked } from "../meta/island";
+import { departDepots, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
 import { ExpeditionPanel } from "./expeditions";
 import { logLine, newsVisible, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
@@ -19,18 +18,14 @@ import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
+import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
 /** The robots' kinds by name, for the factory. */
 const ENEMY_NAME: Record<EnemyKind, string> = { grunt: "グラント", heavy: "ヘビー", drone: "ドローン", charger: "チャージャー", titan: "タイタン" };
-
-/** Aid left at a 中継ボックス by someone the player can name (other islands / neighbours). */
-export function namedAid(p: Pick<Profile, "parcels">): Parcel[] {
-  return (p.parcels ?? []).filter((q) => q.from.name.trim() && q.from.code !== LOCAL_AID && q.from.code !== "");
-}
 
 /** The front node nearest `from` (camp wake by default — same pick as the objective with no contract). */
 export function frontPickFor(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
@@ -1063,12 +1058,11 @@ export class Hub {
     const p = this.profile;
     // 倉庫を含む隠れ家設備は作業場の ▲ に数える.
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    // The signal station wants looking at while news of the other islands is unread, or while
-    // someone else's delivery still sits at a 中継ボックス.
-    const aid = namedAid(p).length;
+    // The signal station wants looking at while news of the other islands is unread.
+    // 島の守り (parcels) is not counted on the signal mark — toast and リザルト「〜に回った」cover it.
     // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
-    const unread = this.news.length + this.expNews.length + aid;
-    const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
+    const unread = this.news.length + this.expNews.length;
+    const signal = !this.newsSeen && unread ? `知らせ ${unread}` : "";
     // Shelves: the radio's report (warehouse growth is at the workshop).
     const stash = p.hideout.radio ? "無線" : "";
     return { stash, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
@@ -1176,19 +1170,15 @@ export class Hub {
     return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
   }
 
-  /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）と島の守り。 */
+  /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）。 */
   private signalNews(): string {
-    const archive = (this.profile.news ?? []).map((line) => {
+    const items = (this.profile.news ?? []).map((line) => {
       const node = revengeNodeFromLine(this.profile.poiState, line);
       const btn = node
         ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
         : "";
       return `<li>${esc(line)}${btn}</li>`;
     });
-    const aid = namedAid(this.profile).slice(0, 4).map(
-      (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
-    );
-    const items = [...archive, ...aid];
     return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
@@ -1390,11 +1380,9 @@ export class Hub {
     const attack = this.attackPick();
     const rival = attack ? { name: attack.title, x: attack.x, z: attack.z } : rivalFrontPick(p);
     const teach = teachFrontCapture(p) && front;
-    const goal = finaleOpen(p)
-      ? esc(`${liberationLine({ kind: "finale" })}`)
-      : rival
-        ? esc(attackGoal(rival.name))
-        : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+    const goal = rival
+      ? esc(attackGoal(rival.name))
+      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     const hint = rivalGateHint(p);
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
@@ -1427,33 +1415,36 @@ export class Hub {
    */
   today(): { head: string; row: string; plan: [string, string][] } {
     const p = this.profile;
-    // From the second round on, the round is named beside the day.
-    const head = `${p.day} 日目${p.cycle ? `・${p.cycle + 1} 周目` : ""}`;
-    const final = finaleOpen(p);
+    const now = Date.now();
+    const remain = shieldRemainingMs(p.outerGuard, now);
+    const guard = guardOn(p.outerGuard, now);
+    // 作り順③: day line shows island shield timer and/or today's outer-hub loss cap.
+    const headParts = [`${p.day} 日目`];
+    if (remain > 0) headParts.push(shieldLine(remain));
+    else if (guard.lost > 0) headParts.push(lostTodayLine(guard.lost, OUTER_GUARD.lossCap));
+    const head = headParts.join(" · ");
     const pick = this.frontPick();
     // Each value is HTML: marks, and names escaped here.
     const rival = rivalFrontPick(p);
     const teach = teachFrontCapture(p);
     const plan: [string, string][] = [
-      // The pad open to the decisive battle comes before any node. A rival on the front is why to sortie.
-      // First sessions name 核 · 制圧 on the node so the line's middle is the day's ask.
-      final
-        ? ["決戦", esc(POIS.find((o) => o.boss)!.name)]
-        : [
-            PLAN_GOAL,
-            rival
-              ? `${flagIcon(SIDE.rival)}${esc(attackGoal(rival.name))}`
-              : pick
-                ? teach
-                  ? `${esc(pick.name)} · ${TERM.captureCore}`
-                  : esc(pick.name)
-                : "—",
-          ],
+      // A rival on the front is why to sortie. First sessions name 核 · 制圧 on the node so the line's middle is the day's ask.
+      [
+        PLAN_GOAL,
+        rival
+          ? `${flagIcon(SIDE.rival)}${esc(attackGoal(rival.name))}`
+          : pick
+            ? teach
+              ? `${esc(pick.name)} · ${TERM.captureCore}`
+              : esc(pick.name)
+            : "—",
+      ],
       ["装備", this.kitMarks()],
     ];
-    // 帯の横に解放までの一行（初日から。お隣に取られた拠点は N に数えない）。
-    const lib = `<span class="lib-line">${esc(liberationLine(liberationStatus(p)))}</span>`;
-    return { head, row: nodeRow(islandHolds(p)) + lib, plan };
+    if (remain > 0 || guard.lost > 0) {
+      plan.push([TERM.shielding, remain > 0 ? esc(shieldLine(remain)) : esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))]);
+    }
+    return { head, row: nodeRow(islandHolds(p)), plan };
   }
 
   render() {

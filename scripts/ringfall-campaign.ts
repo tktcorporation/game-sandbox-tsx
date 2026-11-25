@@ -16,10 +16,10 @@
  * its tables and prints the table after the hideout's pacing (scripts/ringfall-sim.ts).
  */
 import "./ringfall-terrain-store";
-import { ENTRIES, HOME_REGION, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
+import { ENTRIES, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, strengthFor } from "../src/ringfall/sim/state";
-import { finaleOpen, holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
+import { holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
 import { frontNodes, ownNodes } from "../src/ringfall/sim/front";
 import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, raidThreat, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { shopRarity } from "../src/ringfall/meta/island";
@@ -37,7 +37,7 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { /** The decisive battle was on (`FINALE`), and the days the round took when the raid won it (0 otherwise). */ finale: boolean; liberated: number; /** One of the game's own islands sent an expedition that day; the nodes they took in its raid; the nodes they held after it. */ aiCame: boolean; aiTook: number; aiHeld: number; cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; city: number; launch: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number } }[];
+  days: { /** One of the game's own islands sent an expedition that day; the nodes they took in its raid; the nodes they held after it. */ aiCame: boolean; aiTook: number; aiHeld: number; cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; city: number; launch: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number } }[];
   errors: string[];
 }
 
@@ -142,14 +142,13 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
     const gear = bestGear(p);
     const gun = Math.max(0, ...gear.weapons.map((n) => { const i = p.stash[n]; return i?.t === "weapon" ? i.rarity : 0; }));
-    // The decisive battle is fought at the pad, in the home region.
-    const region = finaleOpen(p) ? HOME_REGION.id : REGIONS.map((r) => r.id).reduce((a, b) => (work(p, b, gun) > work(p, a, gun) ? b : a));
+    const region = REGIONS.map((r) => r.id).reduce((a, b) => (work(p, b, gun) > work(p, a, gun) ? b : a));
     const ways = regionOf(region).entries;
     const taken = takeKit(p, { ...emptyLoadout(), weapons: gear.weapons.filter((n) => n >= 0), armor: gear.armor >= 0 ? gear.armor : null });
     p = taken.profile;
     const lent = aiLent(p, seed, [], scouted);
     const came = lent.some((l) => l.state === "coming");
-    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory, rivals: aiRivals(lent) }, finale: finaleOpen(p), threat: raidThreat(p) });
+    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory, rivals: aiRivals(lent) }, threat: raidThreat(p) });
     const res = playState(s, skill, 500 + d);
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
     const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
@@ -178,11 +177,9 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
       gained: settled.front.gained.length,
       lost: settled.front.lost.length,
       minutes: s.time / 60,
-      finale: s.finale,
       aiCame: came,
       aiTook,
       aiHeld: NODES.filter((n) => isAiOwner(rivalOf(p.poiState[n.id].state))).length,
-      liberated: settled.liberated?.days ?? 0,
       turns: {
         raid: s.battle ? s.battle.taken.filter((t) => t.t < (s.battle!.left?.at ?? Infinity)).length : 0,
         after: s.battle ? s.battle.taken.filter((t) => t.t >= (s.battle!.left?.at ?? Infinity)).length : 0,
@@ -253,11 +250,9 @@ export function campaignLines(runs: Campaign[]): string[] {
   lines.push(`factory by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.factory).join("")}`).join(" / ")}`);
   // Where the front stands at the end of the month: the nodes the player could take next.
   for (const c of runs) lines.push(`front on day ${c.days.length} (${c.skill}): ${c.days.at(-1)?.front.join(" ") || "-"}`);
-  // The decisive battle (FINALE): the days it was fought, and each round won as the day it ended and the days it took.
   // The game's own islands over the month: the days one sent an expedition (the first day), the nodes they took, and the most they held at once.
   lines.push(`ai islands (came days, first day / nodes taken / most held): ${runs.map((c) => `${c.skill} ${c.days.filter((d) => d.aiCame).length}, ${c.days.findIndex((d) => d.aiCame) + 1 || "-"} / ${c.days.reduce((n, d) => n + d.aiTook, 0)} / ${Math.max(0, ...c.days.map((d) => d.aiHeld))}`).join(" / ")}`);
   lines.push(`ai islands by day (. none, o came, X took): ${runs.map((c) => `${c.skill} ${c.days.map((d) => (d.aiTook ? "X" : d.aiCame ? "o" : ".")).join("")}`).join(" / ")}`);
-  lines.push(`rounds: ${runs.map((c) => `${c.skill} fought the titan on ${c.days.filter((d) => d.finale).length} days, freed the island ${c.days.map((d, k) => (d.liberated ? `on day ${k + 1} (${d.liberated} days)` : "")).filter(Boolean).join(", ") || "never"}`).join(" / ")}`);
   return lines;
 }
 

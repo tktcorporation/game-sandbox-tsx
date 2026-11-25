@@ -4,7 +4,8 @@ import { TROPHY } from "../src/ringfall/meta/trophies";
 import { parseContestedFailed, parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
-import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
+import { CONTESTED_OUTER_TABLE } from "../src/ringfall/meta/contested-outer-table";
+import { isContestedShore, NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 import { planMutualPicks, type PairCandidate, type PairPick } from "./neighbour-pair";
 
 /*
@@ -295,15 +296,41 @@ async function syncContestedPair(
     )?.results[0];
     theirShore = ours !== undefined && NEIGHBOUR_SLOTS[ours.slot] ? NEIGHBOUR_SLOTS[ours.slot].shore : undefined;
   }
-  if (!theirShore) return;
-  await ask(ns, bCode, { t: "contestedMirror", shore: theirShore, owner: ownerCode, name: ownerName, at: now }, now);
+  if (!theirShore && !isContestedShore(aShore)) return;
+  // Write the hub that was taken (same id on both islands). Slot shores keep mutual pairing;
+  // other outer hubs (作り順②) mirror by id onto the neighbour found via the nearest sea slot.
+  const writeShore = isContestedShore(aShore) ? aShore : theirShore;
+  if (!writeShore) return;
+  await ask(ns, bCode, { t: "contestedMirror", shore: writeShore, owner: ownerCode, name: ownerName, at: now }, now);
+}
+
+/** Sea-route slot for `shore`, or the nearest slot shore by hub distance when `shore` is another outer hub. */
+function slotForShore(shore: string): number {
+  const exact = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === shore);
+  if (exact >= 0) return exact;
+  if (!isContestedShore(shore)) return -1;
+  const hub = CONTESTED_OUTER_TABLE.find((n) => n.id === shore);
+  if (!hub) return -1;
+  let best = -1;
+  let bestD = Infinity;
+  for (let k = 0; k < NEIGHBOUR_SLOTS.length; k++) {
+    const face = CONTESTED_OUTER_TABLE.find((n) => n.id === NEIGHBOUR_SLOTS[k]!.shore);
+    if (!face) continue;
+    const d = (face.x - hub.x) ** 2 + (face.z - hub.z) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = k;
+    }
+  }
+  return best;
 }
 
 /**
  * This week's neighbour whose sea slot faces `shore` on the owner's island, or null.
+ * Non-slot outer hubs (作り順②) use the nearest sea-route slot's neighbour.
  */
 async function neighbourFacingShore(env: ApiEnv, playerId: string, shore: string, now: number): Promise<string | null> {
-  const slot = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === shore);
+  const slot = slotForShore(shore);
   if (slot < 0 || !env.DB) return null;
   const week = Math.floor(now / NEIGHBOURS.weekMs);
   const row = (
@@ -352,7 +379,10 @@ async function notifyContestedDefend(
   fail: { shore: string; owner: string },
   now: number,
 ) {
-  const theirShore = await shoreFacingAttacker(env, fail.owner, attackerCode, fail.shore, now);
+  // Same hub id on both islands for outer contested (作り順②); slot shores keep the facing lookup.
+  const theirShore = isContestedShore(fail.shore)
+    ? fail.shore
+    : await shoreFacingAttacker(env, fail.owner, attackerCode, fail.shore, now);
   if (!theirShore) return;
   await ask(ns, fail.owner, { t: "contestedDefend", shore: theirShore, from: { code: attackerCode, name: attackerName }, at: now }, now);
 }
