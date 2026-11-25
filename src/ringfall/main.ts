@@ -1,7 +1,8 @@
 import { spawnEnemy } from "./sim/enemies";
 import { AWARE, CONQUEST, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
-import { collide, groundAt } from "./sim/geom";
+import { collide, dist2d, groundAt } from "./sim/geom";
+import { huntSpot } from "./sim/objective";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
@@ -38,7 +39,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { awaySheetParts, newsIncursion, PHRASE, TERM } from "./view/copy";
+import { awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -1001,7 +1002,14 @@ function start(go: Launch, from?: State) {
   hud.bag.setProfile(hub.profile);
   hud.setGoalPois(state.goal ? poisWith(state.goal) : [], state.goal ? goalTags(state.goal) : []);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
-  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
+  // With a hunt goal: 「ダム湖に着いた。タイタンは発着場（○ m）」; else the entry / depot name.
+  const hunt = state.goal ? huntSpot(state) : null;
+  if (hunt) {
+    const metres = Math.round(dist2d(state.player.pos, hunt));
+    hud.banner(landedIn(regionHere(state.player.pos).name), goalIsAt(hunt.label, hunt.place, metres), false, 3.6);
+  } else {
+    hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
+  }
   lock();
 }
 

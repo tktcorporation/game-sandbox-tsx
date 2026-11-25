@@ -521,6 +521,16 @@ body.touch #obj-raid .why {
 #compass-mark.edge::before {
   border-bottom-color: var(--hot-dim);
 }
+/* Hunt target on the compass (タイタン 474 m): own-side colour so it reads apart from a front step. */
+#compass-mark.hunt::before {
+  border-bottom-color: var(--own);
+}
+#compass-mark.hunt span {
+  color: var(--own);
+}
+#compass-mark.hunt.edge::before {
+  border-bottom-color: rgb(var(--own-rgb) / 0.7);
+}
 /* Where the last reinforcements beamed in, while a node held shows it (UNLOCKS.scout): a red chevron on the strip. */
 #compass-scout {
   position: absolute;

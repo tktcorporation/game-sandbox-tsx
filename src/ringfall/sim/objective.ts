@@ -1,8 +1,9 @@
-import { CONQUEST, FRONT } from "./config";
+import { CONQUEST, FRONT, type ValuableKind } from "./config";
 import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, regionHere } from "./map";
+import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, poiRegion, regionHere } from "./map";
 import { frontNodes } from "./front";
+import { sources } from "../meta/hideout";
 import type { State } from "./state";
 
 /*
@@ -173,3 +174,55 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
 
 /** The current step, or null once every step is done. */
 export const currentStep = (o: Objective): Step | null => o.steps[o.current] ?? null;
+
+/**
+ * Where the hunt target (目標) stands for the compass / landing line: the nearest POI that yields
+ * it (タイタン at 発着場, or a bin POI). The label is the likeliest source at that POI (タイタン
+ * over the POI's own bin name). Null when there is no goal, it is already met, or no placed source.
+ * Capture / defend / finale leave this unused so the objective step keeps the mark.
+ */
+export function huntSpot(s: State): { x: number; y: number; z: number; label: string; place: string; region: string } | null {
+  const kind = s.goal as ValuableKind | null;
+  if (!kind || s.goalNeed <= 0) return null;
+  const have = s.goalHave + s.player.haul.filter((k) => k === kind).length;
+  if (have >= s.goalNeed) return null;
+  const p = s.player.pos;
+  const ranked = sources(kind).filter((src) => src.poi);
+  const pois = [...new Set(ranked.map((src) => src.poi!))];
+  let bestId: (typeof pois)[number] | null = null;
+  let bestD = Infinity;
+  for (const id of pois) {
+    const poi = POIS[poiIndex(id)];
+    if (!poi) continue;
+    const d = dist2d(p, poi);
+    if (d < bestD) {
+      bestD = d;
+      bestId = id;
+    }
+  }
+  if (!bestId) return null;
+  const poi = POIS[poiIndex(bestId)]!;
+  // Likeliest source at this POI (sources() is share-desc — タイタン before 発着場's bins).
+  const src = ranked.find((r) => r.poi === bestId)!;
+  let x = poi.x;
+  let y = 0;
+  let z = poi.z;
+  if (src.from === "robot" && src.where === "タイタン") {
+    const titan = s.enemies.find((e) => e.kind === "titan");
+    if (titan) {
+      x = titan.pos.x;
+      y = titan.pos.y;
+      z = titan.pos.z;
+    }
+  }
+  return { x, y, z, label: src.where, place: poi.name, region: src.region || poiRegion(bestId).name };
+}
+
+/**
+ * Whether the compass must follow the objective card (核の制圧 / 守り / 決戦) instead of the hunt.
+ */
+export function compassUrgent(s: State): boolean {
+  if (s.finale) return true;
+  if (s.capture && s.nodes[s.capture.node] !== "own") return true;
+  return battleFocus(s)?.kind === "defend";
+}
