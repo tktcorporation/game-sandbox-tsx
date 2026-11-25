@@ -4,8 +4,8 @@
  * slot of its own, and the factory's expeditions start from them, so sending one needs no code typed.
  * Pure: the answer read here, the requests in island-net.ts.
  */
-import { CONTESTED_OUTER, isContestedOuter } from "../sim/contested-outer";
 import { isAiOwner } from "../sim/holds";
+import { CONTESTED_OUTER_IDS } from "./contested-outer-table";
 import { isIslandCode } from "./island-code";
 import type { NodeId } from "../sim/map";
 
@@ -50,13 +50,13 @@ export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[]
 
 /**
  * Outer-edge hubs contested with neighbours (作り順② / design-direction.md): every freeable hub on
- * the island's outer edge (sea or world bound), derived in `sim/contested-outer.ts`. Supersedes the
- * direction-A list of four shore hubs (`NEIGHBOUR_SLOTS[].shore`); those four remain the sea-route
- * faces. Alias kept as `CONTESTED_SHORES` for call sites and the worker.
+ * the island's outer edge (sea or world bound). Ids come from the Worker-safe table
+ * (`contested-outer-table.ts`), kept in sync with `outerFacingHubs()` by
+ * `scripts/ringfall-contested-outer.ts`. The four `NEIGHBOUR_SLOTS[].shore` remain the sea-route faces.
  */
-export const CONTESTED_SHORES: readonly NodeId[] = CONTESTED_OUTER;
+export const CONTESTED_SHORES: readonly NodeId[] = CONTESTED_OUTER_IDS as readonly NodeId[];
 
-export const isContestedShore = (id: NodeId | string): boolean => isContestedOuter(id);
+export const isContestedShore = (id: NodeId | string): boolean => (CONTESTED_SHORES as readonly string[]).includes(id);
 
 /** The four hubs that open a sea route to a neighbour slot (unchanged from direction A). */
 export const ROUTE_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);

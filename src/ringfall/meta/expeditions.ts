@@ -17,7 +17,7 @@ import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
 import { clampTrophies, defendGain, rivalTrophies, trophyDelta } from "./trophies";
 import { emptyOuterGuard, guardOn, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
-import { isContestedOuter } from "../sim/contested-outer";
+import { isContestedShore } from "./neighbours";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -242,7 +242,7 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   let outerGuard = s.outerGuard ?? p.outerGuard ?? emptyOuterGuard();
   if (!s.outerGuard) {
     for (const e of news) {
-      if (e.t === "taken" && isContestedOuter(e.node)) outerGuard = recordOuterLoss(outerGuard, e.at);
+      if (e.t === "taken" && isContestedShore(e.node)) outerGuard = recordOuterLoss(outerGuard, e.at);
     }
   }
   // Ownership (mergeHolds) and 守りきった (wiped log) move trophies once here — settle will not

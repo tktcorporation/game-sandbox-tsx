@@ -10,7 +10,7 @@ import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
 import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
-import { isContestedOuter } from "../sim/contested-outer";
+import { isContestedShore } from "./neighbours";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -767,7 +767,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     if (before === "own" && after !== "own") {
       nightParcels = nightParcels.filter((q) => q.poi !== n.id);
       // 作り順③: each outer hub lost this settle raises the island shield / loss count.
-      if (isContestedOuter(n.id) && rivalOf(after ?? "foe")) outerGuard = recordOuterLoss(outerGuard, lostAt);
+      if (isContestedShore(n.id) && rivalOf(after ?? "foe")) outerGuard = recordOuterLoss(outerGuard, lostAt);
     }
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });

@@ -4,8 +4,8 @@ import { TROPHY } from "../src/ringfall/meta/trophies";
 import { parseContestedFailed, parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
+import { CONTESTED_OUTER_TABLE } from "../src/ringfall/meta/contested-outer-table";
 import { isContestedShore, NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
-import { NODES } from "../src/ringfall/sim/map";
 import { planMutualPicks, type PairCandidate, type PairPick } from "./neighbour-pair";
 
 /*
@@ -309,12 +309,12 @@ function slotForShore(shore: string): number {
   const exact = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === shore);
   if (exact >= 0) return exact;
   if (!isContestedShore(shore)) return -1;
-  const hub = NODES.find((n) => n.id === shore);
+  const hub = CONTESTED_OUTER_TABLE.find((n) => n.id === shore);
   if (!hub) return -1;
   let best = -1;
   let bestD = Infinity;
   for (let k = 0; k < NEIGHBOUR_SLOTS.length; k++) {
-    const face = NODES.find((n) => n.id === NEIGHBOUR_SLOTS[k]!.shore);
+    const face = CONTESTED_OUTER_TABLE.find((n) => n.id === NEIGHBOUR_SLOTS[k]!.shore);
     if (!face) continue;
     const d = (face.x - hub.x) ** 2 + (face.z - hub.z) ** 2;
     if (d < bestD) {
