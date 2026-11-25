@@ -4,7 +4,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
@@ -561,7 +561,25 @@ let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const loaded = loadProfile();
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
-const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => lock());
+const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => {
+  // 地図で見る: open the departure framed on that POI's region / nearest start.
+  if (hub.focusPoi && camping && !running) {
+    const poi = hub.focusPoi;
+    hub.focusPoi = null;
+    const region = poiRegion(poi).id;
+    const p = POIS[poiIndex(poi)]!;
+    const starts = hub.startPoints().filter((q) => q.open && q.region === region);
+    const near = starts.sort((a, b) => {
+      const da = (a.x - p.x) ** 2 + (a.z - p.z) ** 2;
+      const db = (b.x - p.x) ** 2 + (b.z - p.z) ** 2;
+      return da - db;
+    })[0];
+    if (near) hub.choose(near.kind, near.id);
+    askDepart(false);
+    return;
+  }
+  lock();
+});
 organize.bind((p) => {
   hub.reload(p);
   saveProfile(hub.profile);

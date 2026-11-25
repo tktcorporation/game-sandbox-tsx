@@ -1544,6 +1544,40 @@ body.camp #pause .keys .raid {
 #organize .hub-foot[hidden] {
   display: flex;
 }
+.src-guide {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 2px;
+  padding: 6px 8px;
+  background: rgb(var(--white-rgb) / 0.04);
+}
+.src-guide > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.src-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  font-size: 13px;
+}
+.src-row.locked {
+  color: var(--muted);
+}
+.src-row b {
+  font-variant-numeric: tabular-nums;
+}
+.src-open,
+.src-map,
+.src-goal {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.req .srcs {
+  display: block;
+  margin-top: 2px;
+}
 .hub-inner {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

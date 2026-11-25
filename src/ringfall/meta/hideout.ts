@@ -40,12 +40,15 @@ export function infirmaryHeals(h: Hideout): Record<HealKind, number> {
 /**
  * Where a valuable is found: a POI's bins, the high-rises' top floors, the vaults (`share` is
  * its chance from one bin or vault), or a robot that drops it (`share` is the chance per kill).
+ * `poi` is set for a named POI so the departure map / raid map can mark it.
  */
 export interface Source {
   from: "bin" | "top" | "vault" | "robot";
   where: string;
   region: string;
   share: number;
+  /** POI id when `where` is that POI's name (bins / titan). */
+  poi?: PoiId;
 }
 
 /**
@@ -57,17 +60,21 @@ export function sources(kind: ValuableKind): Source[] {
   const out: Source[] = [];
   for (const p of POIS) {
     const s = share(p.loot.valuable);
-    if (s > 0) out.push({ from: "bin", where: p.name, region: poiRegion(p.id).name, share: s });
+    if (s > 0) out.push({ from: "bin", where: p.name, region: poiRegion(p.id).name, share: s, poi: p.id });
   }
   if (share(TOP_BINS) > 0) out.push({ from: "top", where: "高い建物の最上階", region: "", share: share(TOP_BINS) });
   const vault = VAULT.valuables.filter((set) => set.includes(kind)).length / VAULT.valuables.length;
-  if (vault > 0) out.push({ from: "vault", where: "保管庫", region: "", share: vault });
-  if (ROBOT_DROPS.titan.includes(kind)) out.push({ from: "robot", where: "タイタン", region: poiRegion("pad").name, share: 1 });
+  if (vault > 0) out.push({ from: "vault", where: "保管庫", region: "各地", share: vault });
+  if (ROBOT_DROPS.titan.includes(kind)) out.push({ from: "robot", where: "タイタン", region: poiRegion("pad").name, share: 1, poi: "pad" });
   if (ROBOT_DROPS.heavy.includes(kind)) out.push({ from: "robot", where: "ヘビー", region: "", share: 1 });
   const scrap = ROBOT_DROPS.scrap.find(([k]) => k === kind);
   if (scrap) out.push({ from: "robot", where: "ロボット", region: "", share: scrap[1] });
   return out.sort((a, b) => b.share - a.share);
 }
+
+/** POIs whose vault may hold `kind`, for the 鍵は…の補給箱 line. */
+export const vaultPoisFor = (kind: ValuableKind): PoiId[] =>
+  POIS.filter((p) => p.bins.some((b) => b.vault) && VAULT.valuables.some((set) => set.includes(kind))).map((p) => p.id);
 
 /** POIs whose bins may hold a kind (for checks: every kind a level needs must come from somewhere). */
 export const poisWith = (kind: ValuableKind): PoiId[] => POIS.filter((p) => p.loot.valuable.some(([k]) => k === kind)).map((p) => p.id);
