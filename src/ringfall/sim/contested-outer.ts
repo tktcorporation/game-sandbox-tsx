@@ -56,7 +56,10 @@ export function outerFacingHubs(): NodeId[] {
   }).map((n) => n.id);
 }
 
-/** Contested outer hubs (取り合う拠点). Built once from the map. */
+/**
+ * Contested outer hubs (取り合う拠点). Built once from the map in the browser / sim.
+ * The Worker reads the frozen copy in `meta/contested-outer-table.ts` instead (no world build).
+ */
 export const CONTESTED_OUTER: readonly NodeId[] = outerFacingHubs();
 
 export const isContestedOuter = (id: NodeId | string): boolean => (CONTESTED_OUTER as readonly string[]).includes(id);

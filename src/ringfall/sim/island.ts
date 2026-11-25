@@ -1,5 +1,5 @@
+import { CONTESTED_OUTER_IDS } from "../meta/contested-outer-table";
 import { FACTORY, FACTORY_TOP, PLATE, STRENGTH, THREAT, type EnemyKind } from "./config";
-import { CONTESTED_OUTER, isContestedOuter } from "./contested-outer";
 import { rivalOf, type PoiHold } from "./holds";
 import { NODES, PACKS, POIS, REGIONS, regionHere, TIER, nodeIndex, type Member, type NodeId, type Squad } from "./map";
 import { mix } from "./state";
@@ -15,13 +15,15 @@ import { mix } from "./state";
 export type { PoiHold, RivalHold } from "./holds";
 
 /**
- * Outer-edge hubs contested with neighbours (must match `CONTESTED_SHORES` / `CONTESTED_OUTER`):
- * derived from the map in `contested-outer.ts`, not a hand list.
+ * Outer-edge hubs contested with neighbours (must match `CONTESTED_SHORES` / contested-outer-table):
+ * map-derived list frozen for the Worker; checked by scripts/ringfall-contested-outer.ts.
  */
-export const CONTESTED_POIS: readonly NodeId[] = CONTESTED_OUTER;
+export const CONTESTED_POIS: readonly NodeId[] = CONTESTED_OUTER_IDS as readonly NodeId[];
 
 export const isContestedPoi = (poi: number | NodeId | string): boolean =>
-  typeof poi === "number" ? isContestedOuter(POIS[poi]?.id ?? "") : isContestedOuter(poi);
+  typeof poi === "number"
+    ? (CONTESTED_POIS as readonly string[]).includes(POIS[poi]?.id ?? "")
+    : (CONTESTED_POIS as readonly string[]).includes(poi);
 
 /** Extra grunts from 島の守り joining a contested defence (matches worker `EXPEDITION.aidPerFight`). */
 export const DEFENCE_AID = 2;
