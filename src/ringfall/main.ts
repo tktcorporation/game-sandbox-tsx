@@ -30,6 +30,8 @@ import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, s
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
+import { MpHowto } from "./view/mp-howto";
+import { resetMpHowtoSeen, shouldShowMpHowto } from "./meta/mp-howto";
 import { step } from "./sim/step";
 import { hurtAlly, placeAlly } from "./sim/ally";
 import { haulAndSentWorth } from "./sim/results";
@@ -173,6 +175,14 @@ addEventListener("keydown", (e) => {
   if (e.repeat) return;
   // Typing in a field (the factory's island code) is text, not the game's keys; Esc still closes the panel.
   if (hub.station && (e.target as HTMLElement | null)?.tagName === "INPUT" && (e.target as HTMLInputElement).type === "text" && e.code !== "Escape") return;
+  // 初回マルチ案内: Enter / Esc で次へ（最後で閉じる）.
+  if (mpHowto.open) {
+    if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Escape" || e.code === "Space" || e.code === "KeyE") {
+      ($("mp-howto-next") as HTMLButtonElement).click();
+      e.preventDefault();
+    }
+    return;
+  }
   // The departure's check: Enter (or the use key) goes, Esc turns back.
   if (departing) {
     if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "KeyE") answerDepart(true);
@@ -638,8 +648,9 @@ let inside: { x: number; y: number; z: number; yaw: number } | null = null;
  */
 let awaySheetOpen = false;
 let awayBooted = false;
+const mpHowto = new MpHowto();
 
-const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen || organize.open;
+const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen || organize.open || mpHowto.open;
 
 /** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
 function fade(on: boolean, now = false) {
@@ -784,6 +795,12 @@ function askDepart(walk: boolean) {
   if (needsOrganize(hub.profile)) {
     if (document.pointerLockElement) document.exitPointerLock();
     organize.show(hub.profile);
+    return;
+  }
+  // 初めて取り合う拠点を持ったとき: 3 枚の案内（TKT-204 案 C）を出撃の前に一度だけ。
+  if (shouldShowMpHowto(hub.profile.poiState) && !mpHowto.open) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    mpHowto.show(() => askDepart(walk));
     return;
   }
   departing = { walk, back: walk ? inside : null };
@@ -1303,6 +1320,7 @@ declare global {
       walkTo: (id: CampSpot["id"]) => boolean;
       toGate: () => void;
       openDepart: () => boolean;
+      resetMpHowto: () => void;
       use: () => void;
       open: (id: StationId) => boolean;
       close: () => void;
@@ -1848,7 +1866,7 @@ window.ringfallCamp = {
   },
   /** Opens the departure as walking out of the gate would (shots / automation). */
   openDepart: () => {
-    if (!camping || departing) return false;
+    if (!camping || departing || mpHowto.open) return false;
     const p = state.player;
     const x = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
     const z = CAMP.gate.z + 3;
@@ -1862,6 +1880,8 @@ window.ringfallCamp = {
     askDepart(true);
     return true;
   },
+  /** Shots: clear the first-time multiplayer guide so the next 出撃 shows it again. */
+  resetMpHowto: () => resetMpHowtoSeen(),
   use: () => camping && !campFrozen() && useInCamp(),
   open: (id) => camping && openPanel(id),
   close: () => hub.close(),

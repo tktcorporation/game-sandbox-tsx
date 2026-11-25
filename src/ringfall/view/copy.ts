@@ -423,6 +423,28 @@ export function attackScoutTrop(trop: number): string {
   return `${TERM.trophy} +${trop}`;
 }
 
+/**
+ * First-time multiplayer guide cards (TKT-204 案 C).
+ * 【元】（なし） 【案】3 枚 【理由】お隣→前線の拠点→核·トロフィー
+ */
+export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
+  {
+    title: TERM.seaIslands,
+    body: `海に面した拠点を、${TERM.seaIslands}と${TERM.contest}。`,
+  },
+  {
+    title: `${TERM.front}の拠点`,
+    body: `地図の「${TERM.attack}」が付いた拠点へ、${TERM.gate}から${TERM.sortie}する。`,
+  },
+  {
+    title: TERM.captureCore,
+    body: `${TERM.core}を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
+  },
+];
+
+/** Guide next / done button labels (TKT-204 案 C). */
+export const mpHowtoNext = (last: boolean): string => (last ? "分かった" : "次へ");
+
 /** Re-export for view callers (canonical: meta/neighbours.ts). */
 export { aiLabel } from "../meta/neighbours";
 

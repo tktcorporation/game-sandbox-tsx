@@ -115,6 +115,8 @@ const pg = await ctx.newPage();
 pg.on("pageerror", (e) => console.error("pageerror", e.message));
 await pg.addInitScript(([k, v]) => localStorage.setItem(k, v), [KEY, JSON.stringify(SAVE)]);
 await pg.addInitScript((v) => localStorage.setItem("ringfall.neighbours.v1", v), JSON.stringify({ neighbours: NEAR }));
+// Force first-time guide (案 C) even if a prior shot marked it seen.
+await pg.addInitScript(() => localStorage.removeItem("ringfall.mpHowto.v1"));
 await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
 await pg.waitForTimeout(300);
 await pg.click("#start", { force: true });
@@ -124,9 +126,19 @@ await pg.evaluate(() => window.advanceTime(500));
 // Camp with tip / 今日の作戦
 await snap(pg, "01-camp");
 
-// Departure map (after B: 攻める list + hub flags)
+// Departure: first-time 3-card guide (案 C) then map
 if (!(await pg.evaluate(() => window.ringfallCamp.openDepart()))) {
   console.error("openDepart failed");
+}
+await pg.waitForTimeout(200);
+const howto = () => !document.getElementById("mp-howto")?.hidden;
+if (await pg.evaluate(howto)) {
+  for (let i = 1; i <= 3; i++) {
+    await pg.waitForTimeout(150);
+    await snap(pg, `05-howto-${i}`);
+    await pg.click("#mp-howto-next");
+    await pg.waitForTimeout(150);
+  }
 }
 await pg.waitForFunction(() => !document.getElementById("depart")?.hidden, null, { timeout: 6000 }).catch(() => {});
 await pg.waitForTimeout(300);
