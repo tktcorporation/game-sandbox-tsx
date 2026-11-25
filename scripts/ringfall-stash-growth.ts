@@ -1,7 +1,7 @@
 /**
- * Results growth (倉庫へ届いた): seized 制圧 loot that store() sold for room must not appear as
- * delivered. Tests 0 free slots, 1 free slot with seized vs haul competing, and the island-on
- * rival-held node path. Sale rules unchanged.
+ * Results growth (倉庫へ届いた): seized 制圧 loot that store() left pending for room must not
+ * appear as delivered. Tests 0 free slots, 1 free slot with seized vs haul competing, and the
+ * island-on rival-held node path. Overflow waits for 倉庫の整理 (not sold on the spot).
  *
  * Run: `npx tsx scripts/ringfall-stash-growth.ts`; ends with "stash growth ok".
  */
@@ -71,32 +71,33 @@ function settleCapture(p0: Profile, poi: PoiId, haul: Item["kind"][] = []) {
   check(none.length === 0, "keptSeized: full stash still listed seize");
 }
 
-// --- 0 free slots: seized all sold → no Settlement.seized, sold has valuables
+// --- 0 free slots: seized all pending → no Settlement.seized, pending has valuables, cash unchanged
 {
   let p = fillStash(newProfile(9), 0);
+  const cash = p.cash;
   check(stashUsed(p) >= stashCap(p.hideout), "0-slot: stash not full");
   const settled = settleCapture(p, "supply");
   check(!settled.seized?.length, `0-slot: seized still on 倉庫へ届いた ${JSON.stringify(settled.seized)}`);
-  check(settled.sold.some((i) => i.t === "valuable"), "0-slot: sold has no valuables");
-  check(settled.soldFor > 0, "0-slot: soldFor 0");
-  console.log(`0 free: sold ${settled.sold.length}, seized ${settled.seized?.length ?? 0}`);
+  check(settled.pending.some((i) => i.t === "valuable"), "0-slot: pending has no valuables");
+  check(settled.soldFor === 0, "0-slot: soldFor should be 0");
+  // Income / spoils may raise cash; overflow itself must not (soldFor 0).
+  check(settled.profile.cash === cash + settled.income + (settled.spoils ?? 0), "0-slot: cash rose beyond income from silent sale");
+  check(settled.profile.pending.length === settled.pending.length, "0-slot: profile.pending mismatch");
+  console.log(`0 free: pending ${settled.pending.length}, seized ${settled.seized?.length ?? 0}`);
 }
 
-// --- 1 free slot: seized two kinds compete — at most one kind kept in seized; rest sold
+// --- 1 free slot: seized two kinds compete — at most one kind kept in seized; rest pending
 {
   let p = fillStash(newProfile(11), 1);
   check(stashCap(p.hideout) - stashUsed(p) === 1, "1-slot: not exactly one free");
   const settled = settleCapture(p, "supply");
   const keptKinds = settled.seized?.flatMap((q) => q.kinds) ?? [];
   check(keptKinds.length <= 1, `1-slot: kept ${keptKinds.length} seized kinds, want ≤1`);
-  check(settled.sold.some((i) => i.t === "valuable"), "1-slot: overflow not sold");
-  // The kept one must appear as a stash gain.
+  check(settled.pending.some((i) => i.t === "valuable"), "1-slot: overflow not pending");
   if (keptKinds[0]) {
-    const beforeN = p.stash.filter((i) => i.t === "valuable" && i.kind === keptKinds[0]).length;
-    // after store is inside settle's profile before night/quests — use settled.home/sold instead:
-    check(settled.sold.filter((i) => i.t === "valuable").length >= 1, "1-slot: expected ≥1 sold valuable");
+    check(settled.pending.filter((i) => i.t === "valuable").length >= 1, "1-slot: expected ≥1 pending valuable");
   }
-  console.log(`1 free: seized kept [${keptKinds}], sold valuables ${settled.sold.filter((i) => i.t === "valuable").length}`);
+  console.log(`1 free: seized kept [${keptKinds}], pending valuables ${settled.pending.filter((i) => i.t === "valuable").length}`);
 }
 
 // --- 1 free slot: haul vs seized compete (haul parts + seize parts/fuse)
@@ -104,10 +105,10 @@ function settleCapture(p0: Profile, poi: PoiId, haul: Item["kind"][] = []) {
   let p = fillStash(newProfile(13), 1);
   const settled = settleCapture(p, "relay", ["parts"]);
   const kept = settled.seized?.flatMap((q) => q.kinds) ?? [];
-  const soldV = settled.sold.filter((i) => i.t === "valuable").length;
-  check(kept.length + soldV >= 2, `compete: expected overflow among haul+seize, kept=${kept.length} soldV=${soldV}`);
+  const pendingV = settled.pending.filter((i) => i.t === "valuable").length;
+  check(kept.length + pendingV >= 2, `compete: expected overflow among haul+seize, kept=${kept.length} pendingV=${pendingV}`);
   check(kept.length <= 1, `compete: seized claimed ${kept.length} under 1 free slot`);
-  console.log(`compete: seized [${kept}], soldV ${soldV}`);
+  console.log(`compete: seized [${kept}], pendingV ${pendingV}`);
 }
 
 // --- Room enough: seized kept and listed
@@ -115,7 +116,7 @@ function settleCapture(p0: Profile, poi: PoiId, haul: Item["kind"][] = []) {
   let p = fillStash(newProfile(15), 10);
   const settled = settleCapture(p, "supply");
   check((settled.seized?.flatMap((q) => q.kinds).length ?? 0) >= 1, "room: seized missing when stash had room");
-  check(settled.sold.filter((i) => i.t === "valuable").length === 0, "room: valuables sold with room left");
+  check(settled.pending.filter((i) => i.t === "valuable").length === 0, "room: valuables pending with room left");
   console.log(`room: seized ${JSON.stringify(settled.seized)}`);
 }
 
