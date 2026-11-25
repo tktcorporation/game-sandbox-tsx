@@ -4,8 +4,9 @@
  * islands (outer-hub holdings simulated like meta/ai-islands.ts).
  *
  * Scope of this step: data model, auto-assign + AI fill, Profile persistence, readout.
- * Not yet: team-battle field, war power, leader bounty, scoring — those plug into
- * `Team.id` / `TeamMember.outer` / member slots without reshaping this type.
+ * 作り順⑤ reads `Team` for the field match (meta/team-battle.ts). Still not yet:
+ * war power, leader bounty, scoring (⑥) — they plug into `Team.id` / `TeamMember.outer`
+ * / member slots without reshaping this type.
  */
 import { CODE_ALPHABET, CODE_LENGTH } from "./island-code";
 import { CONTESTED_OUTER_IDS } from "./contested-outer-table";

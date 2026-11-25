@@ -11,7 +11,7 @@ import { POI_AT } from "./sim/areas";
 import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, bindTeam, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { analyse, bindTeam, bindTeamBattle, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
@@ -29,6 +29,8 @@ import { contestedDefence, contestedParcels } from "./meta/contested-defence";
 import { isIslandProtected } from "./meta/outer-guard";
 import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
+import { mergeFieldHolds } from "./meta/team-battle";
+import { FIELD_NAME, FIELD_HUBS } from "./sim/team-field";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
 import { MpHowto } from "./view/mp-howto";
@@ -591,11 +593,20 @@ let profileBefore: Profile | null = null;
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const loaded = loadProfile();
-// 作り順④: bind the 4-person team to this browser's identity (AI の仲間 fill empty seats).
+// 作り順④/⑤: bind the 4-person team and open a 部隊戦 to this browser's identity.
 const who0 = loadIdentity();
-const withTeam = bindTeam({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, { id: who0.id, name: who0.name, code: who0.code }, aiSalt());
+const withTeam = bindTeamBattle(
+  bindTeam({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, { id: who0.id, name: who0.name, code: who0.code }, aiSalt()),
+  aiSalt(),
+);
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub(withTeam, () => {
+  // 部隊戦へ出撃: open the departure on the field's way in (作り順⑤).
+  if (hub.openFieldDepart && camping && !running) {
+    hub.openFieldDepart = false;
+    askDepart(false);
+    return;
+  }
   // 地図で見る: goal already set in the hub; open the departure framed on that POI / nearest start.
   if (hub.focusPoi && camping && !running) {
     const poi = hub.focusPoi;
@@ -847,6 +858,7 @@ async function answerDepart(go: boolean) {
     if (lease?.expeditions.length) void releaseLease();
     lease = null;
   }
+  if (!go) hub.clearFieldSortie();
   if (go) {
     if (d.walk && hub.walksOut()) {
       const launch = hub.launch();
@@ -962,32 +974,46 @@ function start(go: Launch, from?: State) {
   const neigh = neighboursFor(hub.profile);
   const defence = contestedDefence(hub.profile.poiState, hub.profile.day, neigh, aiSalt());
   const defenceParcels = contestedParcels(hub.profile.parcels ?? []);
+  // 部隊戦 field sortie (作り順⑤): island holds from the field battle, no 陣取り戦 / contested defence.
+  const field = !!go.teamField && hub.profile.teamBattle;
+  const fieldIsland = field
+    ? mergeFieldHolds(
+        POIS.map((p) => p.id),
+        new Set(POIS.filter((p) => p.boss).map((p) => p.id)),
+        hub.profile.teamBattle!,
+      )
+    : null;
   state = newRun(go.seed, kit, region, {
     depots: hub.profile.depots,
     seen: hub.profile.seen,
     from: go.from,
     entry: go.entry,
     routes: hub.profile.routes,
-    island: holds(hub.profile),
+    island: fieldIsland ?? holds(hub.profile),
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
     // Free stash slots after takeKit — 中継ボックス sends only what fits.
     stashRoom: stashRoom(hub.profile),
     stashWant: wanted(hub.profile),
     ...((): { goal?: ReturnType<typeof goalKind>; goalHave?: number; goalNeed?: number } => {
+      if (field) return {};
       const g = goalKind(hub.profile);
       if (!g) return {};
       const prog = goalProgress(hub.profile, g);
       return { goal: g, goalHave: prog.have, goalNeed: prog.need };
     })(),
-    battle: {
-      factory: hub.profile.factory,
-      away: squadsAway(hub.profile),
-      rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
-    },
-    // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
-    ...(defence.length ? { defence } : {}),
-    ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
+    ...(field
+      ? { teamField: true }
+      : {
+          battle: {
+            factory: hub.profile.factory,
+            away: squadsAway(hub.profile),
+            rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
+          },
+          // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
+          ...(defence.length ? { defence } : {}),
+          ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
+        }),
   });
   hud.setContract();
   // A lease still on its way joins this raid if it comes in its first seconds.
@@ -1024,8 +1050,11 @@ function start(go: Launch, from?: State) {
   hud.setGoalPois(state.goal ? poisWith(state.goal) : [], state.goal ? goalTags(state.goal) : []);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   // With a hunt goal: 「ダム湖に着いた。タイタンは発着場（○ m）」; else the entry / depot name.
+  // Field sorties name the battlefield (作り順⑤).
   const hunt = state.goal ? huntSpot(state) : null;
-  if (hunt) {
+  if (field) {
+    hud.banner(FIELD_NAME, FIELD_HUBS.filter((h) => hub.profile.teamBattle?.holds[h.id] === "theirs").map((h) => h.name).slice(0, 2).join(" · ") || TERM.teamBattle);
+  } else if (hunt) {
     const metres = Math.round(dist2d(state.player.pos, hunt));
     hud.banner(landedIn(regionHere(state.player.pos).name), goalIsAt(hunt.label, hunt.place, metres), false, 3.6);
   } else {

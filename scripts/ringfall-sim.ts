@@ -2217,6 +2217,7 @@ function checkSaveCompat(): string | null {
   if (!v44 || v44.v !== 46 || v44.outerGuard.lost !== 0 || v44.outerGuard.island)
     return `save compat: v44 outerGuard loaded as ${JSON.stringify(v44 && { v: v44.v, outerGuard: v44.outerGuard })}`;
   // v46: 4-person team (作り順④). v45 and older get a fresh auto-assigned team.
+  // v47: 部隊戦 field (作り順⑤). v46 and older get a fresh battle via ensureBattle.
   if (!newProfile().team || newProfile().team.members.length !== 4 || newProfile().team.members.filter((m) => m.ai).length !== 3)
     return `save compat: new profile team is ${JSON.stringify(newProfile().team)}`;
   const v45 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 45, team: undefined })));
@@ -4060,7 +4061,7 @@ function checkPushPull(): string | null {
     if ((after as { liberated?: unknown }).liberated) return "titan: settle still reports liberation";
     if (after.profile.factory !== 3 || playerNodes(after.profile).length === 0) return `titan: settle reset the island (factory ${after.profile.factory}, nodes ${playerNodes(after.profile).length})`;
     if (raidThreat(after.profile) !== 0) return `titan: raidThreat after titan kill is ${raidThreat(after.profile)}`;
-    // A v42 save with cycle fields loads as v46 without them; island standings stay.
+    // A v42 save with cycle fields loads as v47 without them; island standings stay.
     const legacy = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 42, cycle: 3, cycleDay: 10, liberations: [20, 18] })));
     if (!legacy || legacy.v !== 46 || "cycle" in legacy || "cycleDay" in legacy || "liberations" in legacy) return `titan: v42 liberation fields loaded as ${JSON.stringify(legacy && { v: legacy.v })}`;
   }

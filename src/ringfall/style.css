@@ -2045,6 +2045,71 @@ body.touch #hub-close kbd {
 .team-seat .exp-held {
   margin: 2px 0;
 }
+/* 作り順⑤: 部隊戦 field board on the signal station. */
+.field-board {
+  margin: 0 0 12px;
+  padding: 0 0 4px;
+}
+.field-board .mod-head {
+  margin-bottom: 4px;
+}
+.field-board .mod-head strong {
+  font-size: 14px;
+}
+.field-board .mod-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-left: 8px;
+}
+.field-status {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--white);
+}
+.field-hubs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+.field-hub {
+  padding: 2px 8px;
+  background: var(--plate);
+  color: var(--foe);
+  font-size: 12px;
+  font-weight: 800;
+}
+.field-hub.ours {
+  color: var(--sky);
+}
+.field-foe-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin: 4px 0 8px;
+}
+.field-foe-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.field-foe {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--white);
+}
+.field-board button {
+  margin-top: 4px;
+}
+.field-result {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--white);
+}
 /* What a pick costs of a depot start's allowance. */
 #hub .item b.cost {
   color: var(--mate-light);

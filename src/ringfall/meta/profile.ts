@@ -12,6 +12,18 @@ import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
 import { ensureTeam, formTeam, parseTeam, selfOuterCount, teamSalt, type Team, type TeamSelf } from "./team";
+import {
+  applyFieldCaptures,
+  autoDefendField,
+  battleDue,
+  ensureBattle,
+  FIELD_NAME,
+  hubCounts,
+  markSortie,
+  parseTeamBattle,
+  settleBattle,
+  type TeamBattle,
+} from "./team-battle";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -28,7 +40,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 46;
+  v: 47;
   cash: number;
   stash: Item[];
   raids: number;
@@ -121,6 +133,12 @@ export interface Profile {
    * Future: war power / battle field / scoring read `team` without reshaping it.
    */
   team: Team;
+  /**
+   * Active / last 部隊戦 on the field (作り順⑤). Null until first ensure.
+   * v46 and older saves get a fresh battle on load via `ensureBattle`.
+   * Step 6 (war power / bounty / held-time) reads `teamBattle.hooks` without reshaping.
+   */
+  teamBattle: TeamBattle | null;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -186,8 +204,9 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   const s = seed & 0xffff;
+  const team = formTeam(seedSelf(s), s, 1, 0);
   return {
-    v: 46,
+    v: 47,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -221,8 +240,18 @@ export function newProfile(seed = 1): Profile {
     goal: null,
     outerGuard: emptyOuterGuard(),
     // 作り順④: auto-assign self + AI の仲間 (identity may replace self later via bindTeam).
-    team: formTeam(seedSelf(s), s, 1, 0),
+    team,
+    // 作り順⑤: open the first 部隊戦 on day 1 (AI foe fill).
+    teamBattle: ensureBattle(null, team, s, 1),
   };
+}
+
+/** Ensure / refresh the profile's 部隊戦 (open a match if none or the last one settled). */
+export function bindTeamBattle(p: Profile, salt: number): Profile {
+  const team = p.team?.members?.length ? p.team : formTeam(seedSelf(p.seed), salt, p.day, selfOuterCount(p));
+  const teamBattle = ensureBattle(p.teamBattle, team, salt, p.day);
+  if (teamBattle === p.teamBattle && team === p.team) return p;
+  return { ...p, team, teamBattle };
 }
 
 /**
@@ -593,6 +622,11 @@ export interface Settlement {
    * View-only: 「倉庫へ届いた」 must not claim overflow that 「倉庫に入らなかった」 already lists.
    */
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
+  /**
+   * 部隊戦 that just closed this settle (作り順⑤), when the period ended.
+   * View-only for the results card; the profile already holds the next / settled battle.
+   */
+  fieldBattle?: { result: "win" | "loss" | "draw"; ours: number; theirs: number; name: string };
 }
 
 /** Whether the profile still has items waiting for 倉庫の整理 (blocks departure from the gate). */
@@ -752,7 +786,9 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     opened.push(r.id);
     spent.add(i);
   }
-  const day = raidDay(s);
+  // Field sorties (作り順⑤): captures write field holds, not home-island poiState.
+  const fieldRaid = !!s.teamField;
+  const day = fieldRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
   const change = dayChange(p, day);
   const threat = s.threat ?? 0;
@@ -811,6 +847,27 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       if (JSON.stringify(team) !== JSON.stringify(night.team)) Object.assign(night, { team });
     }
   }
+  // 作り順⑤: tick 部隊戦 — field captures, auto-defence, period settle, open next.
+  let fieldBattle: Settlement["fieldBattle"];
+  {
+    let tb = night.teamBattle ?? p.teamBattle ?? null;
+    const ours = night.team ?? p.team;
+    if (ours?.members?.length) {
+      if (!tb) tb = ensureBattle(null, ours, night.seed, p.day);
+      if (fieldRaid) tb = markSortie(tb, p.day);
+      if (fieldRaid) tb = applyFieldCaptures(tb, capturedIds(s));
+      // Overnight on the field: foe takes one hub if the player did not sortie that day.
+      tb = autoDefendField(tb, p.day);
+      if (battleDue(tb, night.day)) {
+        tb = settleBattle(tb);
+        const n = hubCounts(tb.holds);
+        fieldBattle = { result: tb.result!, ours: n.ours, theirs: n.theirs, name: FIELD_NAME };
+      }
+      // Open the next match once the period is settled.
+      tb = ensureBattle(tb, ours, night.seed, night.day);
+      Object.assign(night, { teamBattle: tb });
+    }
+  }
   // The nodes the player holds once the night is over pay their day's credits.
   const homePay = heldIncome(night);
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
@@ -849,6 +906,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       : {}),
     ...(takenRival.length ? { takenRival } : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),
+    ...(fieldBattle ? { fieldBattle } : {}),
   };
 }
 
@@ -1014,12 +1072,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v43 and older contest only the four shore hubs; v44 marks outer-edge contested hubs (作り順②) for stack consistency (ownership still in poiState).
  * v44 and older have no `outerGuard`; v45 adds anti-snowball (作り順③: island shield + loss cap).
  * v45 and older have no `team`; v46 adds 4-person teams with AI の仲間 fill (作り順④).
+ * v46 and older have no `teamBattle`; v47 adds 部隊戦 on the field (作り順⑤).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1089,6 +1148,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v44: 外側の取り合う拠点（作り順②）。専用フィールドは無し（poiState の rival が持ち主）。
   // v45: 作り順③の島の盾・喪失上限（`outerGuard`）。
   // v46: 作り順④の 4 人チーム（`team`、空きは AI の仲間）。
+  // v47: 作り順⑤の部隊戦（`teamBattle`、荒地の戦場）。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
@@ -1100,8 +1160,10 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const team =
     savedTeam ??
     formTeam(seedSelf(seedN), seedN, day, contestedOwned({ poiState }).length);
+  const savedBattle = typeof o.v === "number" && o.v >= 47 ? parseTeamBattle(o.teamBattle) : null;
+  const teamBattle = ensureBattle(savedBattle, team, seedN, day);
   return {
-    v: 46,
+    v: 47,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1134,6 +1196,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     goal,
     outerGuard,
     team,
+    teamBattle,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,

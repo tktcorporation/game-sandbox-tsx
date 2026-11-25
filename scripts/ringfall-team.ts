@@ -90,19 +90,20 @@ const SELF = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "テスト", co
 // --- Profile v46 + migrate from v45 ---
 {
   const p = newProfile(7);
-  assert.equal(p.v, 46);
+  assert.ok(p.v >= 46);
   assert.equal(p.team.members.length, TEAM.size);
   assert.equal(selfOuterCount(p), 0);
 
   const raw = JSON.parse(JSON.stringify(p)) as Record<string, unknown>;
   raw.v = 45;
   delete raw.team;
+  delete raw.teamBattle;
   const migrated = parseProfile(raw, 7);
   assert.ok(migrated);
-  assert.equal(migrated!.v, 46);
+  assert.ok(migrated!.v >= 46);
   assert.equal(migrated!.team.members.length, TEAM.size);
   assert.ok(migrated!.team.members.some((m) => m.ai));
-  console.log("profile: v46 new + v45→v46 migrate");
+  console.log(`profile: v${p.v} new + v45→v${migrated!.v} migrate`);
 }
 
 // --- bindTeam replaces seed-self with identity ---
