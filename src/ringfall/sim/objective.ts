@@ -1,9 +1,9 @@
 import { CONQUEST, FRONT, type ValuableKind } from "./config";
 import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, poiRegion, regionHere } from "./map";
+import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, poiRegion, regionHere, type PoiId } from "./map";
 import { frontNodes } from "./front";
-import { sources } from "../meta/hideout";
+import { sources, type Source } from "../meta/hideout";
 import type { State } from "./state";
 
 /*
@@ -175,20 +175,39 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
 /** The current step, or null once every step is done. */
 export const currentStep = (o: Objective): Step | null => o.steps[o.current] ?? null;
 
+/** Whether this raid can still take `kind` at `id` (unopened bins, living タイタン, or that loot on the ground). */
+function poiStillYields(s: State, id: PoiId, kind: ValuableKind, ranked: Source[]): boolean {
+  const pi = poiIndex(id);
+  const poi = POIS[pi];
+  if (!poi) return false;
+  for (const src of ranked.filter((r) => r.poi === id)) {
+    if (src.from === "robot" && src.where === "タイタン") {
+      if (s.enemies.some((e) => e.kind === "titan")) return true;
+      if (s.loot.some((l) => l.kind === "valuable" && l.valuable === kind && dist2d(l.pos, poi) < 80)) return true;
+    }
+    if (src.from === "bin") {
+      if (s.bins.some((b) => b.poi === pi && !b.open)) return true;
+      if (s.loot.some((l) => l.kind === "valuable" && l.valuable === kind && l.from === pi)) return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Where the hunt target (目標) stands for the compass / landing line: the nearest POI that yields
- * it (タイタン at 発着場, or a bin POI). The label is the likeliest source at that POI (タイタン
- * over the POI's own bin name). Null when there is no goal, it is already met, or no placed source.
- * Capture / defend / finale leave this unused so the objective step keeps the mark.
+ * Where the hunt target (目標) stands for the compass / landing line: the nearest POI that still
+ * yields it (タイタン at 発着場, or a bin POI). The label is the likeliest open source at that POI
+ * (タイタン over the POI's own bin name). Null when there is no goal, it is already met (stash +
+ * bag + depot send), or no placed source left. Capture / defend / finale leave this unused so the
+ * objective step keeps the mark.
  */
 export function huntSpot(s: State): { x: number; y: number; z: number; label: string; place: string; region: string } | null {
   const kind = s.goal as ValuableKind | null;
   if (!kind || s.goalNeed <= 0) return null;
-  const have = s.goalHave + s.player.haul.filter((k) => k === kind).length;
+  const have = s.goalHave + s.player.haul.filter((k) => k === kind).length + s.sent.filter((k) => k === kind).length;
   if (have >= s.goalNeed) return null;
   const p = s.player.pos;
   const ranked = sources(kind).filter((src) => src.poi);
-  const pois = [...new Set(ranked.map((src) => src.poi!))];
+  const pois = [...new Set(ranked.map((src) => src.poi!))].filter((id) => poiStillYields(s, id, kind, ranked));
   let bestId: (typeof pois)[number] | null = null;
   let bestD = Infinity;
   for (const id of pois) {
@@ -201,18 +220,43 @@ export function huntSpot(s: State): { x: number; y: number; z: number; label: st
     }
   }
   if (!bestId) return null;
-  const poi = POIS[poiIndex(bestId)]!;
-  // Likeliest source at this POI (sources() is share-desc — タイタン before 発着場's bins).
-  const src = ranked.find((r) => r.poi === bestId)!;
+  const pi = poiIndex(bestId);
+  const poi = POIS[pi]!;
+  const atBest = ranked.filter((r) => r.poi === bestId);
+  const titanLive = s.enemies.find((e) => e.kind === "titan");
+  const nearDrop = (l: (typeof s.loot)[number]) => l.kind === "valuable" && l.valuable === kind && dist2d(l.pos, poi) < 80;
+  const fromBin = (l: (typeof s.loot)[number]) => l.kind === "valuable" && l.valuable === kind && l.from === pi;
+  const binOpen = s.bins.some((b) => b.poi === pi && !b.open);
+  const binLoot = s.loot.some(fromBin);
+  const titanLoot = s.loot.some(nearDrop);
+  // Prefer a still-open source at this POI (タイタン while alive, else bins / ground loot).
+  const src =
+    (titanLive && atBest.find((r) => r.from === "robot" && r.where === "タイタン")) ||
+    ((binOpen || binLoot) && atBest.find((r) => r.from === "bin")) ||
+    (titanLoot && atBest.find((r) => r.from === "robot" && r.where === "タイタン")) ||
+    atBest[0]!;
   let x = poi.x;
   let y = 0;
   let z = poi.z;
   if (src.from === "robot" && src.where === "タイタン") {
-    const titan = s.enemies.find((e) => e.kind === "titan");
-    if (titan) {
-      x = titan.pos.x;
-      y = titan.pos.y;
-      z = titan.pos.z;
+    if (titanLive) {
+      x = titanLive.pos.x;
+      y = titanLive.pos.y;
+      z = titanLive.pos.z;
+    } else {
+      const drop = s.loot.filter(nearDrop).sort((a, b) => dist2d(p, a.pos) - dist2d(p, b.pos))[0];
+      if (drop) {
+        x = drop.pos.x;
+        y = drop.pos.y;
+        z = drop.pos.z;
+      }
+    }
+  } else {
+    const drop = s.loot.filter(fromBin).sort((a, b) => dist2d(p, a.pos) - dist2d(p, b.pos))[0];
+    if (drop) {
+      x = drop.pos.x;
+      y = drop.pos.y;
+      z = drop.pos.z;
     }
   }
   return { x, y, z, label: src.where, place: poi.name, region: src.region || poiRegion(bestId).name };

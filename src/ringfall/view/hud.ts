@@ -427,7 +427,8 @@ export class Hud {
         if (e.kind === "shard") break;
         if (e.kind === "valuable" && e.valuable && s.goal === e.valuable && s.goalNeed > 0) {
           const inBag = s.player.haul.filter((k) => k === s.goal).length;
-          const have = s.goalHave + inBag;
+          const sent = s.sent.filter((k) => k === s.goal).length;
+          const have = s.goalHave + inBag + sent;
           this.toast(`${TERM.goal} · ${esc(VALUABLES[e.valuable].label)} ${have} / ${s.goalNeed}`, e.rarity ?? 0, 2200);
           break;
         }
