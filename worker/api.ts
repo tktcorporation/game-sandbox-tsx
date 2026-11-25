@@ -247,7 +247,16 @@ export const NEIGHBOURS = { count: 4, pool: 24, weekMs: 7 * 24 * 3600 * 1000, ac
  * Mutual weekly pairing (TKT-201) keeps each listed on the other; prefer B's pick of A, else A's
  * slot of B (same sea slot → same shore id faces the pair).
  */
-async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string, bCode: string, aShore: string, ownerCode: string, now: number) {
+async function syncContestedPair(
+  env: ApiEnv,
+  ns: IslandNamespace,
+  aCode: string,
+  bCode: string,
+  aShore: string,
+  ownerCode: string,
+  now: number,
+  ownerName = "",
+) {
   const db = env.DB;
   if (db) {
     try {
@@ -287,7 +296,7 @@ async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string
     theirShore = ours !== undefined && NEIGHBOUR_SLOTS[ours.slot] ? NEIGHBOUR_SLOTS[ours.slot].shore : undefined;
   }
   if (!theirShore) return;
-  await ask(ns, bCode, { t: "contestedMirror", shore: theirShore, owner: ownerCode, at: now }, now);
+  await ask(ns, bCode, { t: "contestedMirror", shore: theirShore, owner: ownerCode, name: ownerName, at: now }, now);
 }
 
 /**
@@ -489,7 +498,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
         for (const c of taken) {
           const neighbour = c.from ?? (await neighbourFacingShore(env, player.id, c.shore, now));
           if (!neighbour) continue;
-          await syncContestedPair(env, ns, code, neighbour, c.shore, code, now);
+          await syncContestedPair(env, ns, code, neighbour, c.shore, code, now, player.name);
         }
       } catch {
         /* mirror best-effort; report already succeeded */
@@ -522,7 +531,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     if (ar.status === 200 && raw.won) {
       try {
         const body = (await ar.clone().json()) as { contested?: { shore: string; owner: string } };
-        if (body.contested) await syncContestedPair(env, ns, code, fromCode, body.contested.shore, fromCode, now);
+        if (body.contested) await syncContestedPair(env, ns, code, fromCode, body.contested.shore, fromCode, now, name);
       } catch {
         /* best-effort */
       }

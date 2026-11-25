@@ -223,8 +223,8 @@ export type IslandOp =
   | { t: "whois"; player: string }
   | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[]; x2?: true }
   | { t: "assault"; from: string; id: number; won: boolean }
-  /** Mirror contested ownership onto this island's shore (方向 A): set hold to rival:owner or own. */
-  | { t: "contestedMirror"; shore: string; owner: string; at: number }
+  /** Mirror contested ownership onto this island's shore (方向 A): set hold to rival:owner or own. `name` is the owner's player-facing name for the log. */
+  | { t: "contestedMirror"; shore: string; owner: string; name?: string; at: number }
   | { t: "ping"; player: string; name: string; x: number; z: number }
   | { t: "aid"; from: Attacker; poi: string; kind: string };
 
@@ -769,10 +769,11 @@ function assault(s: IslandState, from: string, id: number, won: boolean, now: nu
  * Mirror a contested hub onto this island: if `owner` is this island's code, shore becomes own;
  * otherwise rival:owner. Applies same-day shield. Refuses when already shielded today.
  */
-function contestedMirror(s: IslandState, shore: string, owner: string, at: number): { status: number; body: unknown } {
+function contestedMirror(s: IslandState, shore: string, owner: string, at: number, name = ""): { status: number; body: unknown } {
   const i = NODE_IDS.indexOf(shore);
   if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
   const next: PoiHold = owner === s.owner.code ? "own" : rivalHold(owner);
+  const who = { code: owner, name: name.trim().slice(0, 24) };
   if (s.holds[i] === next) {
     shieldNode(s, i, at);
     return { status: 200, body: { ok: true, hold: s.holds[i], idempotent: true } };
@@ -783,7 +784,7 @@ function contestedMirror(s: IslandState, shore: string, owner: string, at: numbe
   s.expeditions = s.expeditions.filter((e) => e.target !== i);
   // Shield without counting as an expedition day-take (appendLog "taken" would bump perDay).
   shieldNode(s, i, at);
-  s.log.push({ seq: ++s.seq, at, t: owner === s.owner.code ? "retaken" : "taken", node: shore, by: { code: owner, name: "" } });
+  s.log.push({ seq: ++s.seq, at, t: owner === s.owner.code ? "retaken" : "taken", node: shore, by: who });
   if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);
   return { status: 200, body: { ok: true, hold: s.holds[i] } };
 }
@@ -822,7 +823,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     );
   }
   if (op.t === "contestedMirror") {
-    const r = contestedMirror(s, op.shore, op.owner, op.at);
+    const r = contestedMirror(s, op.shore, op.owner, op.at, op.name);
     return done(r.status, r.body, r.status === 200);
   }
   if (op.t === "lease") {

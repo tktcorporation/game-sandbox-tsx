@@ -415,7 +415,11 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   const station = NODE_IDS.indexOf("station");
   check(bIsle.holds[station] === `rival:${codeA}`, `contested write: B station is ${bIsle.holds[station]}, want rival:${codeA}`);
   check(NEIGHBOUR_SLOTS[0]!.shore === "station", "contested write: slot 0 is not station");
-  console.log(`contested write: A took station → B holds rival:${codeA}`);
+  check(
+    bIsle.log.some((e) => e.t === "taken" && e.node === "station" && e.by.code === codeA && e.by.name === "ツバキ"),
+    `contested write: B log missing ツバキ (${JSON.stringify(bIsle.log.slice(-2))})`,
+  );
+  console.log(`contested write: A took station → B holds rival:${codeA} (log names ツバキ)`);
 }
 
 if (errors.length) {

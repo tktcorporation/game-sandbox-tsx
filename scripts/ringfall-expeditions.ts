@@ -669,8 +669,9 @@ const T2 = T1 + 400_000;
   );
   // Contested mirror: neighbour's facing shore becomes rival:owner (or own).
   const mir = island({ station: "own", supply: "own" }, 0);
-  const mirSet = op(mir, { t: "contestedMirror", shore: "station", owner: B.code, at: T1 }, T1);
+  const mirSet = op(mir, { t: "contestedMirror", shore: "station", owner: B.code, name: B.name, at: T1 }, T1);
   check(mirSet.status === 200 && mir.holds[station] === `rival:${B.code}` && mir.shielded?.nodes.includes(station), "mirror: set rival hold failed");
+  check(mir.log.some((e) => e.t === "taken" && e.by.code === B.code && e.by.name === B.name), "mirror: log missing attacker name");
   const mirAgain = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + 1000 }, T1 + 1000);
   check(mirAgain.status === 409 && (mirAgain.body as { error?: string }).error === "shielded", "mirror: same-day flip was allowed");
   const mirFlip = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + DAY }, T1 + DAY);
