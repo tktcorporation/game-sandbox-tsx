@@ -103,6 +103,9 @@ export interface Profile {
   pending: Item[];
   /**
    * Manual hunt target (a valuable kind). Null means auto: chase what the next hand's module needs.
+   * Lasts one sortie: `settle()` clears it when the raid ends and the player returns to camp
+   * (alive or wipe), so the next camp visit no longer shows 目標にしている / hunt pins for it.
+   * Guidance during that sortie is unchanged (`State.goal` is fixed at raid start).
    * v41 and older saves have none (auto).
    */
   goal: ValuableKind | null;
@@ -686,7 +689,8 @@ function store(p: Profile, items: Item[]): { profile: Profile; pending: Item[] }
  * Puts what came off the island into the stash.
  * What was sent home from a depot arrives however the raid ended; the depots switched on
  * and the map explored are kept too. The ways in walked to are learned only when the player got
- * off alive: a wipe forgets them.
+ * off alive: a wipe forgets them. A manual hunt target (`Profile.goal`) is cleared on return so
+ * it lasts only that one sortie.
  */
 export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
   const pl = s.player;
@@ -783,7 +787,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
   // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
-  const fresh = { ...next, stash: withStarters(next.stash) };
+  // Manual 目標 lasts one sortie: clear on return so camp no longer shows 目標にしている.
+  const fresh = { ...next, stash: withStarters(next.stash), goal: null };
   fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
   const takenRival = trop.taken.flatMap((id) => {
     const owner = rivalOf(beforeHolds[nodeIndex(id)] ?? "foe");

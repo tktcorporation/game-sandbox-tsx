@@ -7,7 +7,7 @@ import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
 import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { neighbourNameByCode } from "../meta/neighbours";
-import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
+import { itemColor, itemName, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -1703,7 +1703,7 @@ export class Hud {
       ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
       : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
-    const defence = this.defenceLines(s, settled);
+    const defence = this.defenceLines(s);
     const dayHead = settled
       ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
       : "";
@@ -1737,20 +1737,16 @@ export class Hud {
   }
 
   /**
-   * Multiplayer motivation on the return screen: what this raid put into 島の守り at a 中継ボックス,
-   * and who else's delivery still sits there. Existing place names only.
+   * Multiplayer motivation on the return screen: what this raid put into 島の守り at a 中継ボックス.
+   * Named delivery lines are not listed — toast + 「〜に回った」 are enough (design-direction).
    */
-  private defenceLines(s: State, settled?: Settlement): string {
+  private defenceLines(s: State): string {
     const left = s.leftParcels ?? [];
     const mine = left
       .map((q) => `<span>${depotIcon()}${esc(POIS[poiIndex(q.poi)].name)}${PHRASE.islandGuardWent}</span>`)
       .join("");
-    const help = namedAid(settled?.profile ?? { parcels: [] })
-      .slice(0, 3)
-      .map((q) => `<span><b>${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</span>`)
-      .join("");
-    if (!mine && !help) return "";
-    return `<h3>${TERM.islandGuard}</h3><p>${mine}${help}</p>`;
+    if (!mine) return "";
+    return `<h3>${TERM.islandGuard}</h3><p>${mine}</p>`;
   }
 
 
