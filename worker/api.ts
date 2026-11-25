@@ -1,7 +1,7 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { TROPHY } from "../src/ringfall/meta/trophies";
-import { parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
+import { parseContestedFailed, parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
 import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
@@ -314,6 +314,49 @@ async function neighbourFacingShore(env: ApiEnv, playerId: string, shore: string
   return row?.code ?? null;
 }
 
+/**
+ * Shore on `defenderCode`'s island that faces `attackerCode` this week (mutual pairing → same slot).
+ */
+async function shoreFacingAttacker(env: ApiEnv, defenderCode: string, attackerCode: string, fallbackShore: string, now: number): Promise<string | undefined> {
+  const db = env.DB;
+  const week = Math.floor(now / NEIGHBOURS.weekMs);
+  const theirPick = (
+    await db
+      ?.prepare(
+        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
+          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
+      )
+      .bind(defenderCode, week, attackerCode)
+      .all<{ slot: number }>()
+  )?.results[0];
+  if (theirPick !== undefined && NEIGHBOUR_SLOTS[theirPick.slot]) return NEIGHBOUR_SLOTS[theirPick.slot].shore;
+  const ours = (
+    await db
+      ?.prepare(
+        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
+          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
+      )
+      .bind(attackerCode, week, defenderCode)
+      .all<{ slot: number }>()
+  )?.results[0];
+  if (ours !== undefined && NEIGHBOUR_SLOTS[ours.slot]) return NEIGHBOUR_SLOTS[ours.slot].shore;
+  return NEIGHBOUR_SLOTS.some((s) => s.shore === fallbackShore) ? fallbackShore : undefined;
+}
+
+/** Tell the defender a contested attack failed (守りきった). */
+async function notifyContestedDefend(
+  env: ApiEnv,
+  ns: IslandNamespace,
+  attackerCode: string,
+  attackerName: string,
+  fail: { shore: string; owner: string },
+  now: number,
+) {
+  const theirShore = await shoreFacingAttacker(env, fail.owner, attackerCode, fail.shore, now);
+  if (!theirShore) return;
+  await ask(ns, fail.owner, { t: "contestedDefend", shore: theirShore, from: { code: attackerCode, name: attackerName }, at: now }, now);
+}
+
 /** A neighbour as the owner's camp shows it: whose island, its code, how far its owner has come, and what they did last. */
 export interface Neighbour {
   code: string;
@@ -480,7 +523,8 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const lent = parseLent(raw.lent);
     const parcels = parseParcels(raw.parcels);
     const takenParcels = parseTakenParcels(raw.takenParcels);
-    if (!player || !holds || !retaken || !lent || !parcels || !takenParcels || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    const contestedFailed = parseContestedFailed(raw.contestedFailed);
+    if (!player || !holds || !retaken || !lent || !parcels || !takenParcels || !contestedFailed || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
     const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, parcels, takenParcels }, now);
     if (r.status === 200) {
       await ownCode(env, code, player.id, now);
@@ -499,6 +543,9 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
           const neighbour = c.from ?? (await neighbourFacingShore(env, player.id, c.shore, now));
           if (!neighbour) continue;
           await syncContestedPair(env, ns, code, neighbour, c.shore, code, now, player.name);
+        }
+        for (const f of contestedFailed) {
+          await notifyContestedDefend(env, ns, code, player.name, f, now);
         }
       } catch {
         /* mirror best-effort; report already succeeded */

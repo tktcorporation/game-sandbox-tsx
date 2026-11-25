@@ -217,6 +217,11 @@ export interface RaidReport {
   parcels?: { poi: string; kind: string; from: { code: string; name: string } }[];
   /** Aid parcel ids taken this raid. */
   takenParcels?: number[];
+  /**
+   * Contested hubs whose 核 · 制圧 was started against a real neighbour but not finished
+   * (TKT-201): defender gets 「… · 守りきった」.
+   */
+  contestedFailed?: { shore: string; owner: string }[];
 }
 
 /**
@@ -322,6 +327,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         ...(raid?.lent.length ? { lent: raid.lent } : {}),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
+        ...(raid?.contestedFailed?.length ? { contestedFailed: raid.contestedFailed } : {}),
       }),
     });
     if (!r.ok) return r;

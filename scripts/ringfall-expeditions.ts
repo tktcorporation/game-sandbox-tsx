@@ -715,6 +715,16 @@ const T2 = T1 + 400_000;
     "shield lent: wipe+retaken bypassed same-day shield",
   );
   console.log(`shield: station shielded then retaken next day; mirror flip blocked same day`);
+
+  // Contested defend notice (TKT-201): failed attack logs wiped with attacker name.
+  const defIsle = island({ station: "own", supply: "own" }, 0);
+  const def = op(defIsle, { t: "contestedDefend", shore: "station", from: { code: B.code, name: B.name }, at: T1 + 2 * DAY }, T1 + 2 * DAY);
+  check(def.status === 200, "defend: contestedDefend refused");
+  check(
+    defIsle.log.some((e) => e.t === "wiped" && e.node === "station" && e.by.code === B.code && e.by.name === B.name),
+    `defend: wiped log missing (${JSON.stringify(defIsle.log.slice(-1))})`,
+  );
+  console.log(`defend: ${B.name} failed → wiped log on defender`);
 }
 
 if (errors.length) {

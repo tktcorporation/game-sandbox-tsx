@@ -561,6 +561,11 @@ export interface Stats {
   wiped: string[];
   /** The nodes taken by their cores (`NODES` ids), in the order they fell. */
   captured: NodeId[];
+  /**
+   * Contested coastal hubs whose core capture was started this raid while a real neighbour held
+   * them (TKT-201): owner island code. Failed ones (not in `captured`) notify the defender.
+   */
+  contestedTried: { id: NodeId; owner: string }[];
 }
 
 /**
@@ -1149,7 +1154,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     useFocus: null,
     useHeld: false,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], captured: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], captured: [], contestedTried: [] },
   };
   if (from) {
     const p = s.player;

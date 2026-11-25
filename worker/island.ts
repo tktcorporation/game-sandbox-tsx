@@ -225,6 +225,8 @@ export type IslandOp =
   | { t: "assault"; from: string; id: number; won: boolean }
   /** Mirror contested ownership onto this island's shore (方向 A): set hold to rival:owner or own. `name` is the owner's player-facing name for the log. */
   | { t: "contestedMirror"; shore: string; owner: string; name?: string; at: number }
+  /** Failed contested attack on this island's shore (TKT-201): log 守りきった for the defender. */
+  | { t: "contestedDefend"; shore: string; from: Attacker; at: number }
   | { t: "ping"; player: string; name: string; x: number; z: number }
   | { t: "aid"; from: Attacker; poi: string; kind: string };
 
@@ -769,6 +771,18 @@ function assault(s: IslandState, from: string, id: number, won: boolean, now: nu
  * Mirror a contested hub onto this island: if `owner` is this island's code, shore becomes own;
  * otherwise rival:owner. Applies same-day shield. Refuses when already shielded today.
  */
+/**
+ * Defender notice for a failed contested attack (TKT-201): appends `wiped` so the owner's sync
+ * shows 「{誰}が{拠点}を攻めた · 守りきった」 and awards `TROPHY.defend`. Holds unchanged.
+ */
+function contestedDefend(s: IslandState, shore: string, from: Attacker, at: number): { status: number; body: unknown } {
+  const i = NODE_IDS.indexOf(shore);
+  if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
+  if (!from?.code || typeof from.name !== "string") return { status: 400, body: fail("bad-request") };
+  appendLog(s, at, "wiped", i, { code: from.code, name: from.name.trim().slice(0, 24) });
+  return { status: 200, body: { ok: true } };
+}
+
 function contestedMirror(s: IslandState, shore: string, owner: string, at: number, name = ""): { status: number; body: unknown } {
   const i = NODE_IDS.indexOf(shore);
   if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
@@ -824,6 +838,10 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   }
   if (op.t === "contestedMirror") {
     const r = contestedMirror(s, op.shore, op.owner, op.at, op.name);
+    return done(r.status, r.body, r.status === 200);
+  }
+  if (op.t === "contestedDefend") {
+    const r = contestedDefend(s, op.shore, op.from, op.at);
     return done(r.status, r.body, r.status === 200);
   }
   if (op.t === "lease") {
@@ -898,6 +916,23 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   s.expeditions.push(e);
   appendLog(s, now, "noticed", i, e.by);
   return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt, ...(op.x2 ? { x2: true } : {}) }, true);
+}
+
+/** Failed contested attacks in a report (TKT-201), or null when unreadable. Left out, none. */
+export function parseContestedFailed(raw: unknown): { shore: string; owner: string }[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > CONTESTED_SHORES.length) return null;
+  const out: { shore: string; owner: string }[] = [];
+  const seen = new Set<string>();
+  for (const r of raw) {
+    if (!r || typeof r !== "object") return null;
+    const o = r as Record<string, unknown>;
+    if (typeof o.shore !== "string" || !isContestedShore(o.shore) || typeof o.owner !== "string" || !o.owner) return null;
+    if (seen.has(o.shore)) continue;
+    seen.add(o.shore);
+    out.push({ shore: o.shore, owner: o.owner.slice(0, 16) });
+  }
+  return out;
 }
 
 /** The nodes a report names as taken back in the raid, or null: node ids, each once, at most one per node. Left out, none. */
