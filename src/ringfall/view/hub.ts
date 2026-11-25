@@ -1,7 +1,6 @@
 import { PLAYER } from "../sim/config";
 import { aiSalt, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
-import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { attackScouts, revengeNodeFromLine, type AttackScout } from "../meta/attack-scout";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
@@ -26,11 +25,6 @@ const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
 /** The robots' kinds by name, for the factory. */
 const ENEMY_NAME: Record<EnemyKind, string> = { grunt: "グラント", heavy: "ヘビー", drone: "ドローン", charger: "チャージャー", titan: "タイタン" };
-
-/** Aid left at a 中継ボックス by someone the player can name (other islands / neighbours). */
-export function namedAid(p: Pick<Profile, "parcels">): Parcel[] {
-  return (p.parcels ?? []).filter((q) => q.from.name.trim() && q.from.code !== LOCAL_AID && q.from.code !== "");
-}
 
 /** The front node nearest `from` (camp wake by default — same pick as the objective with no contract). */
 export function frontPickFor(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
@@ -1063,12 +1057,11 @@ export class Hub {
     const p = this.profile;
     // 倉庫を含む隠れ家設備は作業場の ▲ に数える.
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    // The signal station wants looking at while news of the other islands is unread, or while
-    // someone else's delivery still sits at a 中継ボックス.
-    const aid = namedAid(p).length;
+    // The signal station wants looking at while news of the other islands is unread.
+    // 島の守り (parcels) is not counted on the signal mark — toast and リザルト「〜に回った」cover it.
     // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
-    const unread = this.news.length + this.expNews.length + aid;
-    const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
+    const unread = this.news.length + this.expNews.length;
+    const signal = !this.newsSeen && unread ? `知らせ ${unread}` : "";
     // Shelves: the radio's report (warehouse growth is at the workshop).
     const stash = p.hideout.radio ? "無線" : "";
     return { stash, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
@@ -1176,19 +1169,15 @@ export class Hub {
     return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
   }
 
-  /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）と島の守り。 */
+  /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）。 */
   private signalNews(): string {
-    const archive = (this.profile.news ?? []).map((line) => {
+    const items = (this.profile.news ?? []).map((line) => {
       const node = revengeNodeFromLine(this.profile.poiState, line);
       const btn = node
         ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
         : "";
       return `<li>${esc(line)}${btn}</li>`;
     });
-    const aid = namedAid(this.profile).slice(0, 4).map(
-      (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
-    );
-    const items = [...archive, ...aid];
     return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
