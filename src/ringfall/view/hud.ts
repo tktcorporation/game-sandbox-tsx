@@ -352,6 +352,12 @@ export class Hud {
     for (const [k, v] of names) this.rivalNames.set(k, v);
   }
 
+  /** Own outer hubs are island-shielded (作り順③) — map skips the dashed exposed ring. */
+  setIslandShielded(on: boolean) {
+    this.map.islandShielded = on;
+    this.minimap.islandShielded = on;
+  }
+
   setKnown(known: EntryId[]) {
     this.known = [...known];
     this.map.known = this.known;

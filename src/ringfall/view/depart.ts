@@ -6,6 +6,7 @@ import { PHRASE, TERM, attackScoutDef, attackScoutTrop } from "./copy";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
 import { IslandMap, islandScene, VIEW_PAD } from "./map";
+import { isIslandProtected } from "../meta/outer-guard";
 
 /*
  * The departure (DOM, `#depart`): the island drawn whole, every place a raid may start set on it,
@@ -114,6 +115,7 @@ export class DepartPicker {
     this.map.known = p.entries;
     this.map.contract = null;
     this.map.neighbours = neighboursOnMap(p);
+    this.map.islandShielded = isIslandProtected(p.outerGuard, Date.now());
     // 来る遠征の予告 UI は削除済み: Profile.incoming を地図に載せない
     this.map.draw(islandScene(p));
     const pts = hub.startPoints();

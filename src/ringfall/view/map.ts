@@ -519,6 +519,10 @@ export class IslandMap {
    */
   neighbours: readonly Neighbour[] = [];
   /**
+   * Own outer hubs are island-shielded (作り順③): skip the dashed「取られうる」ring while the shield lasts.
+   */
+  islandShielded = false;
+  /**
    * The minimap (the HUD's corner): half the side of the square it shows round the player, in metres,
    * and 0 for a map. It draws who holds the ground, the nodes, the ways off as marks, the teammate and
    * the player, and no names: the map (M) is where they are read.
@@ -1087,8 +1091,8 @@ export class IslandMap {
       return contestOwner(n.ai ? aiLabel(n.name) : n.name);
     };
     const attackable = (i: number): boolean => isContestedShore(POIS[i].id) && rivalOf(hold(i)) !== null;
-    /** Own contested outer hub: can be taken by others (dashed ring). */
-    const exposed = (i: number): boolean => isContestedShore(POIS[i].id) && hold(i) === "own";
+    /** Own contested outer hub: can be taken by others (dashed ring); off while island-shielded. */
+    const exposed = (i: number): boolean => !this.islandShielded && isContestedShore(POIS[i].id) && hold(i) === "own";
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
     // The POI names written: goal POIs and nodes that changed hands come first (and are never

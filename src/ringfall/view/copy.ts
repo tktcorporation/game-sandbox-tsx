@@ -38,6 +38,8 @@ export type TermId =
   | "attack"
   | "contest"
   | "revenge"
+  | "shielding"
+  | "lostToday"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -105,6 +107,16 @@ export const TERM = {
    * 【元】（なし）／仕返し 【案】やり返す 【理由】取られた行から攻め先へ
    */
   revenge: "やり返す",
+  /**
+   * Island-wide shield after an outer hub is taken (作り順③).
+   * 【元】（なし）／保護中（新規島） 【案】守り中 【理由】取られたあとの島全体の盾。新規保護と語を分けず「守り」に寄せる
+   */
+  shielding: "守り中",
+  /**
+   * Loss-cap readout for outer hubs (作り順③).
+   * 【元】（なし） 【案】今日取られた 【理由】喪失上限が見える。内部名は出さない
+   */
+  lostToday: "今日取られた",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -414,6 +426,27 @@ export function contestGateHint(gate: string): string {
  */
 export function attackScoutDef(factory: number, guard: number): string {
   return `${TERM.factory} Lv${factory} · ${TERM.islandGuard} ${guard}`;
+}
+
+/**
+ * Island shield remaining time (作り順③).
+ * 【元】（なし） 【案】守り中 · あと 3:24 【理由】残り時間が分かる（CoC の盾タイマー）
+ */
+export function shieldLine(remainMs: number): string {
+  const sec = Math.max(0, Math.ceil(remainMs / 1000));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const clock = h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+  return `${TERM.shielding} · あと ${clock}`;
+}
+
+/**
+ * Outer-hub loss cap readout (作り順③).
+ * 【元】（なし） 【案】今日取られた 1/1 【理由】喪失上限が見える
+ */
+export function lostTodayLine(lost: number, cap: number): string {
+  return `${TERM.lostToday} ${lost}/${cap}`;
 }
 
 /**

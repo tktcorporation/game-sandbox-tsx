@@ -1992,6 +1992,14 @@ body.touch #hub-close kbd {
   line-height: 1;
   color: var(--white);
 }
+/* 作り順③: island shield / loss cap under the trophy. */
+.exp-shield {
+  margin: -4px 0 10px;
+  padding: 0 10px;
+  color: var(--sky);
+  font-size: 13px;
+  font-weight: 800;
+}
 /* What a pick costs of a depot start's allowance. */
 #hub .item b.cost {
   color: var(--mate-light);

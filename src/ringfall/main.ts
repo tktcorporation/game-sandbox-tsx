@@ -26,6 +26,7 @@ import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { contestedDefence, contestedParcels } from "./meta/contested-defence";
+import { isIslandProtected } from "./meta/outer-guard";
 import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -1013,6 +1014,7 @@ function start(go: Launch, from?: State) {
   $("pause").hidden = true;
   hud.show(true);
   hud.setKnown(hub.profile.entries);
+  hud.setIslandShielded(isIslandProtected(hub.profile.outerGuard, Date.now()));
   hud.setPouch(pouchSlots(hub.profile.hideout));
   hud.setTrophies(hub.profile.trophies ?? 0);
   hud.bag.setProfile(hub.profile);

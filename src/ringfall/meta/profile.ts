@@ -9,6 +9,8 @@ import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, rec
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
 import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
+import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
+import { isContestedOuter } from "../sim/contested-outer";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -25,7 +27,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 44;
+  v: 45;
   cash: number;
   stash: Item[];
   raids: number;
@@ -104,6 +106,11 @@ export interface Profile {
    * v41 and older saves have none (auto).
    */
   goal: ValuableKind | null;
+  /**
+   * Anti-snowball for outer hubs (作り順③): losses this UTC day and island shield.
+   * v44 and older saves start empty; sync / settle fill it when a hub is lost.
+   */
+  outerGuard: OuterGuard;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -163,7 +170,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 44,
+    v: 45,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -195,6 +202,7 @@ export function newProfile(seed = 1): Profile {
     news: [],
     pending: [],
     goal: null,
+    outerGuard: emptyOuterGuard(),
   };
 }
 
@@ -751,12 +759,19 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).
   let nightParcels = night.parcels ?? parcels;
+  let outerGuard = p.outerGuard ?? emptyOuterGuard();
+  const lostAt = Date.now();
   for (const n of NODES) {
     const before = p.poiState[n.id]?.state;
     const after = night.poiState[n.id]?.state;
-    if (before === "own" && after !== "own") nightParcels = nightParcels.filter((q) => q.poi !== n.id);
+    if (before === "own" && after !== "own") {
+      nightParcels = nightParcels.filter((q) => q.poi !== n.id);
+      // 作り順③: each outer hub lost this settle raises the island shield / loss count.
+      if (isContestedOuter(n.id) && rivalOf(after ?? "foe")) outerGuard = recordOuterLoss(outerGuard, lostAt);
+    }
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
+  if (outerGuard !== (p.outerGuard ?? emptyOuterGuard())) Object.assign(night, { outerGuard });
   // The nodes the player holds once the night is over pay their day's credits.
   const homePay = heldIncome(night);
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
@@ -957,12 +972,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v41 and older have no `pending` / `goal`; v42 adds 倉庫の整理待ち and the hunt target.
  * v42 and older may hold `cycle` / `cycleDay` / `liberations` (島の解放); v43 drops them — the island never resets.
  * v43 and older contest only the four shore hubs; v44 marks outer-edge contested hubs (作り順②) for stack consistency (ownership still in poiState).
+ * v44 and older have no `outerGuard`; v45 adds anti-snowball (作り順③: island shield + loss cap).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1030,12 +1046,15 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v42: 倉庫の整理待ち（`pending`）と入手先の目標（`goal`）。
   // v43: 島の解放（cycle / cycleDay / liberations）を外す。島は終わりなく育つ。
   // v44: 外側の取り合う拠点（作り順②）。専用フィールドは無し（poiState の rival が持ち主）。
+  // v45: 作り順③の島の盾・喪失上限（`outerGuard`）。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
       : [];
+  const outerGuard =
+    typeof o.v === "number" && o.v >= 45 ? parseOuterGuard(o.outerGuard) : emptyOuterGuard();
   return {
-    v: 44,
+    v: 45,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1066,6 +1085,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     news,
     pending,
     goal,
+    outerGuard,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,

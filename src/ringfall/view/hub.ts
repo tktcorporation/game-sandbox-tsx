@@ -19,8 +19,9 @@ import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
+import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -1425,7 +1426,14 @@ export class Hub {
    */
   today(): { head: string; row: string; plan: [string, string][] } {
     const p = this.profile;
-    const head = `${p.day} 日目`;
+    const now = Date.now();
+    const remain = shieldRemainingMs(p.outerGuard, now);
+    const guard = guardOn(p.outerGuard, now);
+    // 作り順③: day line shows island shield timer and/or today's outer-hub loss cap.
+    const headParts = [`${p.day} 日目`];
+    if (remain > 0) headParts.push(shieldLine(remain));
+    else if (guard.lost > 0) headParts.push(lostTodayLine(guard.lost, OUTER_GUARD.lossCap));
+    const head = headParts.join(" · ");
     const pick = this.frontPick();
     // Each value is HTML: marks, and names escaped here.
     const rival = rivalFrontPick(p);
@@ -1444,6 +1452,9 @@ export class Hub {
       ],
       ["装備", this.kitMarks()],
     ];
+    if (remain > 0 || guard.lost > 0) {
+      plan.push([TERM.shielding, remain > 0 ? esc(shieldLine(remain)) : esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))]);
+    }
     return { head, row: nodeRow(islandHolds(p)), plan };
   }
 

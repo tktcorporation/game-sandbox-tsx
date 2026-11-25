@@ -16,6 +16,8 @@ import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
 import { clampTrophies, defendGain, rivalTrophies, trophyDelta } from "./trophies";
+import { emptyOuterGuard, guardOn, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
+import { isContestedOuter } from "../sim/contested-outer";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -52,6 +54,12 @@ export interface IslandView {
   /** The factory level the owner last reported: what an expedition from this island may take (`squadKinds()` in worker/island.ts). */
   factory: number;
   protectedUntil: number;
+  /** Island shield end (作り順③); 0 when none. Older servers omit → 0. */
+  shieldUntil: number;
+  /** Outer hubs lost this UTC day (作り順③). Older servers omit → 0. */
+  outerLost: number;
+  /** Loss cap for outer hubs (作り順③). Older servers omit → OUTER_GUARD.lossCap. */
+  outerLossCap: number;
   nodes: { id: string; hold: PoiHold; open: boolean }[];
   /** The expeditions on the island; `id` is the number the island gave each when it took it. */
   expeditions: { id: number; by: { code: string; name: string }; target: string; units: number; state: ServerState; arriveAt: number }[];
@@ -110,6 +118,9 @@ export function parseView(raw: unknown): IslandView | null {
     day: num(raw.day),
     factory: num(raw.factory),
     protectedUntil: num(raw.protectedUntil),
+    shieldUntil: num(raw.shieldUntil),
+    outerLost: num(raw.outerLost),
+    outerLossCap: num(raw.outerLossCap) || OUTER_GUARD.lossCap,
     nodes,
     expeditions,
     pings: parsePings(raw.pings),
@@ -196,6 +207,19 @@ export interface Synced {
   reported?: readonly string[];
   /** Parcels as the island last showed them (ux-design C2). */
   parcels?: readonly Parcel[];
+  /** Server's outer-guard snapshot from the island view (作り順③). */
+  outerGuard?: OuterGuard;
+}
+
+/**
+ * Outer-guard from a public island view (作り順③). Older views without shield fields → empty.
+ */
+export function outerGuardFromView(view: Pick<IslandView, "shieldUntil" | "outerLost">, now = Date.now()): OuterGuard {
+  const day = utcDay(now);
+  if (view.shieldUntil > now || view.outerLost > 0) {
+    return { utcDay: day, lost: Math.max(0, view.outerLost), island: view.shieldUntil > now };
+  }
+  return guardOn(undefined, now);
 }
 
 /**
@@ -203,7 +227,7 @@ export interface Synced {
  * report landed for leave the pending list; the holds are merged around those still pending. The
  * profile itself when nothing changes.
  */
-export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number }>(
+export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number; outerGuard?: OuterGuard }>(
   p: P,
   s: Synced,
   rivalTrop?: (owner: string) => number,
@@ -214,6 +238,13 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
   const parcels = s.parcels ? [...s.parcels] : p.parcels;
+  // 作り順③: prefer the server's view snapshot; else bump from new "taken" log lines.
+  let outerGuard = s.outerGuard ?? p.outerGuard ?? emptyOuterGuard();
+  if (!s.outerGuard) {
+    for (const e of news) {
+      if (e.t === "taken" && isContestedOuter(e.node)) outerGuard = recordOuterLoss(outerGuard, e.at);
+    }
+  }
   // Ownership (mergeHolds) and 守りきった (wiped log) move trophies once here — settle will not
   // see the same own→rival transition again because `p.poiState` already matches.
   // トロフィーは必ず知らせの一行と一緒に動かす（notes）。
@@ -238,9 +269,23 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       notes.push(trophyLine(p.trophies, next, gained, lost, defended));
     }
   }
-  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies)
+  const guardChanged = JSON.stringify(outerGuard) !== JSON.stringify(p.outerGuard ?? emptyOuterGuard());
+  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies && !guardChanged)
     return { profile: p, news, notes };
-  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels, ...(trophies !== p.trophies ? { trophies } : {}) }, news, notes };
+  return {
+    profile: {
+      ...p,
+      poiState,
+      logSeq,
+      retaken,
+      incoming,
+      parcels,
+      ...(trophies !== p.trophies ? { trophies } : {}),
+      ...(guardChanged ? { outerGuard } : {}),
+    },
+    news,
+    notes,
+  };
 }
 
 /** The other players' expeditions on an island's view that hold nothing yet, at nodes the game knows: what its owner is warned of. */
