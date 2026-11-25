@@ -185,10 +185,16 @@ export function newsIncursion(owner: string, node: string, won: boolean, trop?: 
   return `${owner}の${node}を攻めきれなかった`;
 }
 
-/** トロフィーの前後と内訳（リザルト／信号所）。増減が無い側は出さない。 */
-export function trophyLine(before: number, after: number, gained = 0, lost = 0): string {
+/**
+ * トロフィーの前後と内訳（リザルト／信号所／起動時）。増減が無い側は出さない。
+ * 【元】トロフィー {前} → {後}（取った +a · 取られた −b）
+ * 【案】…（取った +a · 守りきった +d · 取られた −b）
+ * 【理由】攻め／守りの内訳（design-direction トロフィーと物資）
+ */
+export function trophyLine(before: number, after: number, gained = 0, lost = 0, defended = 0): string {
   const parts: string[] = [];
   if (gained > 0) parts.push(`取った +${gained}`);
+  if (defended > 0) parts.push(`守りきった +${defended}`);
   if (lost > 0) parts.push(`取られた −${lost}`);
   const mid = parts.length ? `（${parts.join(" · ")}）` : "";
   return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;

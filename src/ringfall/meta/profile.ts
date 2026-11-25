@@ -8,7 +8,7 @@ import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
-import { TROPHY, trophyDelta } from "./trophies";
+import { SEIZE, TROPHY, trophyDelta } from "./trophies";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -537,8 +537,8 @@ export interface Settlement {
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
-  /** Trophy T1 change this settle (`gained` / `lost` counts); left out when none moved. */
-  trophies?: { before: number; after: number; gained: number; lost: number };
+  /** Trophy change this settle (`gained` / `lost` / `defended`); left out when none moved. */
+  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number };
   /**
    * Rival / contested hubs taken this settle (home raid): owner id at raid start, for 島の知らせ
    * 「{誰}の{拠点}を取った · トロフィー +n · 倉庫へ届く」. Left out when none.
@@ -774,10 +774,10 @@ export function keptSeized(
 }
 
 /**
- * Raid loot from 制圧 of rival-held nodes (CoC-style): the 島の守り stock at that node's
- * 中継ボックス comes into the warehouse. With none stacked, a small reserve from the node's
- * seed still arrives so the capture feeds 拠点が育つ. No new verb — same 核 as enemy nodes.
- * Empty when the raid had no island / no rivals (sim gate path unchanged).
+ * Raid loot from 核 · 制圧 of rival-held nodes (CoC resource loot, including AI):
+ * 島の守り stock at that 中継ボックス → warehouse; empty stock still pays `SEIZE.emptyReserve`
+ * commons; every 制圧 also adds `SEIZE.bonus` on top so the core capture feels like materials
+ * even when trophies are the ownership change. Empty when no island / no rivals (sim gate).
  */
 export function seizeRivalLoot(
   p: Pick<Profile, "parcels" | "seed">,
@@ -790,6 +790,7 @@ export function seizeRivalLoot(
   if (!hold) return { items, ids, at };
   const stock = p.parcels ?? [];
   const taken = new Set<number>();
+  const seed = s.seed ?? p.seed;
   for (const id of capturedIds(s)) {
     const i = poiIndex(id);
     if (i < 0 || rivalOf(hold[i] ?? "foe") === null) continue;
@@ -801,9 +802,17 @@ export function seizeRivalLoot(
       items.push({ t: "valuable", kind: q.kind });
       kinds.push(q.kind);
     }
-    // Empty depot: a single common material so 制圧 still grows the base (deterministic).
+    // Empty 中継ボックス: several commons so 核 · 制圧 still feeds 倉庫へ届いた (was 1).
     if (!kinds.length) {
-      const kind = raidReserveKind(s.seed ?? p.seed, id);
+      for (let k = 0; k < SEIZE.emptyReserve; k++) {
+        const kind = raidReserveKind(seed, id, k);
+        items.push({ t: "valuable", kind });
+        kinds.push(kind);
+      }
+    }
+    // Always a small bonus on top of parcels (CoC: breaking in yields resources).
+    for (let k = 0; k < SEIZE.bonus; k++) {
+      const kind = raidReserveKind(seed ^ 0x85ebca6b, id, k + SEIZE.emptyReserve);
       items.push({ t: "valuable", kind });
       kinds.push(kind);
     }
@@ -812,10 +821,10 @@ export function seizeRivalLoot(
   return { items, ids, at };
 }
 
-/** A common material for an empty rival 中継ボックス, hashed from the raid seed and the POI. */
-function raidReserveKind(seed: number, poi: PoiId): ValuableKind {
+/** A common material for rival 制圧 loot, hashed from the raid seed, the POI and a slot. */
+function raidReserveKind(seed: number, poi: PoiId, slot = 0): ValuableKind {
   const pool: ValuableKind[] = ["parts", "fuse", "board"];
-  const h = (Math.imul(seed ^ 0x9e3779b9, poiIndex(poi) + 1) >>> 0) % pool.length;
+  const h = (Math.imul(seed ^ 0x9e3779b9 ^ Math.imul(slot + 1, 0x85ebca6b), poiIndex(poi) + 1) >>> 0) % pool.length;
   return pool[h]!;
 }
 

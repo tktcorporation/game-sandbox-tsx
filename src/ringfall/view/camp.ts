@@ -1,6 +1,7 @@
 import { CAMP, type CampSpot, type StationId } from "../sim/map";
 import type { State } from "../sim/state";
 import { tipIsDefence } from "./hub";
+import { TERM } from "./copy";
 import type { World } from "./world";
 
 /*
@@ -30,6 +31,8 @@ export class CampView {
       root.appendChild(el);
       this.labels.set(c.id, el);
     }
+    // CoC-style: trophies sit with credits in the camp head (always visible in the yard).
+    $("camp-head").querySelector(".camp-trop small")!.textContent = TERM.trophy;
   }
 
   /** The use button's own label in a raid, given back when the camp is left. */
@@ -53,7 +56,7 @@ export class CampView {
    * `today`: the day's line and the 今日の作戦 card (`Hub.today()`); `panel`: a panel or the
    * departure's check is up, so the card steps aside.
    */
-  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; cash: string; touch: boolean; today: { head: string; row: string; plan: [string, string][] }; panel: boolean; tip?: string }) {
+  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; cash: string; trophies: number; touch: boolean; today: { head: string; row: string; plan: [string, string][] }; panel: boolean; tip?: string }) {
     const eye = { x: s.player.pos.x, z: s.player.pos.z };
     const shown: { el: HTMLElement; x: number; y: number; d: number }[] = [];
     for (const c of CAMP.spots) {
@@ -101,6 +104,7 @@ export class CampView {
       if (under) q.el.style.display = "none";
     }
     $("camp-cash").textContent = o.cash;
+    $("camp-trop").textContent = Math.max(0, Math.round(o.trophies)).toLocaleString("ja-JP");
     $("camp-hint").textContent = o.today.head;
     const row = $("camp-row");
     if (row.dataset.html !== o.today.row) {

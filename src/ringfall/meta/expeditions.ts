@@ -15,7 +15,7 @@ import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
-import { trophyDelta } from "./trophies";
+import { clampTrophies, defendGain, trophyDelta } from "./trophies";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -213,16 +213,27 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
   const parcels = s.parcels ? [...s.parcels] : p.parcels;
-  // T1: ownership that changed while away (mergeHolds) moves trophies once here — settle will not
+  // Ownership (mergeHolds) and 守りきった (wiped log) move trophies once here — settle will not
   // see the same own→rival transition again because `p.poiState` already matches.
   // トロフィーは必ず知らせの一行と一緒に動かす（notes）。
   let trophies = p.trophies;
   const notes: string[] = [];
-  if (poiState !== p.poiState && typeof p.trophies === "number") {
-    const d = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState));
-    if (d.next !== p.trophies) {
-      trophies = d.next;
-      notes.push(trophyLine(p.trophies, d.next, d.gained, d.lost));
+  if (typeof p.trophies === "number") {
+    let gained = 0;
+    let lost = 0;
+    let next = p.trophies;
+    if (poiState !== p.poiState) {
+      const d = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState));
+      gained = d.gained;
+      lost = d.lost;
+      next = d.next;
+    }
+    const wipes = news.filter((e) => e.t === "wiped").length;
+    const defended = defendGain(wipes);
+    if (defended) next = clampTrophies(next + defended);
+    if (next !== p.trophies) {
+      trophies = next;
+      notes.push(trophyLine(p.trophies, next, gained, lost, defended));
     }
   }
   if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies)

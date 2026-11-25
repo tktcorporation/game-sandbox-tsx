@@ -19,6 +19,11 @@ export interface Neighbour {
   slot: number;
   /** Factory level last reported (島の守り／守備隊). Optional on older answers. */
   factory?: number;
+  /**
+   * Ranking trophies last reported (お隣の組み合わせの基準). Optional on older answers / caches;
+   * map and signal station show it beside the name when present.
+   */
+  trophies?: number;
   /** What its owner did last, for a sign of life: when they last played, and that raid's cores taken and whether they got home. */
   last?: { at: number; captured: number; home: boolean };
   /** An island the game runs itself (meta/ai-islands.ts), filling a slot the server left free: marked AI wherever it is shown. */
@@ -77,7 +82,19 @@ export function parseNeighbours(raw: unknown): Neighbour[] | null {
     const slot = Number.isInteger(n.slot) && (n.slot as number) >= 0 && (n.slot as number) < NEIGHBOUR_MAX ? (n.slot as number) : k;
     if (out.some((o) => o.slot === slot)) continue;
     const factory = Number.isInteger(n.factory) && (n.factory as number) >= 0 && (n.factory as number) <= 64 ? (n.factory as number) : undefined;
-    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(factory !== undefined ? { factory } : {}), ...(last ? { last } : {}) });
+    const trophies =
+      Number.isInteger(n.trophies) && (n.trophies as number) >= 0 && (n.trophies as number) <= 10000 ? (n.trophies as number) : undefined;
+    out.push({
+      code: n.code,
+      name,
+      held: n.held,
+      total: n.total,
+      day: n.day,
+      slot,
+      ...(factory !== undefined ? { factory } : {}),
+      ...(trophies !== undefined ? { trophies } : {}),
+      ...(last ? { last } : {}),
+    });
   }
   return out;
 }

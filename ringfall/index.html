@@ -24,6 +24,7 @@
 
     <div id="hud" hidden>
       <canvas id="minimap" aria-label="地図" title="地図（M）"></canvas>
+      <div id="hud-trophy" hidden><small></small><b>0</b></div>
       <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b><i id="compass-mark" hidden><span></span></i><i id="compass-scout" hidden></i><i id="compass-ping" hidden></i></div>
       <div id="island-row"></div>
       <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold freed">●</span> 自分 <span class="map-key hold held">●</span> 敵 <span class="map-rival" hidden><span class="map-key hold rival">●</span> 他のプレイヤー </span><span class="map-key">◆</span> 脱出<span class="map-close">　<kbd>N</kbd> <span id="map-view-key">全体</span>　<kbd>M</kbd> 閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
@@ -98,7 +99,7 @@
 
     <div id="camp" hidden>
       <div id="camp-labels" aria-hidden="true"></div>
-      <div id="camp-head"><b>野営地</b><span><small>クレジット</small><b id="camp-cash"></b></span><small id="camp-hint"></small><span id="camp-row"></span></div>
+      <div id="camp-head"><b>野営地</b><span class="camp-trop"><small></small><b id="camp-trop">0</b></span><span><small>クレジット</small><b id="camp-cash"></b></span><small id="camp-hint"></small><span id="camp-row"></span></div>
       <div id="camp-plan"><h3>今日の作戦</h3><dl id="camp-plan-list"></dl></div>
       <p id="camp-prompt"></p>
     </div>

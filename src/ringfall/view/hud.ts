@@ -198,11 +198,22 @@ export class Hud {
       else el.className = "tick";
       strip.appendChild(el);
     }
+    // CoC left stack: trophies always readable without opening the signal station.
+    const trop = $("hud-trophy");
+    trop.querySelector("small")!.textContent = TERM.trophy;
+    trop.setAttribute("aria-label", TERM.trophy);
   }
 
   show(on: boolean) {
     this.root.hidden = !on;
     if (!on) this.bag.reset();
+  }
+
+  /** Ranking count for the raid HUD's top-left (profile at raid start; unchanged until settle). */
+  setTrophies(n: number) {
+    const el = $("hud-trophy");
+    el.querySelector("b")!.textContent = Math.max(0, Math.round(n)).toLocaleString("ja-JP");
+    el.hidden = false;
   }
 
   /** What the raid is out to do (a capture task, or null for the day's front), for the objective's steps; and those steps as last drawn. */
@@ -1614,7 +1625,7 @@ export class Hud {
     this.newsKeep = [...expNews, ...takeLines];
     const allNews = [...this.newsKeep, ...news];
     const tropLine = settled?.trophies
-      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost)}</p>`
+      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
       : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
