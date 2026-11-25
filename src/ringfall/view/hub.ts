@@ -6,8 +6,9 @@ import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, 
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
-import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+// buyPrice / canStartIn / onSale used by sourceGuide
+import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
 import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
@@ -76,6 +77,8 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
  * 施設育成が可能ならそれを案内し、なければ出撃（前線制圧・攻める）を促す。
  */
 export function nextHandFor(p: Profile): string {
+  // 倉庫の整理 waits before any sortie or build tip.
+  if (needsOrganize(p)) return PHRASE.nextOrganize;
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
@@ -359,15 +362,64 @@ export interface Launch {
 
 /**
  * Where a valuable is found, as a line: the POIs whose bins hold it most often (with the
- * chance per bin), then the likeliest other place.
+ * chance per bin and region), then the likeliest other place.
  */
 export function whereLine(kind: ValuableKind): string {
   const all = sources(kind);
   const bins = all.filter((s) => s.from === "bin").slice(0, 3);
   const other = all.find((s) => s.from !== "bin");
-  // A place and its share each, as HTML: a place's name tells where it is.
-  const say = (s: Source) => `<span class="src">${esc(s.where)}<b>${Math.round(Math.min(1, s.share) * 100)}%</b></span>`;
+  // 製錬所 · 港湾地帯 30% — region helps find it on the map.
+  const say = (s: Source) => {
+    const pct = Math.round(Math.min(1, s.share) * 100);
+    const region = s.region ? ` · ${esc(s.region)}` : "";
+    return `<span class="src">${esc(s.where)}${region}<b>${pct}%</b></span>`;
+  };
   return [...bins, ...(other ? [other] : [])].map(say).join("");
+}
+
+/**
+ * Full どこで取れる block: bins with region, vault + key hint, trader price / workbench gate.
+ * Reachable regions (canStartIn) come first; locked ones get a padlock note.
+ */
+export function sourceGuide(kind: ValuableKind, p: Profile): string {
+  const all = sources(kind);
+  const open = (s: Source) => {
+    if (!s.poi) return true;
+    return canStartIn(p, poiRegion(s.poi).id);
+  };
+  const ranked = [...all].sort((a, b) => Number(open(b)) - Number(open(a)) || b.share - a.share);
+  const rows = ranked
+    .map((s) => {
+      const pct = Math.round(Math.min(1, s.share) * 100);
+      const region = s.region ? ` · ${esc(s.region)}` : "";
+      const lock = s.poi && !open(s) ? ` ${lockIcon()}` : "";
+      let note = "";
+      if (s.from === "vault") {
+        const keys = [...new Set(POIS.filter((o) => o.bins.some((b) => b.vault)).map((o) => POIS[poiIndex(o.keyFrom)].name))];
+        note = keys.length ? `<small>鍵は${keys.slice(0, 3).map(esc).join("・")}の補給箱</small>` : "";
+      }
+      const map =
+        s.poi && open(s)
+          ? `<button type="button" class="src-map" data-act="src-map" data-poi="${s.poi}">${TERM.seeOnMap}</button>`
+          : "";
+      return `<div class="src-row${s.poi && !open(s) ? " locked" : ""}"><span>${esc(s.where)}${region}${lock}<b>${pct}%</b></span>${note}${map}</div>`;
+    })
+    .join("");
+  const onTrader = onSale(p.hideout).includes(kind);
+  const buy = onTrader
+    ? `<div class="src-row trader">${TERM.traderStall}で買える <b>${buyPrice({ t: "valuable", kind }).toLocaleString("ja-JP")}</b></div>`
+    : (() => {
+        // Workbench level that first puts this kind on sale.
+        for (let lv = 0; lv <= maxLevel("workbench"); lv++) {
+          if (VALUABLES[kind].rarity <= materialRarity({ ...p.hideout, workbench: lv })) {
+            if (lv > p.hideout.workbench) return `<div class="src-row trader">${TERM.workshop} Lv${lv} で${TERM.traderStall}に並ぶ</div>`;
+            break;
+          }
+        }
+        return "";
+      })();
+  const goalBtn = `<button type="button" class="src-goal" data-act="set-goal" data-kind="${kind}">${TERM.setGoal}</button>`;
+  return `<div class="src-guide" data-kind="${kind}"><small>${TERM.whereFound}</small>${rows}${buy}${goalBtn}</div>`;
 }
 
 /**
@@ -396,6 +448,13 @@ export class Hub {
   private expNews: ExpNews[] = [];
   /** Whether the factory's ladder of every level is unfolded. */
   private factoryLadder = false;
+  /** Valuable whose どこで取れる guide is open in a cost row (null = none). */
+  private sourceKind: ValuableKind | null = null;
+  /**
+   * POI to frame on the departure map after 地図で見る (consumed by main / depart).
+   * Cleared once the departure opens on it.
+   */
+  focusPoi: PoiId | null = null;
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
   private exped: ExpeditionPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -417,7 +476,10 @@ export class Hub {
     );
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
-      if (el && !(el as HTMLButtonElement).disabled) this.act(el.dataset.act!, el.dataset.arg ?? "");
+      if (el && !(el as HTMLButtonElement).disabled) {
+        const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
+        this.act(el.dataset.act!, arg);
+      }
     });
   }
 
@@ -509,6 +571,7 @@ export class Hub {
     this.station = null;
     this.module = null;
     this.factoryLadder = false;
+    this.sourceKind = null;
     this.sellConfirm = "";
     this.exped.cancel();
     // A field typed in (the factory's island code) gives up the keys with the panel.
@@ -576,6 +639,28 @@ export class Hub {
     if (act.startsWith("exp-")) {
       sfx.click();
       return this.exped.act(act, arg);
+    }
+    if (act === "src-open") {
+      const k = arg as ValuableKind;
+      this.sourceKind = this.sourceKind === k ? null : k in VALUABLES ? k : null;
+      sfx.click();
+      return this.render();
+    }
+    if (act === "src-map") {
+      // Hand off to the departure: main opens the gate map framed on this POI.
+      if (arg && poiIndex(arg as PoiId) >= 0) {
+        this.focusPoi = arg as PoiId;
+        sfx.click();
+        this.close();
+        return;
+      }
+    }
+    if (act === "set-goal") {
+      if (arg in VALUABLES) {
+        this.set({ ...this.profile, goal: this.profile.goal === arg ? null : (arg as ValuableKind) });
+        sfx.click();
+        return;
+      }
     }
     const pick = arg.split(",").map(Number);
     if (act !== "sell") this.sellConfirm = "";
@@ -683,9 +768,10 @@ export class Hub {
     return this.from ? relayOf(POIS[poiIndex(this.from)].name) : entryOf(this.entry ?? this.profile.entry).name;
   }
 
-  /** Why the chosen start cannot be departed from now (the loadout over the depot's allowance), or "" when it can. */
+  /** Why the chosen start cannot be departed from now (整理待ち, or the loadout over the depot's allowance), or "" when it can. */
   rideRefused(): string {
     this.fixStart();
+    if (needsOrganize(this.profile)) return TERM.organize;
     if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
@@ -880,8 +966,13 @@ export class Hub {
   private cost(items: [ValuableKind, number][], cash: number, button: string): string {
     const p = this.profile;
     const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+    const open = this.sourceKind;
     const rows = items
-      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b>${have(k) >= n ? "" : `<small class="srcs">${whereLine(k)}</small>`}</div>`)
+      .map(([k, n]) => {
+        const short = have(k) >= n ? "" : `<small class="srcs">${whereLine(k)}</small><button type="button" class="src-open" data-act="src-open" data-kind="${k}">${TERM.whereFound}</button>`;
+        const guide = open === k ? sourceGuide(k, p) : "";
+        return `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b>${short}${guide}</div>`;
+      })
       .join("");
     const credits = `<div class="req${p.cash >= cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, cash))} / ${yen(cash)}</b></div>`;
     return `<div class="mod-cost"><small>必要</small>${rows}${credits}${button}</div>`;

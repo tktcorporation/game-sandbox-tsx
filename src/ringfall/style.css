@@ -1540,10 +1540,71 @@ body.camp #pause .keys .raid {
 
 /* --- the base between raids */
 /* --- a camp station's panel, over the camp it stands in */
-#hub {
+#hub,
+#organize {
   place-items: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgb(var(--ink-rgb) / 0.5);
+}
+#organize .org-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgb(var(--white-rgb) / 0.08);
+}
+#organize .org-acts {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+#organize .org-acts button {
+  font-size: 13px;
+  padding: 4px 10px;
+}
+#organize .hub-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#organize .hub-foot[hidden] {
+  display: flex;
+}
+.src-guide {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 2px;
+  padding: 6px 8px;
+  background: rgb(var(--white-rgb) / 0.04);
+}
+.src-guide > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.src-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  font-size: 13px;
+}
+.src-row.locked {
+  color: var(--muted);
+}
+.src-row b {
+  font-variant-numeric: tabular-nums;
+}
+.src-open,
+.src-map,
+.src-goal {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.req .srcs {
+  display: block;
+  margin-top: 2px;
 }
 .hub-inner {
   display: grid;

@@ -44,7 +44,15 @@ export type TermId =
   | "loadout"
   | "seaIslands"
   | "island"
-  | "trophy";
+  | "trophy"
+  | "organize"
+  | "broughtHome"
+  | "putInWarehouse"
+  | "confirmOrganize"
+  | "whereFound"
+  | "seeOnMap"
+  | "setGoal"
+  | "goal";
 
 /**
  * Canonical place / action words as the game shows them.
@@ -104,9 +112,24 @@ export const TERM = {
   /** Ranking T1 — signal station / results. */
   trophy: "トロフィー",
   /**
-   * お隣の島の一部への短いレイド（Short Raid）。
-   * 【元】（なし・写し全体） 【案】短いレイド 【理由】全島ミラーを避けつつ他島へ攻めに行く感。
+   * Post-raid stash tidy (モンハンの報酬画面にあたる).
+   * 【元】（なし） 【案】倉庫の整理 【理由】倉庫・倉庫の棚と同じ語でつなぐ
    */
+  organize: "倉庫の整理",
+  /** Results / organize column for items that came home this raid. */
+  broughtHome: "持ち帰った物",
+  /** Organize action: move a pending item into the stash. */
+  putInWarehouse: "倉庫に入れる",
+  /** Organize confirm (enabled when pending is empty). */
+  confirmOrganize: "確定",
+  /** Entry on a material row to open sources. */
+  whereFound: "どこで取れる",
+  /** Sources → departure map on that POI. */
+  seeOnMap: "地図で見る",
+  /** Mark a valuable as the hunt target. */
+  setGoal: "目標にする",
+  /** Raid toast / map prefix for the hunt target. */
+  goal: "目標",
 } as const satisfies Record<TermId, string>;
 
 /** Full live phrases built from TERM. */
@@ -134,6 +157,25 @@ export const PHRASE = {
   warehouseFullRaise: `${TERM.warehouse}が満杯：売るか、${TERM.stashShelf}で${TERM.warehouse}を上げる`,
   /** Shelves when full at the top warehouse level (sell only). */
   warehouseFullSell: `${TERM.warehouse}が満杯：売る`,
+  /**
+   * Results line when overflow waits for 倉庫の整理 (no silent sale).
+   * 【元】倉庫に入らなかった n 点 …クレジット
+   * 【案】倉庫に入りきらない n 点 · 倉庫の整理
+   * 【理由】売ったのではなく、これから選ぶことを示す
+   */
+  stashOverflowOrganize: `${TERM.warehouse}に入りきらない`,
+  /** Next hand while pending remains. */
+  nextOrganize: `${TERM.nextHand}${TERM.stashShelf} · ${TERM.organize}`,
+  /** Results / news after organize sold chosen items. */
+  organizeSold: `${TERM.organize}で売った`,
+  /**
+   * Depot tip when the stash has no free slots.
+   * 【元】（なし） 【案】中継ボックス · 倉庫が満杯
+   * 【理由】送れないことをその場で。「倉庫が満杯」は商人の屋台で使っている語
+   */
+  relayWarehouseFull: `${TERM.relayBox} · ${TERM.warehouse}が満杯`,
+  /** Partial depot send: rest stayed in the bag. */
+  bagKept: "点はバッグに残った",
 } as const;
 
 /** Toast after confirming 遠征に出す (past of TERM.sendExpedition). */

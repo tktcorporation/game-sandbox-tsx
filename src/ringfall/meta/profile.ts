@@ -25,7 +25,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 41;
+  v: 42;
   cash: number;
   stash: Item[];
   raids: number;
@@ -100,6 +100,16 @@ export interface Profile {
    * v39 以前のセーブは無し。ページを読み直しても信号所に残る。
    */
   news: string[];
+  /**
+   * Items that did not fit the stash after settle / load (倉庫の整理待ち).
+   * v41 and older saves hold none; excess on load goes here instead of being dropped.
+   */
+  pending: Item[];
+  /**
+   * Manual hunt target (a valuable kind). Null means auto: chase what the next hand's module needs.
+   * v41 and older saves have none (auto).
+   */
+  goal: ValuableKind | null;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -159,7 +169,7 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   return {
-    v: 41,
+    v: 42,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -192,6 +202,8 @@ export function newProfile(seed = 1): Profile {
     incursionTaken: [],
     trophies: TROPHY.start,
     news: [],
+    pending: [],
+    goal: null,
   };
 }
 
@@ -504,7 +516,7 @@ function bestFitValuableSlots(haul: ValuableKind[], slots: number): number[] {
 
 /**
  * What a raid brings home, the routes its tools opened (the tools spent on them are in `home`
- * but not in the stash), the ways in it taught, and what the stash had no room for (sold on the spot).
+ * but not in the stash), the ways in it taught, and what the stash had no room for (倉庫の整理待ち).
  */
 export interface Settlement {
   profile: Profile;
@@ -512,8 +524,14 @@ export interface Settlement {
   opened: RouteId[];
   /** Ways in the raid walked to that the base did not offer before (only when the player got off alive). */
   learned: EntryId[];
+  /**
+   * Overflow this settle (also on `profile.pending`). Kept as `sold` for older results lines until
+   * 倉庫の整理 sells chosen items; `soldFor` is 0 from settle (nothing is sold on the spot).
+   */
   sold: Item[];
   soldFor: number;
+  /** Same items as `sold` after settle: the haul that waits for 倉庫の整理. */
+  pending: Item[];
   /** The island's day the raid was played on (the profile is on the next). */
   day: number;
   /** Nodes that became the player's overnight (`DayChange.gained`). */
@@ -545,10 +563,58 @@ export interface Settlement {
    */
   takenRival?: { id: NodeId; owner: string }[];
   /**
-   * CoC-style raid loot from 制圧 that actually entered the stash this settle (not sold for room).
+   * CoC-style raid loot from 制圧 that actually entered the stash this settle (not left pending).
    * View-only: 「倉庫へ届いた」 must not claim overflow that 「倉庫に入らなかった」 already lists.
    */
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
+}
+
+/** Whether the profile still has items waiting for 倉庫の整理 (blocks departure from the gate). */
+export const needsOrganize = (p: Pick<Profile, "pending">) => (p.pending?.length ?? 0) > 0;
+
+/** Free stash slots (starter weapons take none). */
+export const stashRoom = (p: Pick<Profile, "stash" | "hideout">) => Math.max(0, stashCap(p.hideout) - stashUsed(p));
+
+/**
+ * Sells one pending item during 倉庫の整理. Returns null when the index is out of range.
+ * Credits go to the profile; the item leaves pending.
+ */
+export function sellPending(p: Profile, index: number): { profile: Profile; sold: Item; soldFor: number } | null {
+  const i = p.pending[index];
+  if (!i) return null;
+  const soldFor = sellPrice(i);
+  return {
+    profile: { ...p, cash: p.cash + soldFor, pending: p.pending.filter((_, n) => n !== index) },
+    sold: i,
+    soldFor,
+  };
+}
+
+/**
+ * Sells one stash entry during 倉庫の整理 to free a slot. A starter weapon is not for sale.
+ */
+export function sellForOrganize(p: Profile, index: number): { profile: Profile; sold: Item; soldFor: number } | null {
+  const i = p.stash[index];
+  if (!i || isStarter(i)) return null;
+  const soldFor = sellPrice(i);
+  return {
+    profile: { ...p, cash: p.cash + soldFor, stash: p.stash.filter((_, n) => n !== index) },
+    sold: i,
+    soldFor,
+  };
+}
+
+/**
+ * Moves one pending item into the stash when there is room. Null when full or the index is bad.
+ */
+export function keepPending(p: Profile, index: number): Profile | null {
+  const i = p.pending[index];
+  if (!i || stashRoom(p) <= 0) return null;
+  return {
+    ...p,
+    stash: [...p.stash, i],
+    pending: p.pending.filter((_, n) => n !== index),
+  };
 }
 
 /** Mod kinds as a known list: real ones only, once each, in `MOD_KINDS` order, always with `MOD_START`. */
@@ -601,13 +667,22 @@ export function keepOrder(items: Item[], want: Record<ValuableKind, number>): It
   return ranked.sort((a, b) => a.r - b.r || price(b.i) - price(a.i)).map((x) => x.i);
 }
 
-/** Puts items into the stash in `keepOrder()`; what does not fit is sold at once. */
-function store(p: Profile, items: Item[]): { profile: Profile; sold: Item[]; soldFor: number } {
-  const room = Math.max(0, stashCap(p.hideout) - stashUsed(p));
+/**
+ * Puts items into the stash in `keepOrder()`; what does not fit joins `pending` (倉庫の整理待ち).
+ * Nothing is sold here — the player chooses in 倉庫の整理.
+ */
+function store(p: Profile, items: Item[]): { profile: Profile; pending: Item[] } {
+  const room = stashRoom(p);
   const keep = keepOrder(items, wanted(p));
-  const sold = keep.slice(room);
-  const soldFor = sold.reduce((n, i) => n + sellPrice(i), 0);
-  return { profile: { ...p, cash: p.cash + soldFor, stash: [...p.stash, ...keep.slice(0, room)] }, sold, soldFor };
+  const pending = keep.slice(room);
+  return {
+    profile: {
+      ...p,
+      stash: [...p.stash, ...keep.slice(0, room)],
+      pending: [...(p.pending ?? []), ...pending],
+    },
+    pending,
+  };
 }
 
 /**
@@ -654,8 +729,8 @@ export function settle(p: Profile, s: State): Settlement {
   // Overnight change first (freedAt) while today's island still holds the stash packing.
   const change = dayChange(p, day);
   const threat = s.threat ?? 0;
-  const { profile, sold, soldFor } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
-  // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
+  const { profile, pending } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
+  // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
   const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
   const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
@@ -720,8 +795,10 @@ export function settle(p: Profile, s: State): Settlement {
     home,
     opened,
     learned,
-    sold,
-    soldFor,
+    // Until 倉庫の整理: overflow listed under the old results line (soldFor 0 — not sold).
+    sold: pending,
+    soldFor: 0,
+    pending,
     day: p.day,
     ...change,
     income,
@@ -739,7 +816,7 @@ export function settle(p: Profile, s: State): Settlement {
 
 /**
  * Of the valuables seized this raid, those that actually entered the stash after `store()`
- * (stash after − before budget). Sold overflow is dropped so the results' 「倉庫へ届いた」 and
+ * (stash after − before budget). Pending overflow is dropped so the results' 「倉庫へ届いた」 and
  * 「倉庫に入らなかった」 never claim the same item.
  */
 export function keptSeized(
@@ -894,12 +971,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v1–v39 has no island-news archive on Profile; v40 adds `news` (最新 10 件).
  * v1–v40 has nothing contested-hub-specific on Profile (ownership lives in poiState rival holds);
  * v41 marks 方向 A 取り合う拠点 (TKT-195) for stack consistency.
+ * v41 and older have no `pending` / `goal`; v42 adds 倉庫の整理待ち and the hunt target.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -936,10 +1014,25 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const freedAt: Partial<Record<PoiId, number>> = {};
   for (const { id } of POIS) if (Number.isInteger(fa[id])) freedAt[id] = Math.max(0, Math.min(THREAT.max, fa[id] as number));
   // A weapon keeps its starter mark only as one of the starter weapons; the others' marks are dropped.
-  const items = o.stash.map(migrate).filter(ok).map((i): Item => (i.t === "weapon" ? { t: "weapon", kind: i.kind, rarity: i.rarity, ...(i.starter === true ? { starter: true as const } : {}) } : i));
+  const asItem = (i: Item): Item => (i.t === "weapon" ? { t: "weapon", kind: i.kind, rarity: i.rarity, ...(i.starter === true ? { starter: true as const } : {}) } : i);
+  const items = o.stash.map(migrate).filter(ok).map(asItem);
   const cap = stashCap(hideout);
+  // Cap excess goes to pending (倉庫の整理待ち) instead of being dropped silently.
   let room = cap;
-  const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
+  const kept: Item[] = [];
+  const overflow: Item[] = [];
+  for (const i of items) {
+    if (isStarter(i) || room-- > 0) kept.push(i);
+    else overflow.push(i);
+  }
+  const stash = withStarters(kept);
+  const savedPending =
+    typeof o.v === "number" && o.v >= 42 && Array.isArray(o.pending)
+      ? o.pending.map(migrate).filter(ok).map(asItem).filter((i) => !isStarter(i))
+      : [];
+  const pending = [...overflow, ...savedPending];
+  const goal =
+    typeof o.v === "number" && o.v >= 42 && typeof o.goal === "string" && o.goal in VALUABLES ? (o.goal as ValuableKind) : null;
   const v27 = typeof o.v === "number" && o.v >= 27;
   const v28 = typeof o.v === "number" && o.v >= 28;
   const v32 = typeof o.v === "number" && o.v >= 32;
@@ -950,12 +1043,13 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v39: fortify (核 · 固める) removed (raid/server only; no Profile fields to drop; stack consistency).
   // v40: 島の知らせの控え（`news`）。v39 以前は無し。
   // v41: 取り合う海岸拠点（方向 A）。専用フィールドは無し（poiState の rival が持ち主）。
+  // v42: 倉庫の整理待ち（`pending`）と入手先の目標（`goal`）。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
       : [];
   return {
-    v: 41,
+    v: 42,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -984,6 +1078,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     incursionTaken: [],
     trophies,
     news,
+    pending,
+    goal,
     // A save from before the island had an ending is on its first round, begun on day 1.
     cycle: v28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
     cycleDay: v28 && Number.isInteger(o.cycleDay) && (o.cycleDay as number) >= 1 ? Math.min(day, o.cycleDay as number) : 1,
@@ -1040,6 +1136,39 @@ export function buildFactory(p: Profile): Profile | null {
     });
   }
   return { ...p, cash: p.cash - l.cash, stash: p.stash.filter((_, at) => !take.has(at)), factory: p.factory + 1 };
+}
+
+/**
+ * The valuable the raid / map should chase: manual `goal`, else the dearest still needed for the
+ * next factory / hideout level, else null.
+ */
+export function goalKind(p: Profile): ValuableKind | null {
+  if (p.goal && p.goal in VALUABLES) return p.goal;
+  const want = wanted(p);
+  const pick = (items: [ValuableKind, number][] | undefined) => {
+    if (!items?.length) return null;
+    const short = items.filter(([k]) => want[k] > 0);
+    if (!short.length) return null;
+    return short.sort((a, b) => VALUABLES[b[0]].value - VALUABLES[a[0]].value)[0]![0];
+  };
+  const fac = nextFactory(p);
+  if (fac) {
+    const k = pick(fac.items);
+    if (k) return k;
+  }
+  for (const m of MODULES) {
+    const l = nextLevel(p.hideout, m);
+    const k = pick(l?.items);
+    if (k) return k;
+  }
+  return null;
+}
+
+/** Stash count of `kind` and how many the hideout/factory still want in total (have + shortfall). */
+export function goalProgress(p: Profile, kind: ValuableKind): { have: number; need: number } {
+  const have = p.stash.filter((i) => i.t === "valuable" && i.kind === kind).length;
+  const short = Math.max(0, wanted(p)[kind]);
+  return { have, need: have + short };
 }
 
 /**

@@ -143,6 +143,12 @@ export class Hud {
   onMapClosed: (() => void) | null = null;
 
   /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
+  /** Marks POIs that drop the hunt target on the raid map / minimap. */
+  setGoalPois(ids: readonly string[]) {
+    this.map.goalPois = ids;
+    this.minimap.goalPois = ids;
+  }
+
   toggleMap(force?: boolean) {
     this.mapOpen = force ?? !this.mapOpen;
     $("map").hidden = !this.mapOpen;
@@ -417,6 +423,12 @@ export class Hud {
       case "pickup":
         // Bag card (view/bag.ts) carries the detail; a short toast confirms the grab (Round 4 juice).
         if (e.kind === "shard") break;
+        if (e.kind === "valuable" && e.valuable && s.goal === e.valuable && s.goalNeed > 0) {
+          const inBag = s.player.haul.filter((k) => k === s.goal).length;
+          const have = s.goalHave + inBag;
+          this.toast(`${TERM.goal} · ${esc(VALUABLES[e.valuable].label)} ${have} / ${s.goalNeed}`, e.rarity ?? 0, 2200);
+          break;
+        }
         if (["valuable", "tool", "key", "mod"].includes(e.kind)) {
           this.toast(esc(e.label), e.rarity ?? 0, 1600);
           break;
@@ -497,10 +509,16 @@ export class Hud {
         break;
       case "deposit": {
         // Same use as 倉庫へ送る: island defence stock is automatic — show the result on the line.
+        if (e.full && e.n === 0) {
+          this.toast(`${depotIcon()}${PHRASE.relayWarehouseFull}`, 0, 3200);
+          break;
+        }
         const i = depotInReach(s);
         const place = i >= 0 ? POIS[poiIndex(DEPOTS[i].poi)].name : "";
+        const left = e.left ? ` · ${e.left}${PHRASE.bagKept}` : "";
+        const room = e.room != null ? ` · ${TERM.warehouse} あと ${e.room}` : "";
         this.toast(
-          `${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${e.n}点・${e.value}${place ? `<span class="toast-sub">${esc(place)}${PHRASE.islandGuardVia}</span>` : ""}`,
+          `${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${e.n}点・${e.value}${room}${left}${place ? `<span class="toast-sub">${esc(place)}${PHRASE.islandGuardVia}</span>` : ""}`,
           3,
         );
         break;
@@ -1275,7 +1293,12 @@ export class Hud {
       }
       const n = p.haul.length + p.tools.length;
       const value = p.haul.reduce((v, k) => v + VALUABLES[k].value, 0);
-      return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${n}点・${value}`);
+      const room = Number.isFinite(s.stashRoom) ? Math.max(0, Math.floor(s.stashRoom)) : null;
+      if (room === 0) {
+        return tip(`${key("E")}${depotIcon()}${PHRASE.relayWarehouseFull} · ${TERM.cutAndExtract} ${clockIcon()}${DEPOT.leave} 秒`);
+      }
+      const roomBit = room != null ? ` · ${TERM.warehouse} あと ${room}` : "";
+      return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${n}点・${value}${roomBit}`);
     }
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {
@@ -1650,8 +1673,10 @@ export class Hud {
             ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span class="learned"><span class="turn">${entryIcon(false)}${entryIcon()}</span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`
             : "") +
           (settled.opened.length ? `<h3>開いた道</h3><p>${settled.opened.map((id) => `<span>${routeIcon(true)}${routeOf(id).name}</span>`).join("")}</p>` : "") +
-          (settled.sold.length
-            ? `<h3>倉庫に入らなかった</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`
+          (settled.pending?.length || settled.sold.length
+            ? settled.soldFor > 0 && !(settled.pending?.length)
+              ? `<h3>${PHRASE.organizeSold}</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`
+              : `<h3>${PHRASE.stashOverflowOrganize}</h3><p><span>${(settled.pending?.length ?? settled.sold.length)} 点 · ${TERM.organize}</span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`
             : "")
         : "") +
       this.analysis(s, settled, known, analysed);
@@ -1696,8 +1721,9 @@ export class Hud {
       const d = n - (beforeN.get(k) ?? 0);
       if (d > 0) kinds.set(k, d);
     }
+    const goal = before.goal && before.goal in VALUABLES ? before.goal : null;
     for (const [k, kept] of kinds) {
-      if (wantB[k] <= 0) continue;
+      if (wantB[k] <= 0 && k !== goal) continue;
       const uses: string[] = [];
       for (const m of MODULES) {
         const need = nextLevel(before.hideout, m)?.items.find(([x]) => x === k)?.[1] ?? 0;
@@ -1707,9 +1733,10 @@ export class Hud {
       const fac = nextFactory(before)?.items.find(([x]) => x === k)?.[1] ?? 0;
       if (fac) uses.push(`${factoryIcon()}工場 Lv${before.factory + 1}<b>${fac}</b>`);
       else if (factoryNeeded(before)[k] > 0) uses.push(`${factoryIcon()}工場<b>${factoryNeeded(before)[k]}</b>`);
-      if (!uses.length) continue;
+      if (!uses.length && k !== goal) continue;
       const done = wanted(after)[k] <= 0;
-      bits.push(`<span class="growth-item${done ? " done" : ""}"><span class="chip" style="--c:${itemColor({ t: "valuable", kind: k })}">${esc(VALUABLES[k].label)}${kept > 1 ? `<b>${kept}</b>` : ""}</span>${uses.join("")}${done ? checkIcon() : ""}</span>`);
+      const goalMark = k === goal ? `<small>${TERM.goal}</small>` : "";
+      bits.push(`<span class="growth-item${done ? " done" : ""}"><span class="chip" style="--c:${itemColor({ t: "valuable", kind: k })}">${goalMark}${esc(VALUABLES[k].label)}${kept > 1 ? `<b>${kept}</b>` : ""}</span>${uses.join("")}${done ? checkIcon() : ""}</span>`);
     }
     const ready: string[] = [];
     if (canBuildFactory(after) && !canBuildFactory(before)) ready.push(`${factoryIcon()}${PHRASE.factoryRaiseReady}`);

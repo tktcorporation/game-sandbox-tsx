@@ -4,13 +4,15 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, raidThreat, settle, type Profile, type Settlement } from "./meta/profile";
+import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { Organize } from "./view/organize";
+import { poisWith } from "./meta/hideout";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
@@ -78,6 +80,7 @@ function applyLevel(l: Level) {
   world.setRatio(l.ratio);
 }
 const hud = new Hud();
+const organize = new Organize();
 
 let state: State = newRun(Date.now() & 0xffff);
 /** A raid is under way. */
@@ -177,6 +180,11 @@ addEventListener("keydown", (e) => {
     else if (["ArrowRight", "ArrowDown", "KeyD", "Tab"].includes(e.code)) picker.cycle(e.shiftKey && e.code === "Tab" ? -1 : 1);
     else if (["ArrowLeft", "ArrowUp", "KeyA"].includes(e.code)) picker.cycle(-1);
     e.preventDefault();
+    return;
+  }
+  // Esc closes 倉庫の整理 mid-way (it reopens until 確定); pending stays saved.
+  if (e.code === "Escape" && organize.open) {
+    organize.hide();
     return;
   }
   // Esc closes a camp station's panel (the pointer is already free while one is open).
@@ -571,7 +579,40 @@ let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const loaded = loadProfile();
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
-const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => lock());
+const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => {
+  // 地図で見る: open the departure framed on that POI's region / nearest start.
+  if (hub.focusPoi && camping && !running) {
+    const poi = hub.focusPoi;
+    hub.focusPoi = null;
+    const region = poiRegion(poi).id;
+    const p = POIS[poiIndex(poi)]!;
+    const starts = hub.startPoints().filter((q) => q.open && q.region === region);
+    const near = starts.sort((a, b) => {
+      const da = (a.x - p.x) ** 2 + (a.z - p.z) ** 2;
+      const db = (b.x - p.x) ** 2 + (b.z - p.z) ** 2;
+      return da - db;
+    })[0];
+    if (near) hub.choose(near.kind, near.id);
+    askDepart(false);
+    return;
+  }
+  lock();
+});
+organize.bind((p) => {
+  hub.reload(p);
+  saveProfile(hub.profile);
+  if (settlement) {
+    settlement = {
+      ...settlement,
+      profile: p,
+      pending: p.pending,
+      sold: organize.sold.length ? organize.sold : settlement.sold,
+      soldFor: organize.soldFor || settlement.soldFor,
+    };
+  }
+});
+// Resume 倉庫の整理 after a reload when pending remains.
+if (needsOrganize(hub.profile)) organize.ensure(hub.profile);
 // The game's own islands answer from the profile the page plays (island-net.ts, AI の島).
 useAi(() => hub.profile);
 const campView = new CampView();
@@ -596,7 +637,7 @@ let inside: { x: number; y: number; z: number; yaw: number } | null = null;
 let awaySheetOpen = false;
 let awayBooted = false;
 
-const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen;
+const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen || organize.open;
 
 /** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
 function fade(on: boolean, now = false) {
@@ -730,6 +771,11 @@ function openPanel(id: StationId) {
 
 /** Puts up the departure: the island with every start on it (the last one chosen), the kit and the objective. */
 function askDepart(walk: boolean) {
+  // 整理待ちのあいだは門から出撃しない。
+  if (needsOrganize(hub.profile)) {
+    organize.show(hub.profile);
+    return;
+  }
   departing = { walk, back: walk ? inside : null };
   // The raid about to start takes in the expeditions on the island; nothing waits on the answer.
   lease = null;
@@ -894,6 +940,15 @@ function start(go: Launch, from?: State) {
     island: holds(hub.profile),
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
+    // Free stash slots after takeKit — 中継ボックス sends only what fits.
+    stashRoom: stashRoom(hub.profile),
+    stashWant: wanted(hub.profile),
+    ...((): { goal?: ReturnType<typeof goalKind>; goalHave?: number; goalNeed?: number } => {
+      const g = goalKind(hub.profile);
+      if (!g) return {};
+      const prog = goalProgress(hub.profile, g);
+      return { goal: g, goalHave: prog.have, goalNeed: prog.need };
+    })(),
     battle: {
       factory: hub.profile.factory,
       away: squadsAway(hub.profile),
@@ -935,6 +990,7 @@ function start(go: Launch, from?: State) {
   hud.setPouch(pouchSlots(hub.profile.hideout));
   hud.setTrophies(hub.profile.trophies ?? 0);
   hud.bag.setProfile(hub.profile);
+  hud.setGoalPois(state.goal ? poisWith(state.goal) : []);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();
@@ -947,6 +1003,7 @@ function finish() {
   fire = ads = adsLatch = false;
   $("banner").className = "";
   hud.show(false);
+  organize.resetSession();
   const next = settlement ? hub.nextHand() : "";
   const expLines = hub.expeditionNews();
   if (settlement?.takenRival?.length) {
@@ -972,6 +1029,8 @@ function finish() {
   sound.reset();
   $("results").hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
+  // 倉庫に入りきらない → 整理画面（モンハンの狩り後の整理）。
+  if (needsOrganize(hub.profile)) organize.show(hub.profile);
 }
 
 // Analysing a mod part on the results: its kind is known from now on, and the card says so.
@@ -1017,7 +1076,26 @@ $("start").addEventListener("click", openCamp);
 $("depart-go").addEventListener("click", () => answerDepart(true));
 $("depart-cancel").addEventListener("click", () => answerDepart(false));
 $("restart").textContent = TERM.backToCamp;
-$("restart").addEventListener("click", openCamp);
+$("restart").addEventListener("click", () => {
+  // Closing results with pending still opens 倉庫の整理 again.
+  if (needsOrganize(hub.profile)) {
+    organize.show(hub.profile);
+    return;
+  }
+  openCamp();
+});
+$("organize").addEventListener("click", (e) => {
+  const r = organize.click(e.target as HTMLElement, hub.profile);
+  if (!r) return;
+  sfx.click();
+  if (r.done) {
+    // Refresh results with what organize sold, then go back to camp.
+    if (settlement) {
+      hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand(), hub.expeditionNews());
+    }
+    openCamp();
+  }
+});
 // HTML fallback still says 出撃する; depart render overwrites from PHRASE.sortieDo.
 ($("depart-go") as HTMLButtonElement).dataset.copy = PHRASE.sortieDo;
 $("resume").addEventListener("click", () => {

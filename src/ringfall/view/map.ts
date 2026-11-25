@@ -466,6 +466,8 @@ export class IslandMap {
   remotePings: readonly { x: number; z: number }[] = [];
   /** Async attack/defence traces on bins/roads (ux-design M5), view-only. */
   traces: readonly { x: number; z: number; t: "bin" | "road"; mode?: "raid" | "hold" }[] = [];
+  /** POIs that drop the hunt target (目標); marked on the raid / departure map. */
+  goalPois: readonly string[] = [];
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
   /** The last draw's scale and offset in CSS pixels, for `screenAt()`. */
@@ -1308,6 +1310,16 @@ export class IslandMap {
       }
       g.fill();
       g.stroke();
+      // 目標の材料が出る拠点: a light ring so the map points the hunt.
+      if (!plain && this.goalPois.includes(poi.id)) {
+        g.save();
+        g.lineWidth = 2.5 * dpr;
+        g.strokeStyle = alpha(UI.own, 0.95);
+        g.beginPath();
+        g.arc(p.x, p.y, r * 1.55, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+      }
       if (!poi.boss) {
         // The garrison's plate: a shield in the colour of the rarity that pierces it.
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
