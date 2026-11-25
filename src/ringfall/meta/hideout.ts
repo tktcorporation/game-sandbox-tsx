@@ -1,5 +1,5 @@
 import { HEALS, HIDEOUT, HIDEOUT_EFFECT, META, ROBOT_DROPS, TOP_BINS, VALUABLES, VAULT, type HealKind, type ModuleId, type ModuleLevel, type Rarity, type ValuableKind } from "../sim/config";
-import { POIS, poiRegion, type PoiId } from "../sim/map";
+import { POIS, poiIndex, poiRegion, type PoiId } from "../sim/map";
 
 /** Each module's built level (0 is unbuilt). */
 export type Hideout = Record<ModuleId, number>;
@@ -76,5 +76,23 @@ export function sources(kind: ValuableKind): Source[] {
 export const vaultPoisFor = (kind: ValuableKind): PoiId[] =>
   POIS.filter((p) => p.bins.some((b) => b.vault) && VAULT.valuables.some((set) => set.includes(kind))).map((p) => p.id);
 
-/** POIs whose bins may hold a kind (for checks: every kind a level needs must come from somewhere). */
-export const poisWith = (kind: ValuableKind): PoiId[] => POIS.filter((p) => p.loot.valuable.some(([k]) => k === kind)).map((p) => p.id);
+/**
+ * POIs that yield `kind` for the raid map / minimap goal marks: bins and fixed robot drops
+ * (タイタン → 発着場). Vaults and unplaced robot drops have no POI and are left out.
+ */
+export const poisWith = (kind: ValuableKind): PoiId[] => [...new Set(sources(kind).flatMap((s) => (s.poi ? [s.poi] : [])))];
+
+/**
+ * Extra name tags for a goal on the map when the source's where-name is not the POI's name
+ * (タイタン at 発着場). Drawn beside the goal mark so overlap culling does not drop them.
+ */
+export function goalTags(kind: ValuableKind): { poi: PoiId; tag: string }[] {
+  const out: { poi: PoiId; tag: string }[] = [];
+  for (const s of sources(kind)) {
+    if (!s.poi) continue;
+    const name = POIS[poiIndex(s.poi)]?.name;
+    if (!name || s.where === name) continue;
+    if (!out.some((t) => t.poi === s.poi && t.tag === s.where)) out.push({ poi: s.poi, tag: s.where });
+  }
+  return out;
+}

@@ -440,7 +440,7 @@ export function sourceGuide(kind: ValuableKind, p: Profile): string {
       }
       const map =
         s.poi && open(s)
-          ? `<button type="button" class="src-map" data-act="src-map" data-poi="${s.poi}">${TERM.seeOnMap}</button>`
+          ? `<button type="button" class="src-map" data-act="src-map" data-poi="${s.poi}" data-kind="${kind}">${TERM.seeOnMap}</button>`
           : "";
       return `<div class="src-row${s.poi && !open(s) ? " locked" : ""}"><span>${esc(s.where)}${region}${lock}<b>${pct}%</b></span>${note}${map}</div>`;
     })
@@ -458,7 +458,8 @@ export function sourceGuide(kind: ValuableKind, p: Profile): string {
         }
         return "";
       })();
-  const goalBtn = `<button type="button" class="src-goal" data-act="set-goal" data-kind="${kind}">${TERM.setGoal}</button>`;
+  const isGoal = p.goal === kind;
+  const goalBtn = `<button type="button" class="src-goal${isGoal ? " on" : ""}" data-act="set-goal" data-kind="${kind}">${isGoal ? TERM.goalActive : TERM.setGoal}</button>`;
   return `<div class="src-guide" data-kind="${kind}"><small>${TERM.whereFound}</small>${rows}${buy}${goalBtn}</div>`;
 }
 
@@ -522,8 +523,14 @@ export class Hub {
       }
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) {
+        const act = el.dataset.act!;
+        // 地図で見る carries both the POI and the valuable kind (set goal + open depart).
+        if (act === "src-map") {
+          this.act(act, el.dataset.poi ?? "", el.dataset.kind ?? "");
+          return;
+        }
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
-        this.act(el.dataset.act!, arg);
+        this.act(act, arg);
       }
     });
   }
@@ -686,7 +693,7 @@ export class Hub {
     this.load = { weapons: keep(this.load.weapons), armor: armor < 0 ? null : armor, heals: this.load.heals, keys: keep(this.load.keys) };
   }
 
-  private act(act: string, arg: string) {
+  private act(act: string, arg: string, kind = "") {
     if (act === "open-signal") {
       sfx.click();
       return this.open("signal");
@@ -702,8 +709,12 @@ export class Hub {
       return this.render();
     }
     if (act === "src-map") {
-      // Hand off to the departure: main opens the gate map framed on this POI.
+      // One action: set that valuable as the goal, then open the departure on this POI.
       if (arg && poiIndex(arg as PoiId) >= 0) {
+        if (kind in VALUABLES && this.profile.goal !== kind) {
+          this.profile = { ...this.profile, goal: kind as ValuableKind };
+          saveProfile(this.profile);
+        }
         this.focusPoi = arg as PoiId;
         sfx.click();
         this.close();
@@ -712,9 +723,10 @@ export class Hub {
     }
     if (act === "set-goal") {
       if (arg in VALUABLES) {
+        // Toggle: already the goal → clear; else set. Button label shows 目標にしている while set.
         this.set({ ...this.profile, goal: this.profile.goal === arg ? null : (arg as ValuableKind) });
         sfx.click();
-        return;
+        return this.render();
       }
     }
     const pick = arg.split(",").map(Number);

@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
+import { goalCompass, PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -23,7 +23,7 @@ import { RARITY_CSS, SCOPE_IN } from "./models";
 import { IslandMap, islandScene, shieldedBy } from "./map";
 import { sfx } from "./sfx";
 import { nodeRow } from "./row";
-import { currentStep, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
+import { compassUrgent, currentStep, huntSpot, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
 import type { World } from "./world";
 import { FINALE, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
@@ -143,10 +143,12 @@ export class Hud {
   onMapClosed: (() => void) | null = null;
 
   /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
-  /** Marks POIs that drop the hunt target on the raid map / minimap. */
-  setGoalPois(ids: readonly string[]) {
+  /** Marks POIs that drop the hunt target on the raid map / minimap (and optional source tags). */
+  setGoalPois(ids: readonly string[], tags: readonly { poi: string; tag: string }[] = []) {
     this.map.goalPois = ids;
+    this.map.goalTags = tags;
     this.minimap.goalPois = ids;
+    this.minimap.goalTags = tags;
   }
 
   toggleMap(force?: boolean) {
@@ -425,7 +427,8 @@ export class Hud {
         if (e.kind === "shard") break;
         if (e.kind === "valuable" && e.valuable && s.goal === e.valuable && s.goalNeed > 0) {
           const inBag = s.player.haul.filter((k) => k === s.goal).length;
-          const have = s.goalHave + inBag;
+          const sent = s.sent.filter((k) => k === s.goal).length;
+          const have = s.goalHave + inBag + sent;
           this.toast(`${TERM.goal} · ${esc(VALUABLES[e.valuable].label)} ${have} / ${s.goalNeed}`, e.rarity ?? 0, 2200);
           break;
         }
@@ -657,7 +660,10 @@ export class Hud {
     view.setBeacon(s.phase === "play" ? (step?.at ?? null) : null);
     // The use key's focused target: one ring in the world, matching the prompt.
     view.setUseMark(s.phase === "play" ? useFocusMark(s) : null);
-    this.compassMark(s, step?.at ?? null);
+    // Compass: hunt goal when set (タイタン 474 m), else the objective step. Capture / defend /
+    // finale keep the objective's spot (design-direction 目標への案内).
+    const hunt = s.phase === "play" && !compassUrgent(s) ? huntSpot(s) : null;
+    this.compassMark(s, hunt ?? step?.at ?? null, hunt?.label ?? null);
     const bagCells = this.bagCells(p);
     this.bag.frame(s, dt, bagCells);
     // Worth only once something is carried: an empty "回収 0" is noise on a fresh spawn.
@@ -1128,13 +1134,16 @@ export class Hud {
     return o && { title: o.title, current: o.current, steps: o.steps.map((st) => ({ label: st.label, until: st.until, progress: st.progress ?? null, at: st.at && { x: +st.at.x.toFixed(1), y: +st.at.y.toFixed(1), z: +st.at.z.toFixed(1) }, done: st.done })) };
   }
 
-  /** Where the objective's compass marker points: the bearing (degrees from north) and metres to the current step's place. */
-  private mark: { bearing: number; d: number } | null = null;
+  /** Where the compass marker points: bearing, metres, and an optional hunt label (タイタン). */
+  private mark: { bearing: number; d: number; label: string | null } | null = null;
 
-  private compassMark(s: State, at: { x: number; z: number } | null) {
+  private compassMark(s: State, at: { x: number; z: number } | null, label: string | null = null) {
     const p = s.player.pos;
     // Standing at the place already, the marker would only point at the player's feet.
-    this.mark = at && s.phase === "play" && dist2d(p, at) > 8 ? { bearing: (((Math.atan2(at.x - p.x, -(at.z - p.z)) * 180) / Math.PI) % 360 + 360) % 360, d: dist2d(p, at) } : null;
+    this.mark =
+      at && s.phase === "play" && dist2d(p, at) > 8
+        ? { bearing: (((Math.atan2(at.x - p.x, -(at.z - p.z)) * 180) / Math.PI) % 360 + 360) % 360, d: dist2d(p, at), label }
+        : null;
   }
 
   /** Where the last reinforcements beamed in, and until when the compass shows it; null for none. */
@@ -1156,8 +1165,8 @@ export class Hud {
   }
 
   /**
-   * The compass's objective marker: the current step's bearing, held at the strip's edge when
-   * behind, with its distance. A local ping (P) is a separate faint mark (`placePing`).
+   * The compass marker: hunt goal (タイタン 474 m) or the objective step's distance, held at the
+   * strip's edge when behind. A local ping (P) is a separate faint mark (`placePing`).
    */
   private placeMark(heading: number, half: number) {
     const el = $("compass-mark");
@@ -1168,7 +1177,9 @@ export class Hud {
     const off = Math.max(-max, Math.min(max, rel));
     el.style.left = `${half + off * 2}px`;
     el.classList.toggle("edge", off !== rel);
-    const label = `${Math.round(this.mark.d)}m`;
+    el.classList.toggle("hunt", !!this.mark.label);
+    const metres = Math.round(this.mark.d);
+    const label = this.mark.label ? goalCompass(this.mark.label, metres) : `${metres}m`;
     if (el.firstElementChild!.textContent !== label) el.firstElementChild!.textContent = label;
   }
 

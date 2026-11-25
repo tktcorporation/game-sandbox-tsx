@@ -5,7 +5,7 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, NODES, nodeIndex, poiIndex, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, NODES, nodeIndex, poiIndex, poiRegion, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { PoiHold } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
@@ -466,8 +466,10 @@ export class IslandMap {
   remotePings: readonly { x: number; z: number }[] = [];
   /** Async attack/defence traces on bins/roads (ux-design M5), view-only. */
   traces: readonly { x: number; z: number; t: "bin" | "road"; mode?: "raid" | "hold" }[] = [];
-  /** POIs that drop the hunt target (目標); marked on the raid / departure map. */
+  /** POIs that drop the hunt target (目標); marked on the raid / departure / minimap. */
   goalPois: readonly string[] = [];
+  /** Extra tags beside a goal mark when the source name is not the POI name (タイタン at 発着場). */
+  goalTags: readonly { poi: string; tag: string }[] = [];
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
   /** The last draw's scale and offset in CSS pixels, for `screenAt()`. */
@@ -1027,22 +1029,31 @@ export class IslandMap {
     };
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
-    // The POI names written: those the scene names (the nodes that changed hands come first), and of
-    // the rest none that would cover a name already placed, so a small map shows fewer, whole names.
+    // The POI names written: goal POIs and nodes that changed hands come first (and are never
+    // dropped for overlap), then the rest that fit, so a small map still names the hunt target.
     const changedIds: readonly string[] = [...(s.changed?.gained ?? []), ...(s.changed?.lost ?? [])];
-    const order = POIS.map((_, i) => i).sort((a, b) => Number(changedIds.includes(POIS[b].id)) - Number(changedIds.includes(POIS[a].id)));
+    const isGoalPoi = (id: string) => this.goalPois.includes(id);
+    const order = POIS.map((_, i) => i).sort(
+      (a, b) =>
+        Number(isGoalPoi(POIS[b].id)) - Number(isGoalPoi(POIS[a].id)) ||
+        Number(changedIds.includes(POIS[b].id)) - Number(changedIds.includes(POIS[a].id)),
+    );
     const named: number[] = [];
     for (const i of order) {
       if (s.names && !s.names.includes(POIS[i].id)) continue;
       const p = at(POIS[i].x, POIS[i].z);
       // Off the framed view: leave the name out (an edge arrow points at goals instead).
       if (!onScreen(p.x, p.y)) continue;
+      const keep = isGoalPoi(POIS[i].id) || changedIds.includes(POIS[i].id);
       const r = box(poiText(i), p.x, p.y - 15 * dpr, 12);
-      if (named.some((j) => {
-        const q = at(POIS[j].x, POIS[j].z);
-        const t = box(poiText(j), q.x, q.y - 15 * dpr, 12);
-        return r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0;
-      }))
+      if (
+        !keep &&
+        named.some((j) => {
+          const q = at(POIS[j].x, POIS[j].z);
+          const t = box(poiText(j), q.x, q.y - 15 * dpr, 12);
+          return r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0;
+        })
+      )
         continue;
       named.push(i);
       taken.push(r);
@@ -1154,13 +1165,17 @@ export class IslandMap {
       taken.push(r);
       label(text, p.x, p.y + 11 * dpr, known ? ink : UI.parchDim, 9);
     }
+    // Region names: a goal's region is kept even when it would overlap (ダム湖 for 発着場).
+    const goalRegions = new Set(this.goalPois.map((id) => poiRegion(id as PoiId).id));
     for (const r of plain ? [] : REGIONS) {
       const p = at(r.label.x, r.label.z);
       if (!onScreen(p.x, p.y)) continue;
-      if (!free(box(r.name, p.x, p.y, 15, true))) continue;
+      const keep = goalRegions.has(r.id);
+      if (!keep && !free(box(r.name, p.x, p.y, 15, true))) continue;
       g.textAlign = "left";
-      label(r.name, p.x, p.y, alpha(UI.parch, 0.55), 15, false);
+      label(r.name, p.x, p.y, alpha(UI.parch, keep ? 0.85 : 0.55), 15, false);
       g.textAlign = "center";
+      if (keep) taken.push(box(r.name, p.x, p.y, 15, true));
     }
     (plain && !this.mini ? [] : EXTRACTS).forEach((x, i) => {
       const p = at(x.x, x.z);
@@ -1310,14 +1325,24 @@ export class IslandMap {
       }
       g.fill();
       g.stroke();
-      // 目標の材料が出る拠点: a light ring so the map points the hunt.
-      if (!plain && this.goalPois.includes(poi.id)) {
+      // 目標の材料が出る拠点: a light ring (raid map and minimap) so the hunt has a mark.
+      if (this.goalPois.includes(poi.id) && (!this.plain || this.mini > 0)) {
         g.save();
-        g.lineWidth = 2.5 * dpr;
+        g.lineWidth = (this.mini ? 2 : 2.5) * dpr;
         g.strokeStyle = alpha(UI.own, 0.95);
         g.beginPath();
         g.arc(p.x, p.y, r * 1.55, 0, Math.PI * 2);
         g.stroke();
+        // Minimap pin: a small triangle above the ring (names stay off the mini).
+        if (this.mini) {
+          g.fillStyle = UI.own;
+          g.beginPath();
+          g.moveTo(p.x, p.y - r * 2.4);
+          g.lineTo(p.x + 4 * dpr, p.y - r * 1.55);
+          g.lineTo(p.x - 4 * dpr, p.y - r * 1.55);
+          g.closePath();
+          g.fill();
+        }
         g.restore();
       }
       if (!poi.boss) {
@@ -1425,6 +1450,11 @@ export class IslandMap {
       label(poiText(i), p.x, p.y - 15 * dpr, dim(i) ? UI.mist : UI.white, 12);
       const who = rivalWho(i);
       if (who) label(who, p.x, p.y + 14 * dpr, RIVAL_CSS, 9);
+      // Goal source tag when it is not the POI name (タイタン beside 発着場).
+      for (const t of this.goalTags) {
+        if (t.poi !== POIS[i].id) continue;
+        label(t.tag, p.x, p.y - 28 * dpr, UI.own, 11);
+      }
     }
     if (s.ally?.active) {
       const a = at(s.ally.pos.x, s.ally.pos.z);
@@ -1516,7 +1546,8 @@ export class IslandMap {
     const reason = this.picked >= 0 && s.nodes ? lockReason(s.nodes, this.picked) : "";
     if (reason) this.drawNote(g, at(NODES[this.picked].x, NODES[this.picked].z), reason, dpr);
     // Off-screen goals: an arrow at the canvas edge (Into the Breach / Pokémon GO style).
-    if (!plain && !this.mini) this.drawEdgeArrows(g, s, at, dpr);
+    // The minimap also gets these so a hunt target past its 180 m square still has a bearing.
+    if (!this.plain) this.drawEdgeArrows(g, s, at, dpr);
     // For automation: where the padlocks stand and the note on show.
     const marks = JSON.stringify(this.lockAt.map((q) => [NODES[q.node].id, Math.round(q.x), Math.round(q.y)]));
     if (this.canvas.dataset.locks !== marks) this.canvas.dataset.locks = marks;
@@ -1528,16 +1559,22 @@ export class IslandMap {
 
   /**
    * Chevrons at the canvas edge toward goals that sit off the framed view: the player (when
-   * panned away) and a node under threat.
+   * panned away), a node under threat, and the hunt target's POIs.
    */
   private drawEdgeArrows(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number) {
     const goals: { x: number; z: number; color: string }[] = [];
-    if (s.player) goals.push({ x: s.player.pos.x, z: s.player.pos.z, color: UI.white });
-    if (s.battle?.threat) s.battle.threat.forEach((hot, i) => hot && goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert }));
+    // Minimap: only the hunt target (player is centred; threats stay on the full map).
+    if (!this.mini && s.player) goals.push({ x: s.player.pos.x, z: s.player.pos.z, color: UI.white });
+    if (!this.mini && s.battle?.threat) s.battle.threat.forEach((hot, i) => hot && goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert }));
     // Front nodes only once the player has zoomed or panned: the fitted region already shows its own.
-    if (!this.whole && this.cam.zoom > 1 && s.nodes) {
+    if (!this.mini && !this.whole && this.cam.zoom > 1 && s.nodes) {
       const front = frontNodes(s.nodes);
       NODES.forEach((n, i) => front[i] && goals.push({ x: n.x, z: n.z, color: UI.paper }));
+    }
+    for (const id of this.goalPois) {
+      const i = poiIndex(id as PoiId);
+      if (i < 0) continue;
+      goals.push({ x: POIS[i].x, z: POIS[i].z, color: UI.own });
     }
     const inset = EDGE_INSET * dpr;
     const w = g.canvas.width;

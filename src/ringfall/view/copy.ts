@@ -52,7 +52,9 @@ export type TermId =
   | "whereFound"
   | "seeOnMap"
   | "setGoal"
-  | "goal";
+  | "goalActive"
+  | "goal"
+  | "landed";
 
 /**
  * Canonical place / action words as the game shows them.
@@ -124,12 +126,22 @@ export const TERM = {
   confirmOrganize: "確定",
   /** Entry on a material row to open sources. */
   whereFound: "どこで取れる",
-  /** Sources → departure map on that POI. */
+  /** Sources → set that valuable as the goal and open the departure map on that POI. */
   seeOnMap: "地図で見る",
   /** Mark a valuable as the hunt target. */
   setGoal: "目標にする",
+  /**
+   * Shown instead of 目標にする while that valuable is already the hunt target.
+   * 【元】目標にする（押しても状態が分からない） 【案】目標にしている 【理由】いまの目標が一目で分かる
+   */
+  goalActive: "目標にしている",
   /** Raid toast / map prefix for the hunt target. */
   goal: "目標",
+  /**
+   * Landing banner verb after the region name.
+   * 【元】（なし） 【案】に着いた 【理由】着地で今いる地域を言う
+   */
+  landed: "に着いた",
 } as const satisfies Record<TermId, string>;
 
 /** Full live phrases built from TERM. */
@@ -175,6 +187,24 @@ export const PHRASE = {
   /** Partial depot send: rest stayed in the bag. */
   bagKept: "点はバッグに残った",
 } as const;
+
+/**
+ * Landing banner when a hunt goal is set: 「ダム湖に着いた」.
+ * 【元】入口名だけ 【案】{地域}に着いた 【理由】目標の地域と揃える
+ */
+export const landedIn = (region: string) => `${region}${TERM.landed}`;
+
+/**
+ * Landing banner sub: 「タイタンは発着場（474 m）」.
+ * 【元】（なし） 【案】{入手先}は{拠点}（○ m） 【理由】着地で目標までの距離
+ */
+export const goalIsAt = (where: string, place: string, metres: number) => `${where}は${place}（${metres} m）`;
+
+/**
+ * Compass mark when hunting: 「タイタン 474m」.
+ * 【元】距離だけ 【案】{入手先} ○m 【理由】何へ向かうか分かる
+ */
+export const goalCompass = (where: string, metres: number) => `${where} ${metres}m`;
 
 /** Toast after confirming 遠征に出す (past of TERM.sendExpedition). */
 export function expeditionSentTo(place: string): string {

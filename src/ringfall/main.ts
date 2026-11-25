@@ -1,7 +1,8 @@
 import { spawnEnemy } from "./sim/enemies";
 import { AWARE, CONQUEST, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
-import { collide, groundAt } from "./sim/geom";
+import { collide, dist2d, groundAt } from "./sim/geom";
+import { huntSpot } from "./sim/objective";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
@@ -13,8 +14,7 @@ import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
-import { poisWith } from "./meta/hideout";
-import { pouchSlots } from "./meta/hideout";
+import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
@@ -39,7 +39,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { awaySheetParts, newsIncursion, PHRASE, TERM } from "./view/copy";
+import { awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -582,7 +582,7 @@ let analysed: ModKind | null = null;
 const loaded = loadProfile();
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => {
-  // 地図で見る: open the departure framed on that POI's region / nearest start.
+  // 地図で見る: goal already set in the hub; open the departure framed on that POI / nearest start.
   if (hub.focusPoi && camping && !running) {
     const poi = hub.focusPoi;
     hub.focusPoi = null;
@@ -1000,9 +1000,16 @@ function start(go: Launch, from?: State) {
   hud.setPouch(pouchSlots(hub.profile.hideout));
   hud.setTrophies(hub.profile.trophies ?? 0);
   hud.bag.setProfile(hub.profile);
-  hud.setGoalPois(state.goal ? poisWith(state.goal) : []);
+  hud.setGoalPois(state.goal ? poisWith(state.goal) : [], state.goal ? goalTags(state.goal) : []);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
-  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
+  // With a hunt goal: 「ダム湖に着いた。タイタンは発着場（○ m）」; else the entry / depot name.
+  const hunt = state.goal ? huntSpot(state) : null;
+  if (hunt) {
+    const metres = Math.round(dist2d(state.player.pos, hunt));
+    hud.banner(landedIn(regionHere(state.player.pos).name), goalIsAt(hunt.label, hunt.place, metres), false, 3.6);
+  } else {
+    hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
+  }
   lock();
 }
 
