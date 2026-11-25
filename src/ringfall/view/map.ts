@@ -1,6 +1,5 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { ZIPS } from "../sim/map";
-import { finaleOpen } from "../meta/island";
 import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
@@ -348,8 +347,6 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   capture?: { node: number; t: number } | null;
   /** The day's battle (sim/battle.ts): its squads, and the nodes the sides are taking. */
   battle?: Battle | null;
-  /** The titan's pad is open to the decisive battle (`FINALE`): a gold ring round it. */
-  finale?: boolean;
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
   /** The raid's bins, for the flares still lying on the tall buildings' top floors; without them every flare bin is drawn as not yet searched. */
@@ -379,7 +376,6 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     found: [],
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
-    finale: finaleOpen(p),
   };
 }
 
@@ -1360,16 +1356,6 @@ export class IslandMap {
         if (attackable(i)) {
           drawAttackFlag(g, p.x + r * 1.55, p.y - r * 0.85, (this.mini ? 9 : 11) * dpr, RIVAL_CSS);
         }
-      }
-      if (poi.boss && s.finale) {
-        // Open to the decisive battle: a gold ring, pulsing.
-        g.save();
-        g.lineWidth = 3 * dpr;
-        g.strokeStyle = alpha(UI.r3, Number((0.7 + 0.3 * Math.sin(performance.now() / 300)).toFixed(2)));
-        g.beginPath();
-        g.arc(p.x, p.y, r * 1.75, 0, Math.PI * 2);
-        g.stroke();
-        g.restore();
       }
       if (poi.boss) {
         // The titan's eye, in the robots' red.

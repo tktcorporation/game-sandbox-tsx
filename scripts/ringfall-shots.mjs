@@ -19,7 +19,6 @@ import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
 import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
-import { finaleShots } from "./ringfall-shots-finale.mjs";
 import { expeditionShots } from "./ringfall-shots-expeditions.mjs";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
 import { audited, clearAudit, judge } from "./ringfall-ui-audit.mjs";
@@ -1742,17 +1741,15 @@ const islandDay = {
 lap("island");
 
 /*
- * Mod parts and the round's 強度. A profile on cycle 3 plays at 強度 3 (desktop and phone), which
- * the raid plays at and the objective card names, and the map marks each POI's best; three
- * parts worn show on the HUD (desktop and phone), the vitals still clear of the objective card;
- * a part on the ground is drawn and named by the prompt, and the use key swaps it in for the
- * oldest; home alive, the results offer the parts for analysis, and analysing one learns its kind.
+ * Mod parts. The map marks each POI's best 強度; three parts worn show on the HUD (desktop and
+ * phone), the vitals still clear of the objective card; a part on the ground is drawn and named
+ * by the prompt, and the use key swaps it in for the oldest; home alive, the results offer the
+ * parts for analysis, and analysing one learns its kind.
  */
 {
   const modGame = {
     v: 28, cash: 2400, stash: [], raids: 8, extracted: 6, time: 5000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 2468, day: 9,
     depots: ["supply"], threat: 0, known: ["leech", "hush", "grip", "medic", "probe", "damper"], freedAt: { supply: 3 },
-    cycle: 3, cycleDay: 1, liberations: [5, 6, 7],
     hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
     poiState: { supply: { state: "freed", lastVisit: 8, since: 0 } },
   };
@@ -2315,8 +2312,6 @@ lap("movement");
 await bagShots({ browser, port, out, errors });
 lap("bag");
 await upgradeShots({ browser, port, out, errors });
-// The decisive battle: the camp's card, the pad ringed on the departure map, the raid's objective.
-await finaleShots({ browser, port, out, errors });
 await expeditionShots({ browser, port, out, errors });
 lap("upgrades");
 }

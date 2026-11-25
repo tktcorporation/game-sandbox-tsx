@@ -339,28 +339,6 @@ export function awaySheetParts(
   return { lines, trop };
 }
 
-/** 島の解放までの一行（野営・レイド中・リザルト）。材料はプレイヤー向けの語だけ。 */
-export type LiberationCopy = { kind: "nodes"; left: number } | { kind: "landing"; need: readonly string[] } | { kind: "finale" };
-
-export function liberationLine(s: LiberationCopy): string {
-  if (s.kind === "finale") return "決戦 · 発着場";
-  if (s.kind === "landing") return `島の解放まで · ${s.need.join("か")}`;
-  return `島の解放まで · 拠点 あと ${s.left}`;
-}
-
-/**
- * リザルト用: 前日との差。拠点の残りが変わったときだけ `あと a → b`。
- * 種類が違う（決戦が開いた等）ときは「前の一行 → 後の一行」。
- */
-export function liberationDelta(before: LiberationCopy, after: LiberationCopy): string {
-  if (before.kind === "nodes" && after.kind === "nodes") {
-    if (before.left === after.left) return liberationLine(after);
-    return `島の解放まで · 拠点 あと ${before.left} → ${after.left}`;
-  }
-  if (before.kind === after.kind && liberationLine(before) === liberationLine(after)) return liberationLine(after);
-  return `${liberationLine(before)} → ${liberationLine(after)}`;
-}
-
 /** 島の知らせ: 核 · 制圧で拠点を戻した行（旧・取り返した）。 */
 export function newsRetaken(at: string): string {
   return `${at}を制圧した · 倉庫へ届く`;

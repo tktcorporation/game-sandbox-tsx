@@ -5,7 +5,7 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
 import { neighbourNameByCode } from "../meta/neighbours";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
@@ -14,7 +14,7 @@ import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { islandHolds, liberationStatus, liberationStatusOf } from "../meta/island";
+import { islandHolds } from "../meta/island";
 import { isAiOwner, rivalHold, rivalOf, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
@@ -28,7 +28,7 @@ import { sfx } from "./sfx";
 import { nodeRow } from "./row";
 import { compassUrgent, currentStep, huntSpot, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
 import type { World } from "./world";
-import { FINALE, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
+import { FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
@@ -579,9 +579,6 @@ export class Hud {
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
         break;
-      case "liberated":
-        this.banner("島を解放した", "", true, 4);
-        break;
       case "momentum":
         // The raid's momentum rose: that many marks, and what the next node pays.
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
@@ -647,13 +644,7 @@ export class Hud {
     }
     const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
     // The raid's momentum beside the bar: a mark for each node taken after the first.
-    // お隣攻め中は自島の解放進度ではない。決戦はこのレイドの Start.finale に従う（途中で 16 拠点になっても「決戦」とは出さない）。
-    const libStatus = s.finale ? ({ kind: "finale" } as const) : (() => {
-      const st = liberationStatusOf(s.nodes);
-      return st.kind === "finale" ? ({ kind: "nodes", left: 0 } as const) : st;
-    })();
-    const lib = libStatus ? `<span class="lib-line">${liberationLine(libStatus)}</span>` : "";
-    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "") + lib;
+    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "");
     const el = $("island-row");
     if (el.dataset.html !== row) {
       el.dataset.html = row;
@@ -705,7 +696,7 @@ export class Hud {
     // The use key's focused target: one ring in the world, matching the prompt.
     view.setUseMark(s.phase === "play" ? useFocusMark(s) : null);
     // Compass: hunt goal when set (タイタン 474 m), else the objective step. Capture / defend /
-    // finale keep the objective's spot (design-direction 目標への案内).
+    // keep the objective's spot (design-direction 目標への案内).
     const hunt = s.phase === "play" && !compassUrgent(s) ? huntSpot(s) : null;
     this.compassMark(s, hunt ?? step?.at ?? null, hunt?.label ?? null);
     const bagCells = this.bagCells(p);
@@ -1608,9 +1599,8 @@ export class Hud {
     const statsBox = document.getElementById("stats-box");
     if (statsBox) (statsBox as HTMLElement).hidden = true;
     $("stats").innerHTML = "";
-    const lib = `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(after))}</p>`;
     const tropLine = trop ? `<p class="trop-line">${trop}</p>` : "";
-    $("home").innerHTML = lib + `<div id="island-news">${newsBlock(lines, after.poiState)}</div>` + tropLine;
+    $("home").innerHTML = `<div id="island-news">${newsBlock(lines, after.poiState)}</div>` + tropLine;
     const tip = next || nextHandFor(after);
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1680,13 +1670,7 @@ export class Hud {
     };
     // A record of a raid kept from before ways in were learned has walked to none.
     const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
-    // 答え合わせの並び: 解放までの残り → 島の知らせ → トロフィー →（次の一手は #next-hand）→ その他.
-    const libLine =
-      settled && before
-        ? `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(settled.profile))}</p>`
-        : settled
-          ? `<p class="lib-delta">${liberationLine(liberationStatus(settled.profile))}</p>`
-          : "";
+    // 答え合わせの並び: 島の知らせ → トロフィー →（次の一手は #next-hand）→ その他.
     const tip = next || (settled ? nextHandFor(settled.profile) : "");
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1715,12 +1699,12 @@ export class Hud {
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
     const dayHead = settled
-      ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
+      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
       : "";
     // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =
-      settled?.income || settled?.spoils || settled?.liberated
-        ? `<p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}</p>`
+      settled?.income || settled?.spoils
+        ? `<p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}</p>`
         : "";
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =

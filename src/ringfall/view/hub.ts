@@ -11,7 +11,7 @@ import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBui
 // buyPrice / canStartIn / onSale used by sourceGuide
 import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
-import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, shopRarity, unlocked } from "../meta/island";
+import { departDepots, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
 import { ExpeditionPanel } from "./expeditions";
 import { logLine, newsVisible, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
@@ -19,7 +19,7 @@ import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -1390,11 +1390,9 @@ export class Hub {
     const attack = this.attackPick();
     const rival = attack ? { name: attack.title, x: attack.x, z: attack.z } : rivalFrontPick(p);
     const teach = teachFrontCapture(p) && front;
-    const goal = finaleOpen(p)
-      ? esc(`${liberationLine({ kind: "finale" })}`)
-      : rival
-        ? esc(attackGoal(rival.name))
-        : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+    const goal = rival
+      ? esc(attackGoal(rival.name))
+      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     const hint = rivalGateHint(p);
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
@@ -1427,33 +1425,26 @@ export class Hub {
    */
   today(): { head: string; row: string; plan: [string, string][] } {
     const p = this.profile;
-    // From the second round on, the round is named beside the day.
-    const head = `${p.day} 日目${p.cycle ? `・${p.cycle + 1} 周目` : ""}`;
-    const final = finaleOpen(p);
+    const head = `${p.day} 日目`;
     const pick = this.frontPick();
     // Each value is HTML: marks, and names escaped here.
     const rival = rivalFrontPick(p);
     const teach = teachFrontCapture(p);
     const plan: [string, string][] = [
-      // The pad open to the decisive battle comes before any node. A rival on the front is why to sortie.
-      // First sessions name 核 · 制圧 on the node so the line's middle is the day's ask.
-      final
-        ? ["決戦", esc(POIS.find((o) => o.boss)!.name)]
-        : [
-            PLAN_GOAL,
-            rival
-              ? `${flagIcon(SIDE.rival)}${esc(attackGoal(rival.name))}`
-              : pick
-                ? teach
-                  ? `${esc(pick.name)} · ${TERM.captureCore}`
-                  : esc(pick.name)
-                : "—",
-          ],
+      // A rival on the front is why to sortie. First sessions name 核 · 制圧 on the node so the line's middle is the day's ask.
+      [
+        PLAN_GOAL,
+        rival
+          ? `${flagIcon(SIDE.rival)}${esc(attackGoal(rival.name))}`
+          : pick
+            ? teach
+              ? `${esc(pick.name)} · ${TERM.captureCore}`
+              : esc(pick.name)
+            : "—",
+      ],
       ["装備", this.kitMarks()],
     ];
-    // 帯の横に解放までの一行（初日から。お隣に取られた拠点は N に数えない）。
-    const lib = `<span class="lib-line">${esc(liberationLine(liberationStatus(p)))}</span>`;
-    return { head, row: nodeRow(islandHolds(p)) + lib, plan };
+    return { head, row: nodeRow(islandHolds(p)), plan };
   }
 
   render() {

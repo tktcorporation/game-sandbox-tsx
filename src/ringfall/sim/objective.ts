@@ -142,19 +142,6 @@ function defendSteps(s: State, i: number): Objective {
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
   if (s.capture && s.nodes[s.capture.node] !== "own") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
   if (task) return captureSteps(s, task.node, `${NODES[task.node].name}を攻める`);
-  // The decisive battle: the titan, before anything else the island asks.
-  if (s.finale) {
-    const i = POIS.findIndex((p) => p.boss);
-    const pad = POIS[i];
-    const at = ground(pad.x, pad.z);
-    const titan = s.enemies.find((e) => e.kind === "titan");
-    const fell = s.cleared[i];
-    return buildObjective("決戦", [
-      { kind: "go", label: `${pad.name}へ向かう`, until: `${pad.name}に入る`, at, done: fell || dist2d(s.player.pos, pad) < pad.trigger },
-      { kind: "act", label: "タイタンを倒す", until: "タイタンを倒す", at: titan ? ground(titan.pos.x, titan.pos.z) : at, done: fell },
-      extractStep(s),
-    ]);
-  }
   const focus = s.phase === "play" ? battleFocus(s) : null;
   if (focus?.kind === "defend") return defendSteps(s, focus.node);
   // 陣取り戦は用語として残す（2026-11-24 決定）。
@@ -202,7 +189,7 @@ function poiStillYields(s: State, id: PoiId, kind: ValuableKind, ranked: Source[
  * Where the hunt target (目標) stands for the compass / landing line: the nearest POI that still
  * yields it (タイタン at 発着場, or a bin POI). The label is the likeliest open source at that POI
  * (タイタン over the POI's own bin name). Null when there is no goal, it is already met (stash +
- * bag + depot send), or no placed source left. Capture / defend / finale leave this unused so the
+ * bag + depot send), or no placed source left. Capture / defend leave this unused so the
  * objective step keeps the mark.
  */
 export function huntSpot(s: State): { x: number; y: number; z: number; label: string; place: string; region: string } | null {
@@ -268,10 +255,9 @@ export function huntSpot(s: State): { x: number; y: number; z: number; label: st
 }
 
 /**
- * Whether the compass must follow the objective card (核の制圧 / 守り / 決戦) instead of the hunt.
+ * Whether the compass must follow the objective card (核の制圧 / 守り) instead of the hunt.
  */
 export function compassUrgent(s: State): boolean {
-  if (s.finale) return true;
   if (s.capture && s.nodes[s.capture.node] !== "own") return true;
   return battleFocus(s)?.kind === "defend";
 }

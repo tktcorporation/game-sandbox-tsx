@@ -16,7 +16,7 @@ import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
-import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
+import { departDepots, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
@@ -381,7 +381,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   };
   raidLent = [];
   void syncOwn(p, true, raid).then((r) => {
-    // The islands of expeditions called home (a liberation, or the factory's panel) are told, now or at the next sync.
+    // The islands of expeditions called home (the factory's panel) are told, now or at the next sync.
     void flushRecalls(
       () => hub.profile,
       (q) => hub.update(q),
@@ -981,7 +981,6 @@ function start(go: Launch, from?: State) {
       away: squadsAway(hub.profile),
       rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
     },
-    finale: finaleOpen(hub.profile),
     // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
     ...(defence.length ? { defence } : {}),
     ...(defenceParcels.length ? { parcels: defenceParcels } : {}),

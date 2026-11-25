@@ -49,7 +49,7 @@ export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[]
 
 /**
  * Coastal hubs contested with a neighbour (方向 A / TKT-195): 観測所・浄水場・ロボット工場・追跡レーダー.
- * Holding one counts toward 「島の解放まで · 拠点 あと N」; 16 is still reachable without them.
+ * Contested coastal hubs (方向 A): held by the player or a neighbour; not a liberation progress count.
  */
 export const CONTESTED_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
 

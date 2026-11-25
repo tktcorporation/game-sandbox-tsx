@@ -1,12 +1,11 @@
 /**
- * Contested coastal hubs (方向 A / TKT-195): あと N counts them when owned, 16 is reachable
- * without them, and rival-held hubs stand 工場 + 島の守り as garrison.
+ * Contested coastal hubs (方向 A / TKT-195): rival-held hubs stand 工場 + 島の守り as garrison.
  * Run: `npx tsx scripts/ringfall-contested.ts`.
  */
-import { FACTORY, FINALE } from "../src/ringfall/sim/config";
+import { FACTORY } from "../src/ringfall/sim/config";
 import { NODES, poiIndex, type NodeId } from "../src/ringfall/sim/map";
 import { CONTESTED_SHORES, neighbourNameByCode } from "../src/ringfall/meta/neighbours";
-import { contestedOwned, liberationStatus, newIsland, nonContestedNodeCount, type Island } from "../src/ringfall/meta/island";
+import { contestedOwned, newIsland, nonContestedNodeCount, type Island } from "../src/ringfall/meta/island";
 import { contestedDefence } from "../src/ringfall/meta/contested-defence";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { DEFENCE_AID, defenceKinds, garrison, isContestedPoi } from "../src/ringfall/sim/island";
@@ -20,7 +19,6 @@ const check = (ok: boolean, what: string) => {
 
 check(CONTESTED_SHORES.length === 4, `contested: expected 4 shores, got ${CONTESTED_SHORES.length}`);
 check(nonContestedNodeCount() === NODES.length - 4, `contested: non-contested count ${nonContestedNodeCount()}`);
-check(nonContestedNodeCount() >= FINALE.nodes, `contested: 16 not reachable without contested (${nonContestedNodeCount()} < ${FINALE.nodes})`);
 check(
   CONTESTED_SHORES.every((id) => isContestedPoi(id)),
   "contested: sim isContestedPoi misses a shore",
@@ -33,31 +31,10 @@ const island = (own: NodeId[], rival?: Partial<Record<NodeId, string>>): Island 
   return poiState;
 };
 
-// Zero owned → あと 16.
+// Contested owned tracks player-held contested hubs only.
 {
-  const st = liberationStatus({ poiState: island([]) });
-  check(st.kind === "nodes" && st.left === FINALE.nodes, `あと N: empty island left ${JSON.stringify(st)}, want ${FINALE.nodes}`);
-}
-
-// Owning one contested hub reduces left by 1.
-{
-  const st = liberationStatus({ poiState: island(["station"]) });
-  check(st.kind === "nodes" && st.left === FINALE.nodes - 1, `あと N: station owned left ${JSON.stringify(st)}`);
-  check(contestedOwned({ poiState: island(["station"]) }).join() === "station", "あと N: contestedOwned missed station");
-}
-
-// Rival-held contested hub does not count toward N.
-{
-  const st = liberationStatus({ poiState: island(["supply"], { station: "NEIGH1" }) });
-  check(st.kind === "nodes" && st.left === FINALE.nodes - 1, `あと N: rival station counted (${JSON.stringify(st)})`);
-  check(contestedOwned({ poiState: island([], { station: "NEIGH1" }) }).length === 0, "あと N: rival station in contestedOwned");
-}
-
-// 16 non-contested owns → landing or finale path (need pad neighbour).
-{
-  const non = NODES.filter((n) => !CONTESTED_SHORES.includes(n.id)).map((n) => n.id).slice(0, FINALE.nodes);
-  const st = liberationStatus({ poiState: island(non) });
-  check(st.kind === "landing" || st.kind === "finale", `あと N: 16 non-contested -> ${st.kind}, want landing|finale`);
+  check(contestedOwned({ poiState: island(["station"]) }).join() === "station", "contestedOwned missed station");
+  check(contestedOwned({ poiState: island([], { station: "NEIGH1" }) }).length === 0, "rival station in contestedOwned");
 }
 
 // Garrison: rival contested hub with defence → factory kinds (+ aid grunts); without → empty.
@@ -120,7 +97,7 @@ const island = (own: NodeId[], rival?: Partial<Record<NodeId, string>>): Island 
   check(neighbourNameByCode("ai-NEIGH1", neigh) === "ツバキ", "owner label: ai- prefix missed");
 }
 
-console.log(`contested: ${CONTESTED_SHORES.join(", ")}; non-contested ${nonContestedNodeCount()}; FINALE ${FINALE.nodes}`);
+console.log(`contested: ${CONTESTED_SHORES.join(", ")}; non-contested ${nonContestedNodeCount()}`);
 
 if (errors.length) {
   console.error(errors.join("\n"));
