@@ -16,8 +16,7 @@ import {
 } from "../meta/profile";
 import { stashCap } from "../meta/hideout";
 import { PHRASE, TERM } from "./copy";
-import { itemColor, itemName } from "./hub";
-import { stashIcon } from "./icons";
+import { capMeter, itemColor, itemName } from "./hub";
 import { UI } from "./palette";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -78,7 +77,10 @@ export class Organize {
 
   render(p: Profile) {
     const room = stashRoom(p);
-    $("org-count").innerHTML = `${stashIcon()}${stashUsed(p)} / ${stashCap(p.hideout)} · あと ${p.pending.length} 点`;
+    const used = stashUsed(p);
+    const cap = stashCap(p.hideout);
+    // Same capacity bar as the shelves; pending remainder stays on the count line.
+    $("org-count").innerHTML = `${capMeter(used, cap)}<small class="org-left">あと ${p.pending.length} 点</small>`;
     $("org-pending").innerHTML =
       p.pending.map((i, n) => row(i, "pending", n, room)).join("") || `<p class="empty">入りきらない物はない</p>`;
     $("org-stash").innerHTML =
