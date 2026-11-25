@@ -17,7 +17,8 @@ import { frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
+import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -452,6 +453,23 @@ export class Hub {
     // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
     if (el) el.innerHTML = this.signalNews();
+  }
+
+  /**
+   * Defence trophies for wiped entries already listed in 島の知らせ (AI raid path).
+   * Sync path awards the same in `applySync` with the trophy note — do not call both for one wipe.
+   * Returns the delta for the results' trop-line, or null when nothing moved.
+   */
+  awardDefence(wipes: number): { before: number; after: number; defended: number } | null {
+    const defended = defendGain(wipes);
+    if (!defended) return null;
+    const before = this.profile.trophies ?? TROPHY.start;
+    const after = clampTrophies(before + defended);
+    if (after === before) return null;
+    this.profile = { ...this.profile, trophies: after };
+    this.recordNews([trophyLine(before, after, 0, 0, defended)]);
+    saveProfile(this.profile);
+    return { before, after, defended };
   }
 
   /**

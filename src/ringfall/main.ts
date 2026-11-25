@@ -289,6 +289,23 @@ function onEvent(e: GameEvent, s: State) {
       if (news.length) {
         const shown = news.filter(newsVisible);
         hub.takeNews(news);
+        // 守りきった → トロフィー少し増（知らせとセット。applySync 経路とは別）。
+        const wipes = shown.filter((e) => e.t === "wiped").length;
+        const def = wipes ? hub.awardDefence(wipes) : null;
+        if (def && settlement) {
+          const t = settlement.trophies;
+          settlement = {
+            ...settlement,
+            profile: hub.profile,
+            trophies: {
+              before: t?.before ?? def.before,
+              after: def.after,
+              gained: t?.gained ?? 0,
+              lost: t?.lost ?? 0,
+              defended: (t?.defended ?? 0) + def.defended,
+            },
+          };
+        }
         aiNews = shown.map(logLine);
         islandNews = [...aiNews];
       }

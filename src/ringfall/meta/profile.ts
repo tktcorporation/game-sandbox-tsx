@@ -537,8 +537,8 @@ export interface Settlement {
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
-  /** Trophy T1 change this settle (`gained` / `lost` counts); left out when none moved. */
-  trophies?: { before: number; after: number; gained: number; lost: number };
+  /** Trophy change this settle (`gained` / `lost` / `defended`); left out when none moved. */
+  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number };
   /**
    * Rival / contested hubs taken this settle (home raid): owner id at raid start, for 島の知らせ
    * 「{誰}の{拠点}を取った · トロフィー +n · 倉庫へ届く」. Left out when none.

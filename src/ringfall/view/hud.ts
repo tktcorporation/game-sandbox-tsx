@@ -1625,7 +1625,7 @@ export class Hud {
     this.newsKeep = [...expNews, ...takeLines];
     const allNews = [...this.newsKeep, ...news];
     const tropLine = settled?.trophies
-      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost)}</p>`
+      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
       : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);

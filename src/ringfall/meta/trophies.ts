@@ -51,6 +51,11 @@ export const SEIZE = {
 /** Clamp to the live range. */
 export const clampTrophies = (n: number): number => Math.max(TROPHY.min, Math.min(TROPHY.max, Math.round(n)));
 
+/** Trophies for `wipes` successful defences (守りきった), each `TROPHY.defend`. */
+export function defendGain(wipes: number): number {
+  return Math.max(0, Math.round(wipes)) * TROPHY.defend;
+}
+
 /**
  * How many trophies move when `attacker` takes a node from `defender` (or the reverse for loss).
  * Higher defender → more gain for the attacker; lower → less. Zero-sum locally.

@@ -92,6 +92,21 @@ const shoreI = nodeIndex(shore);
   assert.equal(again.notes.length, 0);
 }
 
+// Sync with a wiped log entry awards defence trophies with the trophy note (知らせとセット).
+{
+  const p = newProfile(7);
+  const before = p.trophies;
+  const { profile, notes, news } = applySync(p, {
+    log: {
+      next: 2,
+      entries: [{ seq: 1, at: 0, t: "wiped", node: shore, by: { code: "AAAAAA", name: "ツバキ" } }],
+    },
+  });
+  assert.equal(news.length, 1);
+  assert.equal(profile.trophies, before + TROPHY.defend);
+  assert.ok(notes.length === 1 && notes[0].includes("守りきった +10"));
+}
+
 // 核 · 制圧 loot: empty stock pays emptyReserve + bonus (AI / rival alike).
 {
   const p = newProfile(5);

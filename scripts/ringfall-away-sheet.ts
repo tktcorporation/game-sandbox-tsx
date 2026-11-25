@@ -32,6 +32,17 @@ assert.equal(awaySheetParts(["a"], ["a"]), null);
   assert.ok(parts!.trop!.startsWith(TERM.trophy));
 }
 
+{
+  // Defence win breakdown on the trophy line (CoC 守りきった).
+  const trop = trophyLine(1000, 1010, 0, 0, 10);
+  assert.ok(trop.includes("守りきった +10"));
+  assert.ok(!trop.includes("取った"));
+  const parts = awaySheetParts([], ["ツバキが浄水場を攻めた · 守りきった", trop]);
+  assert.ok(parts);
+  assert.equal(parts!.trop, trop);
+  assert.deepEqual(parts!.lines, ["ツバキが浄水場を攻めた · 守りきった"]);
+}
+
 // Same wording twice: the second occurrence is still fresh (count, not Set).
 {
   const line = "ツバキに補給所を取られた · 島の守りがツバキの倉庫へ";
