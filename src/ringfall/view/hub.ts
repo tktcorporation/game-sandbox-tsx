@@ -14,11 +14,11 @@ import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, s
 import { rivalOf } from "../sim/holds";
 import { ExpeditionPanel } from "./expeditions";
 import { logLine, newsVisible, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
-import { frontNodes, ownNodes } from "../sim/front";
+import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, attackGoal, contestGateHint, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -70,6 +70,26 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
       return Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z);
     })[0];
   return near ? { name: label(near.n, near.i), x: near.n.x, z: near.n.z } : null;
+}
+
+/**
+ * When a rival holds a contested hub that is not yet on the front: which front node to take first
+ * (TKT-204 案 D — 「先に中継塔を取ると攻められる」).
+ */
+export function rivalGateHint(p: Profile, from: { x: number; z: number } = CAMP.wake): string | null {
+  if (rivalFrontPick(p, from)) return null;
+  const holds = islandHolds(p);
+  const front = frontNodes(holds);
+  const blocked = NODES.map((n, i) => ({ n, i }))
+    .filter(({ n, i }) => isContestedShore(n.id) && rivalOf(holds[i]) !== null && !front[i])
+    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z));
+  for (const { i } of blocked) {
+    const gate = NEIGHBOURS[i]
+      .filter((k) => front[k] && holds[k] === "foe")
+      .sort((a, b) => Math.hypot(NODES[a].x - from.x, NODES[a].z - from.z) - Math.hypot(NODES[b].x - from.x, NODES[b].z - from.z))[0];
+    if (gate !== undefined) return contestGateHint(NODES[gate].name);
+  }
+  return null;
 }
 
 /**
@@ -1290,16 +1310,21 @@ export class Hub {
     this.fixStart();
     const p = this.profile;
     const front = this.frontPick();
+    const rival = rivalFrontPick(p);
     const teach = teachFrontCapture(p) && front;
+    // TKT-204 案 D: 出撃の目的を野営の「{誰}の{拠点}を攻める」と同じ言い方に揃える。
     const goal = finaleOpen(p)
       ? esc(`${liberationLine({ kind: "finale" })}`)
-      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+      : rival
+        ? esc(attackGoal(rival.name))
+        : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+    const hint = rivalGateHint(p);
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
       [PLAN_GOAL, goal],
     ];
-    return { rows, warn: [] };
+    return { rows, warn: hint ? [hint] : [] };
   }
 
   /**
@@ -1340,7 +1365,7 @@ export class Hub {
         : [
             PLAN_GOAL,
             rival
-              ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を${TERM.attack}`
+              ? `${flagIcon(SIDE.rival)}${esc(attackGoal(rival.name))}`
               : pick
                 ? teach
                   ? `${esc(pick.name)} · ${TERM.captureCore}`

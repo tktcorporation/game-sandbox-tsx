@@ -385,6 +385,22 @@ export function contestOwner(who: string): string {
   return `${who}と${TERM.contest}`;
 }
 
+/**
+ * Goal / 今日の作戦 / 出撃の目的 for a rival hub (TKT-204 案 D).
+ * 【元】前線：浄水場 【案】ツバキの浄水場を攻める 【理由】野営と出撃を同じ言い方に
+ */
+export function attackGoal(whoHub: string): string {
+  return `${whoHub}を${TERM.attack}`;
+}
+
+/**
+ * Depart hint when a rival hub is held but not yet on the front.
+ * 【元】（なし） 【案】先に中継塔を取ると攻められる 【理由】前線に無い相手持ちの理由
+ */
+export function contestGateHint(gate: string): string {
+  return `先に${gate}を取ると攻められる`;
+}
+
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;
 }
