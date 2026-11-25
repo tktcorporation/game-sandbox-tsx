@@ -1503,9 +1503,14 @@ function checkSettle(): string | null {
   const kinds = won.home.map((i) => i.t).sort().join();
   if (kinds !== "armor,heal,valuable,valuable,valuable,valuable,weapon,weapon") return `settle scenario: getting off brought home ${kinds}`;
   if (won.profile.stash.length !== taken.profile.stash.length + 8 || won.profile.extracted !== 1 || won.profile.raids !== 1) return "settle scenario: the stash or record did not take what came home";
+  // Manual 目標 (目標にする / 地図で見る) lasts one sortie: settle clears it on return (alive or wipe).
+  // The raid's own State.goal is fixed at start, so guidance during that sortie is unchanged.
+  const hunting = { ...taken.profile, goal: "core" as const };
+  if (settle(hunting, s).profile.goal !== null) return "goal scenario: settling alive left the hunt target set";
   // A wipe: the kit is gone, and of the haul only the best that fits the pouch comes back.
   s.outcome = "dead";
   const lost = settle(taken.profile, s);
+  if (settle(hunting, s).profile.goal !== null) return "goal scenario: settling a wipe left the hunt target set";
   if (lost.home.map((i) => (i.t === "valuable" ? i.kind : i.t)).join() !== "board") return `settle scenario: a wipe kept ${JSON.stringify(lost.home)}, not the board`;
   if (bestFitValuables(["parts", "parts", "board"]).join() !== "board" || bestFitValuables(["parts", "core", "parts"]).join() !== "parts,parts") return "pouch scenario: the pouch did not keep the most valuable fit";
   // No weapon picked: the starter weapons go and stay in the stash; getting off brings home every heal left, the issued ones too.
