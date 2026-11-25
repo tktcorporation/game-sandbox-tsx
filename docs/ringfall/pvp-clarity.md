@@ -1,6 +1,6 @@
 # 対人の分かりやすさ（CoC 型・決定）
 
-体験目的（変えらない）: 出撃で前線を押し資源を持ち帰り、拠点を育てて島を解放する——対人は同じ線の**非同期の攻めと守り**（[design-direction.md](design-direction.md)）。
+体験目的（変えらない）: 出撃で前線を押し資源を持ち帰り、自分の島を終わりなく育てる——対人は同じ線の**非同期の攻めと守り**（外側の拠点の取り合い。島の解放は方向として外す。[design-direction.md](design-direction.md)「島は終わりなく育てる」）。
 
 関連: [multiplayer-experience.md](multiplayer-experience.md)、[glossary.md](glossary.md)、[simplify-candidates.md](simplify-candidates.md) §0b。
 
