@@ -118,7 +118,9 @@ export class ExpeditionPanel {
       void this.look();
     }
     const { profile, news } = takeSync(this.get(), r.body);
-    if (profile !== this.get()) this.put(profile);
+    // 作り順④: poiState may have lost outer hubs in the sync — refresh team.outer before paint.
+    const synced = bindTeam(profile, { id: who.id, name: who.name, code: who.code }, aiSalt());
+    if (synced !== this.get()) this.put(synced);
     if (news.length) this.news(news);
     this.paint();
     await readNeighbours();

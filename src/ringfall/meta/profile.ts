@@ -11,7 +11,7 @@ import { capturedIds, momentum } from "../sim/front";
 import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
-import { ensureTeam, formTeam, parseTeam, selfOuterCount, type Team, type TeamSelf } from "./team";
+import { ensureTeam, formTeam, parseTeam, selfOuterCount, teamSalt, type Team, type TeamSelf } from "./team";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -802,11 +802,12 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   if (outerGuard !== (p.outerGuard ?? emptyOuterGuard())) Object.assign(night, { outerGuard });
-  // 作り順④: refresh team outer counts (self from island; AI mates by day). Keep seats.
+  // 作り順④: refresh team outer counts (self from island; AI mates by day). Keep seats + salt.
   if (night.team?.members?.length) {
     const self = night.team.members.find((m) => !m.ai);
     if (self) {
-      const team = ensureTeam(night.team, { id: self.id, name: self.name, code: self.code || undefined }, night.seed, night.day, selfOuterCount(night));
+      const salt = night.team.salt ?? teamSalt(self.id);
+      const team = ensureTeam(night.team, { id: self.id, name: self.name, code: self.code || undefined }, salt, night.day, selfOuterCount(night));
       if (JSON.stringify(team) !== JSON.stringify(night.team)) Object.assign(night, { team });
     }
   }

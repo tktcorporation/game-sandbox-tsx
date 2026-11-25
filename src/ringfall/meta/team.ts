@@ -46,6 +46,11 @@ export type TeamMember = {
 export type Team = {
   /** Stable team id (local auto-assign until a server issues one). */
   id: string;
+  /**
+   * Salt for AI の仲間 islands / outer counts. Fixed at form time so settle / reload /
+   * signal open all draw the same holdings (not the evolving raid seed).
+   */
+  salt: number;
   members: TeamMember[];
 };
 
@@ -106,7 +111,14 @@ export function aiMateIsland(salt: number, slot: number): { code: string; name: 
 export const memberLabel = (m: Pick<TeamMember, "name" | "ai">): string => (m.ai ? aiLabel(m.name) : m.name);
 
 /** Empty / unreadable team blob. */
-export const emptyTeam = (): Team => ({ id: "", members: [] });
+export const emptyTeam = (): Team => ({ id: "", salt: 0, members: [] });
+
+/** Stable salt from a player id (same shape as island-net `aiSalt` without the browser). */
+export function teamSalt(playerId: string): number {
+  let h = 0;
+  for (const c of playerId) h = (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0;
+  return h;
+}
 
 /** Well-formed team of TEAM.size, or null. */
 export function parseTeam(raw: unknown): Team | null {
@@ -126,8 +138,11 @@ export function parseTeam(raw: unknown): Team | null {
     members.push({ id: x.id, name: x.name.trim(), code: x.code, ai: x.ai, outer });
   }
   // Exactly one non-ai seat expected when auto-assigned; allow more for future real fills.
-  if (!members.some((m) => !m.ai)) return null;
-  return { id: o.id.trim(), members };
+  const self = members.find((m) => !m.ai);
+  if (!self) return null;
+  const salt =
+    typeof o.salt === "number" && Number.isFinite(o.salt) ? (o.salt >>> 0) : teamSalt(self.id);
+  return { id: o.id.trim(), salt, members };
 }
 
 /** Local team id from the player's id (stable across days until a server reassigns). */
@@ -160,12 +175,13 @@ export function formTeam(self: TeamSelf, salt: number, day: number, outer: numbe
       outer: aiMateOuter(salt, slot, day),
     });
   }
-  return { id: teamIdFor(self.id), members };
+  return { id: teamIdFor(self.id), salt: salt >>> 0, members };
 }
 
 /**
  * Ensure the profile has a full team and refresh outer counts (self from island, AI from day).
- * Idempotent: keeps existing team id / AI seats when already well-formed.
+ * Idempotent: keeps existing team id / salt / AI seats when already well-formed.
+ * `salt` is used only when forming a new team; afterwards `team.salt` wins.
  */
 export function ensureTeam(
   team: Team | null | undefined,
@@ -176,6 +192,7 @@ export function ensureTeam(
 ): Team {
   const parsed = team && team.members.length === TEAM.size ? team : null;
   const base = parsed && parsed.members.some((m) => !m.ai && m.id === self.id) ? parsed : formTeam(self, salt, day, outer);
+  const useSalt = (base.salt ?? salt) >>> 0;
   let aiSlot = 0;
   const members = base.members.map((m) => {
     if (!m.ai) {
@@ -189,26 +206,26 @@ export function ensureTeam(
     }
     const slot = aiSlot++;
     // Keep saved code/name when present so the seat stays the same person across days.
-    const a = m.code ? { code: m.code, name: m.name } : aiMateIsland(salt, slot);
+    const a = m.code ? { code: m.code, name: m.name } : aiMateIsland(useSalt, slot);
     const id = m.id.startsWith("ai-") ? m.id : `ai-${a.code}`;
     return {
       id,
       name: a.name,
       code: a.code,
       ai: true as const,
-      outer: aiMateOuter(salt, slot, day),
+      outer: aiMateOuter(useSalt, slot, day),
     };
   });
   // Pad if a corrupt save had too few seats.
   while (members.length < TEAM.size) {
     const slot = aiSlot++;
-    const a = aiMateIsland(salt, slot);
-    members.push({ id: `ai-${a.code}`, name: a.name, code: a.code, ai: true, outer: aiMateOuter(salt, slot, day) });
+    const a = aiMateIsland(useSalt, slot);
+    members.push({ id: `ai-${a.code}`, name: a.name, code: a.code, ai: true, outer: aiMateOuter(useSalt, slot, day) });
   }
-  return { id: base.id || teamIdFor(self.id), members: members.slice(0, TEAM.size) };
+  return { id: base.id || teamIdFor(self.id), salt: useSalt, members: members.slice(0, TEAM.size) };
 }
 
 /** Refresh team outer counts for a profile day (call after settle / on signal open). */
-export function refreshTeam(p: IslandDay & { team: Team }, self: TeamSelf, salt: number): Team {
-  return ensureTeam(p.team, self, salt, p.day, selfOuterCount(p));
+export function refreshTeam(p: IslandDay & { team: Team }, self: TeamSelf, salt?: number): Team {
+  return ensureTeam(p.team, self, salt ?? p.team.salt ?? teamSalt(self.id), p.day, selfOuterCount(p));
 }
