@@ -10,8 +10,9 @@ import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { Organize } from "./view/organize";
+import { poisWith } from "./meta/hideout";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
@@ -925,6 +926,12 @@ function start(go: Launch, from?: State) {
     // Free stash slots after takeKit — 中継ボックス sends only what fits.
     stashRoom: stashRoom(hub.profile),
     stashWant: wanted(hub.profile),
+    ...((): { goal?: ReturnType<typeof goalKind>; goalHave?: number; goalNeed?: number } => {
+      const g = goalKind(hub.profile);
+      if (!g) return {};
+      const prog = goalProgress(hub.profile, g);
+      return { goal: g, goalHave: prog.have, goalNeed: prog.need };
+    })(),
     battle: {
       factory: hub.profile.factory,
       away: squadsAway(hub.profile),
@@ -965,6 +972,7 @@ function start(go: Launch, from?: State) {
   hud.setKnown(hub.profile.entries);
   hud.setPouch(pouchSlots(hub.profile.hideout));
   hud.bag.setProfile(hub.profile);
+  hud.setGoalPois(state.goal ? poisWith(state.goal) : []);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();

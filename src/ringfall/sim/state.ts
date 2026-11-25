@@ -460,7 +460,7 @@ export type GameEvent =
   | { t: "zipOn"; line: number }
   | { t: "zipOff"; line: number; cut: boolean }
   | { t: "land"; speed: number }
-  | { t: "pickup"; kind: LootKind; rarity: Rarity; label: string }
+  | { t: "pickup"; kind: LootKind; rarity: Rarity; label: string; valuable?: ValuableKind }
   | { t: "locked"; poi: number }
   | { t: "binOpen"; id: number }
   | { t: "tactical"; targets: Vec3[] }
@@ -693,6 +693,11 @@ export interface State {
   stashRoom: number;
   /** Wanted valuables at raid start (depot send priority); empty when omitted. */
   stashWant: Partial<Record<ValuableKind, number>>;
+  /** Hunt target valuable this raid (目標); null when none. */
+  goal: ValuableKind | null;
+  /** Goal progress at raid start: have / need (stash + still wanted). */
+  goalNeed: number;
+  goalHave: number;
   /**
    * Defence stock queued this raid when the player deposits at a depot (`leftParcels` only;
    * not world pickups). The sim gate never deposits, so the bench hash is unchanged.
@@ -925,6 +930,10 @@ export interface Start {
    * Left out, depot sends in bag order.
    */
   stashWant?: Partial<Record<ValuableKind, number>>;
+  /** Hunt target for this raid (目標 · n / m). Left out, none. */
+  goal?: ValuableKind | null;
+  goalHave?: number;
+  goalNeed?: number;
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1113,6 +1122,9 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     sentVia: DEPOTS.map(() => 0),
     stashRoom: start.stashRoom ?? Infinity,
     stashWant: { ...(start.stashWant ?? {}) },
+    goal: start.goal ?? null,
+    goalHave: start.goalHave ?? 0,
+    goalNeed: start.goalNeed ?? 0,
     // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
     parcels: [],
     leftParcels: [],

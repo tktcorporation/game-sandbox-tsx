@@ -437,7 +437,7 @@ export function stepLoot(s: State, input: Input) {
     if (l.kind === "valuable" && l.valuable && bagLoad(p) + VALUABLES[l.valuable].size <= BAG.slots) {
       bagIn(p, l.valuable, l.from ?? -1);
       const v = VALUABLES[l.valuable];
-      s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}` });
+      s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}`, valuable: l.valuable });
       return false;
     }
     if (l.kind === "key" && l.key !== undefined) {

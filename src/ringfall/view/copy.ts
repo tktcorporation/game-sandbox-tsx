@@ -51,7 +51,8 @@ export type TermId =
   | "confirmOrganize"
   | "whereFound"
   | "seeOnMap"
-  | "setGoal";
+  | "setGoal"
+  | "goal";
 
 /**
  * Canonical place / action words as the game shows them.
@@ -127,6 +128,8 @@ export const TERM = {
   seeOnMap: "地図で見る",
   /** Mark a valuable as the hunt target. */
   setGoal: "目標にする",
+  /** Raid toast / map prefix for the hunt target. */
+  goal: "目標",
 } as const satisfies Record<TermId, string>;
 
 /** Full live phrases built from TERM. */

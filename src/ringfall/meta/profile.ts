@@ -1130,6 +1130,39 @@ export function buildFactory(p: Profile): Profile | null {
 }
 
 /**
+ * The valuable the raid / map should chase: manual `goal`, else the dearest still needed for the
+ * next factory / hideout level, else null.
+ */
+export function goalKind(p: Profile): ValuableKind | null {
+  if (p.goal && p.goal in VALUABLES) return p.goal;
+  const want = wanted(p);
+  const pick = (items: [ValuableKind, number][] | undefined) => {
+    if (!items?.length) return null;
+    const short = items.filter(([k]) => want[k] > 0);
+    if (!short.length) return null;
+    return short.sort((a, b) => VALUABLES[b[0]].value - VALUABLES[a[0]].value)[0]![0];
+  };
+  const fac = nextFactory(p);
+  if (fac) {
+    const k = pick(fac.items);
+    if (k) return k;
+  }
+  for (const m of MODULES) {
+    const l = nextLevel(p.hideout, m);
+    const k = pick(l?.items);
+    if (k) return k;
+  }
+  return null;
+}
+
+/** Stash count of `kind` and how many the hideout/factory still want in total (have + shortfall). */
+export function goalProgress(p: Profile, kind: ValuableKind): { have: number; need: number } {
+  const have = p.stash.filter((i) => i.t === "valuable" && i.kind === kind).length;
+  const short = Math.max(0, wanted(p)[kind]);
+  return { have, need: have + short };
+}
+
+/**
  * The start the base offers first: `region` and `entry` when they may be chosen, else the
  * region's first known way in; a region with neither a known way in nor a depot on gives way
  * to the reservoir, where `FIRST_ENTRY` is always known.
