@@ -1,24 +1,50 @@
 /*
- * Trophy ranking T1 (docs/ringfall/game-design-review.md §5.5): take a rival / neighbour-front
- * node → gain; lose a node to another player → lose. Width follows the trophy gap (Boom Beach /
- * classic CoC). Defence kill bonuses are out of scope for now.
+ * Trophy ranking (docs/ringfall/design-direction.md, CoC 型):
+ * take a contested rival hub → gain; defend (守りきった) → small gain; lose a hub → lose.
+ * Width of the attack swap follows the trophy gap (Boom Beach / classic CoC).
+ * Materials from 核 · 制圧 are separate (`SEIZE`); trophies are not paid for capturing a core alone.
  */
 import { rivalOf, type PoiHold } from "../sim/holds";
 import type { NodeId } from "../sim/map";
 import { ISLAND_TABLE } from "./island-table";
 
-/** Numbers for T1. Soft season reset is left to a later pass. */
+/**
+ * Numbers for the ranking layer. Soft season reset is left to a later pass.
+ *
+ * Rationale (CoC-shaped, RINGFALL scale — see design-direction 「トロフィーと物資」):
+ * - Attack win ≈ CoC ~30 at even trophies → `base` 30 ± `maxBonus` 20 from the gap.
+ * - Defence win is smaller than attack (CoC defence ≈ half or less) → `defend` 10 (~1/3 of base).
+ * - Failed attack does **not** deduct trophies: RINGFALL's attack is a normal raid's 核 · 制圧,
+ *   not a short dedicated raid; "no take → no gain" is the loss. Defender still gets `defend`.
+ */
 export const TROPHY = {
   /** New / migrated profiles. */
   start: 1000,
-  /** Base swap per node taken or lost. */
+  /** Base swap per contested hub taken or lost. */
   base: 30,
   /** Extra (or less) from the gap, capped. */
   maxBonus: 20,
   /** Gap (defender − attacker) at which the bonus saturates. */
   band: 400,
+  /** Per successful defence (守りきった), smaller than an attack win. */
+  defend: 10,
   min: 0,
   max: 5000,
+} as const;
+
+/**
+ * Materials from 核 · 制圧 of a rival-held hub (including AI). Separate from trophies:
+ * trophies move when ownership of a contested hub changes; these feed 倉庫へ届いた.
+ *
+ * Rationale: was 1 common on an empty 中継ボックス — too thin next to a +30 trophy line.
+ * Empty stock → `emptyReserve` commons; every 制圧 also adds `bonus` on top of parcels so
+ * the core capture feels like CoC resource loot even when the defender spent their stock.
+ */
+export const SEIZE = {
+  /** Common materials when that hub's 島の守り stock is empty (was 1). */
+  emptyReserve: 3,
+  /** Extra materials on every rival 制圧, on top of parcels taken. */
+  bonus: 2,
 } as const;
 
 /** Clamp to the live range. */

@@ -1,16 +1,20 @@
 /**
- * Trophy T1: take a rival node → gain; lose to a rival → lose. Gap scales the swap.
+ * Trophy ranking numbers + swap (docs/ringfall/design-direction.md 「トロフィーと物資」).
  *   npx tsx scripts/ringfall-trophies.ts
  */
 import assert from "node:assert/strict";
 import { applySync } from "../src/ringfall/meta/expeditions";
 import { newProfile, parseProfile } from "../src/ringfall/meta/profile";
-import { TROPHY, clampTrophies, trophyDelta, trophySwap } from "../src/ringfall/meta/trophies";
+import { SEIZE, TROPHY, clampTrophies, trophyDelta, trophySwap } from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { NODES } from "../src/ringfall/sim/map";
 
 assert.equal(clampTrophies(-10), 0);
 assert.equal(clampTrophies(99999), TROPHY.max);
+assert.equal(TROPHY.defend, 10);
+assert.ok(TROPHY.defend < TROPHY.base);
+assert.equal(SEIZE.emptyReserve, 3);
+assert.equal(SEIZE.bonus, 2);
 
 {
   const even = trophySwap(1000, 1000);
@@ -46,14 +50,14 @@ assert.equal(clampTrophies(99999), TROPHY.max);
 
 {
   const p = newProfile(1);
-  assert.equal(p.v, 40);
+  assert.equal(p.v, 41);
   assert.equal(p.trophies, TROPHY.start);
   const raw = JSON.parse(JSON.stringify(p));
   raw.v = 31;
   delete raw.trophies;
   const old = parseProfile(raw, 1);
   assert.ok(old);
-  assert.equal(old.v, 40);
+  assert.equal(old.v, 41);
   assert.equal(old.trophies, TROPHY.start);
 }
 
