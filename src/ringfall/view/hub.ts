@@ -726,7 +726,7 @@ export class Hub {
         // Toggle: already the goal → clear; else set. Button label shows 目標にしている while set.
         this.set({ ...this.profile, goal: this.profile.goal === arg ? null : (arg as ValuableKind) });
         sfx.click();
-        return;
+        return this.render();
       }
     }
     const pick = arg.split(",").map(Number);
