@@ -1,10 +1,10 @@
 import { sfx } from "./sfx";
-import { neighboursFor, neighboursOnMap } from "../island-net";
+import { neighboursOnMap } from "../island-net";
 import { WORLD } from "../sim/config";
-import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
-import { PHRASE } from "./copy";
+import { POIS, REGIONS, regionOf, type NodeId, type RegionId } from "../sim/map";
+import { PHRASE, TERM, attackScoutDef, attackScoutTrop } from "./copy";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
-import { depotIcon, entryIcon, lockIcon, startIcon } from "./icons";
+import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
 import { IslandMap, islandScene, VIEW_PAD } from "./map";
 
 /*
@@ -65,6 +65,18 @@ export class DepartPicker {
       }
       this.pick(el.dataset.kind as StartPoint["kind"], el.dataset.id!);
     });
+    // 攻める list (TKT-204 案 B): pick a scouted rival hub → nearest start + goal.
+    $("depart-attack-list").addEventListener("click", (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-attack]");
+      if (!el) return;
+      if (el.classList.contains("shut")) {
+        sfx.locked();
+        return;
+      }
+      if (!this.hub.selectAttack(el.dataset.attack as NodeId)) return;
+      sfx.click();
+      this.render();
+    });
     addEventListener("resize", () => this.shown && requestAnimationFrame(() => this.render()));
   }
 
@@ -119,6 +131,7 @@ export class DepartPicker {
     const how = $("depart-hint");
     how.hidden = !hint;
     how.innerHTML = hint ? hint.how.join("") : "";
+    this.renderAttack();
     $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
     // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
     $("depart-carry").innerHTML = hub.departBoxes();
@@ -130,6 +143,38 @@ export class DepartPicker {
     const go = $("depart-go") as HTMLButtonElement;
     go.disabled = !!refused;
     go.innerHTML = refused ? `${lockIcon()}${esc(refused)}` : `${PHRASE.sortieDo}<kbd>Enter</kbd>`;
+  }
+
+  /**
+   * CoC-style 攻める list: rival contested hubs with defence / trophy scout lines.
+   * Hidden when none are held by a neighbour.
+   */
+  private renderAttack() {
+    const targets = this.hub.attackTargets();
+    const box = $("depart-attack");
+    const list = $("depart-attack-list");
+    const title = $("depart-attack-title");
+    if (!targets.length) {
+      box.hidden = true;
+      list.innerHTML = "";
+      return;
+    }
+    box.hidden = false;
+    title.textContent = TERM.attack;
+    const on = this.hub.attackPick();
+    list.innerHTML = targets
+      .map((t) => {
+        const shut = !t.onFront;
+        const cls = ["attack-row", on?.id === t.id ? "on" : "", shut ? "shut" : ""].filter(Boolean).join(" ");
+        // Shut row: short gate name only (full contestGateHint stays on #depart-warn; wordy ≤18).
+        const scout = shut
+          ? `<small class="scout-gate">${esc(t.gate ? `先に${t.gate}` : TERM.front)}</small>`
+          : `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.trop))}</small>`;
+        const lock = shut ? `<span class="pick-lock">${lockIcon()}</span>` : "";
+        // Split owner / hub so wordy counts each ≤18 (AI names stay short alone).
+        return `<button type="button" class="${cls}" data-attack="${t.id}" aria-label="${esc(t.title)}">${flagIcon(SIDE.rival)}${lock}<span class="attack-body"><span class="attack-title"><b>${esc(t.ownerName)}</b><b>の${esc(t.hubName)}</b></span>${scout}</span></button>`;
+      })
+      .join("");
   }
 
   /**
@@ -173,13 +218,14 @@ export class DepartPicker {
       .filter((m) => Math.hypot(m.x - m.x0, m.y - m.y0) > 4)
       .map((m) => `<line x1="${m.x0.toFixed(1)}" y1="${m.y0.toFixed(1)}" x2="${m.x.toFixed(1)}" y2="${m.y.toFixed(1)}"/><circle cx="${m.x0.toFixed(1)}" cy="${m.y0.toFixed(1)}" r="2"/>`)
       .join("");
-    // Thin pull from the chosen start toward today's front (ux-design Round 9) — no new noun.
+    // Thin pull from the chosen start toward the 攻める focus / today's front (ux-design Round 9).
     const chosen = marks.find((m) => m.q.on);
     const frontPull = (() => {
       if (!chosen) return "";
       const p = this.hub.profile;
       const at = { x: chosen.q.x, z: chosen.q.z };
-      const toward = rivalFrontPick(p, at) ?? frontPickFor(p, at);
+      const attack = this.hub.attackPick();
+      const toward = attack ?? rivalFrontPick(p, at) ?? frontPickFor(p, at);
       if (!toward) return "";
       const end = this.map.screenAt(toward.x, toward.z);
       if (!end) return "";

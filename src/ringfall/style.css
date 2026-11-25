@@ -3307,6 +3307,50 @@ body.touch #camp-prompt {
 }
 
 /*
+ * First-time multiplayer how-to (TKT-204 案 C): three short cards before 出撃.
+ */
+#mp-howto {
+  z-index: 5;
+  place-items: center;
+  padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
+  background: rgb(var(--ink-rgb) / 0.72);
+}
+.mp-howto-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(420px, 92vw);
+  padding: 20px 22px;
+  background: rgb(var(--deep-rgb) / 0.96);
+  border-left: 5px solid var(--rival);
+  font-family: var(--jp);
+}
+.mp-howto-step {
+  margin: 0;
+  font-family: var(--num);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--muted);
+}
+#mp-howto-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--paper);
+}
+#mp-howto-body.prose {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--muted);
+}
+#mp-howto-next {
+  align-self: flex-end;
+  margin-top: 8px;
+}
+
+/*
  * The departure: the island drawn whole on the left with every start on it, the kit and the
  * confirm on the right. The map keeps the world's shape (--world-aspect, set by view/depart.ts).
  */
@@ -3594,6 +3638,103 @@ body.touch #camp-prompt {
   font-family: var(--num);
   font-size: 16px;
   color: var(--mate-light);
+}
+/* TKT-204 案 B: CoC-style 攻める list with scout lines. */
+#depart-attack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  flex: 0 1 auto;
+  max-height: 38%;
+}
+#depart-attack[hidden] {
+  display: none;
+}
+#depart-attack-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--rival);
+}
+#depart-attack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.screen #depart-attack-list .attack-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--plate);
+  color: var(--paper);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+}
+.screen #depart-attack-list .attack-row:hover:not(:disabled):not(.shut) {
+  background: rgb(var(--ink-rgb) / 0.9);
+  transform: none;
+  box-shadow: none;
+}
+.screen #depart-attack-list .attack-row.on {
+  background: rgb(var(--rival-rgb) / 0.35);
+  box-shadow: inset 3px 0 0 var(--rival);
+}
+.screen #depart-attack-list .attack-row.shut {
+  opacity: 0.65;
+  cursor: default;
+}
+#depart-attack-list .attack-row .ico {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+#depart-attack-list .attack-row .pick-lock {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+#depart-attack-list .attack-row .pick-lock .ico {
+  width: 14px;
+  height: 14px;
+}
+#depart-attack-list .attack-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+#depart-attack-list .attack-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+#depart-attack-list .attack-title b {
+  font-size: 14px;
+  font-weight: 800;
+}
+#depart-attack-list .attack-body small {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+}
+#depart-attack-list .attack-body .scout-trop {
+  color: var(--hot);
+}
+#depart-attack-list .attack-body .scout-gate {
+  color: var(--peach);
 }
 #depart-list {
   display: grid;
@@ -4875,7 +5016,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin-bottom: 6px;
   color: var(--mist);
 }
-/* The island's news on the signal station: one list (E4: no send/revenge button). */
+/* The island's news on the signal station (TKT-204 案 F: やり返す on 取られた). */
 #hub ul.island-news.signal-news {
   margin: 0;
   padding: 0;
@@ -4883,6 +5024,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 #hub ul.island-news.signal-news li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 4px 0;
@@ -5190,14 +5332,33 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--white);
   background: rgb(var(--own-rgb) / 0.7);
 }
-#hub .island-news .revenge {
-  margin: 0 0 0 auto;
+/* やり返す (TKT-204 案 F): 島の知らせ / 起動時の一枚 */
+.island-news .revenge,
+#hub .island-news .revenge,
+#results .island-news .revenge {
+  margin: 0 0 0 8px;
   padding: 4px 10px;
   border: 0;
+  border-radius: 0;
   background: var(--rival);
   color: var(--ink);
   font-size: 12px;
   font-weight: 800;
+  box-shadow: none;
+  transform: none;
+  vertical-align: middle;
+}
+.screen .island-news .revenge:hover {
+  transform: none;
+  box-shadow: none;
+  filter: brightness(1.08);
+}
+.island-news .news-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
 }
 
 #island-news:empty {

@@ -559,7 +559,7 @@ export interface Settlement {
   trophies?: { before: number; after: number; gained: number; lost: number; defended?: number };
   /**
    * Rival / contested hubs taken this settle (home raid): owner id at raid start, for 島の知らせ
-   * 「{誰}の{拠点}を取った · トロフィー +n · 倉庫へ届く」. Left out when none.
+   * 「{誰}の{拠点}を制圧した · トロフィー +n · 倉庫へ届く」. Left out when none.
    */
   takenRival?: { id: NodeId; owner: string }[];
   /**

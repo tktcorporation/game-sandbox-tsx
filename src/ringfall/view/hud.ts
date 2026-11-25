@@ -3,7 +3,10 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { goalCompass, PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
+import { revengeNodeFromLine } from "../meta/attack-scout";
+import type { Island } from "../meta/island";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, PHRASE, TERM, liberationDelta, liberationLine, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
+import { neighbourNameByCode } from "../meta/neighbours";
 import { itemColor, itemName, namedAid, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -12,7 +15,7 @@ import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandHolds, liberationStatus, liberationStatusOf } from "../meta/island";
-import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
+import { isAiOwner, rivalHold, rivalOf, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
@@ -46,8 +49,21 @@ import { UI } from "./palette";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** The island's news from the server (its log), as the results show it: nothing when there is none. */
-const newsBlock = (news: readonly string[]) => (news.length ? `<h3>${TERM.islandNews}</h3><p>${news.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "");
+/**
+ * The island's news as the results / 起動時の一枚 show it.
+ * 「取られた」行に やり返す (TKT-204 案 F) when that hub is still rival-held.
+ */
+const newsBlock = (news: readonly string[], poiState?: Island) => {
+  if (!news.length) return "";
+  const rows = news.map((n) => {
+    const node = poiState ? revengeNodeFromLine(poiState, n) : null;
+    const btn = node
+      ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
+      : "";
+    return `<span class="news-line">${esc(n)}${btn}</span>`;
+  });
+  return `<h3>${TERM.islandNews}</h3><p class="island-news">${rows.join("")}</p>`;
+};
 /** Replaces an element's markup only when it changes: the objective card is redrawn every frame. */
 const setHtml = (el: HTMLElement, html: string) => {
   if (el.dataset.html === html) return;
@@ -97,6 +113,24 @@ const SCOUT_SHOW = 25;
 
 /** The colour of the core of a node not the player's: another player's green, else the enemy's red. */
 const foeSide = (h: PoiHold) => (rivalOf(h) !== null ? SIDE.rival : SIDE.enemy);
+
+/**
+ * 「ツバキの浄水場」 for a rival-held node (TKT-204 案 E). Null when the enemy (not a player) holds it.
+ * `names` is the raid's rival id → display name map when neighbours are not yet on the map.
+ */
+function rivalWhoHub(hold: PoiHold, hubName: string, names?: ReadonlyMap<string, string>): string | null {
+  const who = rivalOf(hold);
+  if (!who) return null;
+  const neigh = neighboursNowOnMap().find((x) => x.code === who || (isAiOwner(who) && x.code === who.slice(3)));
+  let owner: string;
+  if (neigh) owner = neigh.ai ? aiLabel(neigh.name) : neigh.name;
+  else if (names?.get(who)) owner = names.get(who)!;
+  else {
+    const bare = neighbourNameByCode(who, neighboursNowOnMap());
+    owner = bare ? (isAiOwner(who) ? aiLabel(bare) : bare) : "他のプレイヤー";
+  }
+  return `${owner}の${hubName}`;
+}
 
 export class Hud {
   private root = $("hud");
@@ -532,9 +566,16 @@ export class Hud {
       case "leaveCancel":
         this.toast(`${depotIcon()}${TERM.relayBox}${crossIcon()}`, 0);
         break;
-      case "coreStart":
-        this.toast(`${coreIcon(foeSide(s.nodes[e.node]))}${TERM.captureCore} ${esc(NODES[e.node].name)}`, 0, 3000);
+      case "coreStart": {
+        const hub = NODES[e.node].name;
+        const whoHub = rivalWhoHub(s.nodes[e.node], hub, this.rivalNames);
+        this.toast(
+          `${coreIcon(foeSide(s.nodes[e.node]))}${whoHub ? esc(attackCapturePrompt(whoHub)) : `${TERM.captureCore} ${esc(hub)}`}`,
+          0,
+          3000,
+        );
         break;
+      }
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
         break;
@@ -546,10 +587,13 @@ export class Hud {
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
         break;
       case "coreTaken": {
-        // e.node is a NODES index; s.hold is per POI. Rival at raid start → loot in 倉庫へ届いた.
-        const holdAt = s.hold ? rivalOf(s.hold[poiIndex(NODES[e.node].id)] ?? "foe") !== null : false;
+        // e.node is a NODES index; s.hold is per POI (who held it when the raid began).
+        const startHold = s.hold?.[poiIndex(NODES[e.node].id)] ?? "foe";
+        const whoHub = rivalWhoHub(startHold, NODES[e.node].name, this.rivalNames);
         this.toast(
-          `${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}${holdAt ? `<span class="toast-sub">倉庫へ届く</span>` : ""}`,
+          whoHub
+            ? `${coreIcon(SIDE.own)}${esc(attackSeized(whoHub))}<span class="toast-sub">倉庫へ届く</span>`
+            : `${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}`,
           1,
           5000,
         );
@@ -1315,8 +1359,14 @@ export class Hud {
     if (t.kind === "core") {
       const n = NODES[t.node];
       const c = foeSide(s.nodes[t.node]);
+      const whoHub = rivalWhoHub(s.nodes[t.node], n.name, this.rivalNames);
       if (!capturable(s, t.node)) return tip(`${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`);
-      if (s.capture?.node === t.node) return tip(`${coreIcon(c)}${TERM.captureCore} ${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
+      if (s.capture?.node === t.node) {
+        const label = whoHub ? attackCapturing(whoHub) : `${TERM.captureCore} ${n.name}`;
+        return tip(`${coreIcon(c)}${esc(label)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
+      }
+      // TKT-204 案 E: rival hub → 「ツバキの浄水場を攻める」; foe → 核 · 制圧を始める.
+      if (whoHub) return tip(`${key("E")}${coreIcon(c)}${esc(attackCapturePrompt(whoHub))} ${noiseIcon()}`);
       return tip(`${key("E")}${coreIcon(c)}${PHRASE.captureStart} ${esc(n.name)} ${noiseIcon()}`);
     }
     if (t.kind === "zip") {
@@ -1560,7 +1610,7 @@ export class Hud {
     $("stats").innerHTML = "";
     const lib = `<p class="lib-delta">${liberationDelta(liberationStatus(before), liberationStatus(after))}</p>`;
     const tropLine = trop ? `<p class="trop-line">${trop}</p>` : "";
-    $("home").innerHTML = lib + `<div id="island-news">${newsBlock(lines)}</div>` + tropLine;
+    $("home").innerHTML = lib + `<div id="island-news">${newsBlock(lines, after.poiState)}</div>` + tropLine;
     const tip = next || nextHandFor(after);
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1648,7 +1698,8 @@ export class Hud {
     // incursion / 取り合う拠点の制圧行も newsKeep に入れ、後から setNews されても消えないようにする。
     const nameOf = (owner: string) => {
       const n = neighboursNowOnMap().find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
-      return n ? (n.ai ? `${n.name}(AI)` : n.name) : owner;
+      if (!n) return owner;
+      return n.ai ? aiLabel(n.name) : n.name;
     };
     const tropPer = settled?.takenRival?.length && settled.trophies?.gained
       ? Math.max(1, Math.round(settled.trophies.gained / settled.takenRival.length))
@@ -1663,7 +1714,9 @@ export class Hud {
       : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
-    const dayHead = settled ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews)}</div>${tropLine}` : "";
+    const dayHead = settled
+      ? `<h3 class="day-end">${settled.day} 日目</h3>${libLine}<div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
+      : "";
     // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =
       settled?.income || settled?.spoils || settled?.liberated

@@ -94,6 +94,8 @@ export function parseNeighbours(raw: unknown): Neighbour[] | null {
       ...(factory !== undefined ? { factory } : {}),
       ...(trophies !== undefined ? { trophies } : {}),
       ...(last ? { last } : {}),
+      // Keep AI mark from a cached / injected list (island-net also sets it via withAi).
+      ...(n.ai === true ? { ai: true as const } : {}),
     });
   }
   return out;
@@ -115,4 +117,15 @@ export function ago(at: number, now: number): string {
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
+}
+
+/**
+ * AI display name for news / maps (TKT-204 案 G). Kept in meta so ai-islands and view share it.
+ * 【元】ツバキ AI / ツバキ(AI) 【案】{名前} · AI
+ */
+export function aiLabel(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "AI";
+  if (/(?: · AI|\(AI\)| AI)$/.test(trimmed)) return trimmed;
+  return `${trimmed} · AI`;
 }

@@ -3,6 +3,7 @@ import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, poiRegion, regionHere, type PoiId } from "./map";
 import { frontNodes } from "./front";
+import { rivalOf } from "./holds";
 import { sources, type Source } from "../meta/hideout";
 import type { State } from "./state";
 
@@ -165,7 +166,11 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ n, i }) => front[i] && n.region === region)
     .sort((a, b) => dist2d(a.n.core, s.player.pos) - dist2d(b.n.core, s.player.pos))[0];
-  if (near) return captureSteps(s, near.i, `前線：${near.n.name}`);
+  // TKT-204 案 D: rival-held front hubs use 攻める (same verb as camp / depart), not 前線： alone.
+  if (near) {
+    const title = rivalOf(s.nodes[near.i]) !== null ? `${near.n.name}を攻める` : `前線：${near.n.name}`;
+    return captureSteps(s, near.i, title);
+  }
   return buildObjective("探索して脱出する", [
     { kind: "explore", label: "島を探索する", until: "回収品を 1 つ持つ", at: null, done: s.player.haul.length > 0 || s.sent.length > 0 },
     extractStep(s),

@@ -36,6 +36,8 @@ export type TermId =
   | "returningAlive"
   | "arrivedAtWarehouse"
   | "attack"
+  | "contest"
+  | "revenge"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -93,6 +95,16 @@ export const TERM = {
    * 【元】取り返す 【案】攻める — docs/ringfall/glossary.md (adopted).
    */
   attack: "攻める",
+  /**
+   * Contested coastal hub not yet held by anyone (TKT-204 案 A).
+   * 【元】（なし） 【案】取り合う 【理由】誰と取り合う拠点かを先に見せる
+   */
+  contest: "取り合う",
+  /**
+   * Defence-log → attack (TKT-204 案 F / CoC revenge).
+   * 【元】（なし）／仕返し 【案】やり返す 【理由】取られた行から攻め先へ
+   */
+  revenge: "やり返す",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -242,17 +254,40 @@ export const PLAN_GOAL = "目的";
 export const NEWS_KEEP = 10;
 
 /**
- * お隣の拠点を取った／攻めきれなかった一行（リザルト／信号所）。
- * 【元】{お隣}の{拠点}を取った · トロフィー +n
- * 【案】… · トロフィー +n · 倉庫へ届く
- * 【理由】島の守りが倉庫へ届くことを一行に（方向 A）
+ * お隣の拠点を制圧した／攻めきれなかった一行（リザルト／信号所）。
+ * 【元】{お隣}の{拠点}を取った · トロフィー +n · 倉庫へ届く
+ * 【案】{お隣}の{拠点}を制圧した · … 【理由】核のプロンプトと同じ攻めの物語（TKT-204 案 E）
  */
 export function newsIncursion(owner: string, node: string, won: boolean, trop?: number): string {
   if (won) {
     const tropBit = trop != null && trop > 0 ? ` · ${TERM.trophy} +${trop}` : "";
-    return `${owner}の${node}を取った${tropBit} · 倉庫へ届く`;
+    return `${owner}の${node}を制圧した${tropBit} · 倉庫へ届く`;
   }
   return `${owner}の${node}を攻めきれなかった`;
+}
+
+/**
+ * Live core prompt for a rival-held hub (TKT-204 案 E).
+ * 【元】E 核 · 制圧を始める 浄水場 【案】E ツバキの浄水場を攻める
+ */
+export function attackCapturePrompt(whoHub: string): string {
+  return attackGoal(whoHub);
+}
+
+/**
+ * Mid-capture / toast while holding a rival hub's core (TKT-204 案 E).
+ * 【元】核 · 制圧 浄水場 【案】ツバキの浄水場を制圧
+ */
+export function attackCapturing(whoHub: string): string {
+  return `${whoHub}を制圧`;
+}
+
+/**
+ * Toast / result after seizing a rival hub (TKT-204 案 E).
+ * 【元】制圧した · 浄水場 【案】ツバキの浄水場を制圧した
+ */
+export function attackSeized(whoHub: string): string {
+  return `${whoHub}を制圧した`;
 }
 
 /**
@@ -363,6 +398,79 @@ export function nextAttack(name: string): string {
   return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${name}を${TERM.attack}`;
 }
 
+/**
+ * Map label under a rival-held contested hub.
+ * 【元】ツバキ 【案】ツバキ · 攻める 【理由】取るのが攻めだと分かる（TKT-204 案 A）
+ */
+export function attackOwner(who: string): string {
+  return `${who} · ${TERM.attack}`;
+}
+
+/**
+ * Map label under a contested hub still held by the enemy, facing a neighbour.
+ * 【元】観測所 【案】ツバキと取り合う 【理由】誰と取り合うかを先に見せる（TKT-204 案 A）
+ */
+export function contestOwner(who: string): string {
+  return `${who}と${TERM.contest}`;
+}
+
+/**
+ * Goal / 今日の作戦 / 出撃の目的 for a rival hub (TKT-204 案 D).
+ * 【元】前線：浄水場 【案】ツバキの浄水場を攻める 【理由】野営と出撃を同じ言い方に
+ */
+export function attackGoal(whoHub: string): string {
+  return `${whoHub}を${TERM.attack}`;
+}
+
+/**
+ * Depart hint when a rival hub is held but not yet on the front.
+ * 【元】（なし） 【案】先に中継塔を取ると攻められる 【理由】前線に無い相手持ちの理由
+ */
+export function contestGateHint(gate: string): string {
+  return `先に${gate}を取ると攻められる`;
+}
+
+/**
+ * Scout defence line under an 攻める row (TKT-204 案 B).
+ * 【元】（なし） 【案】工場 Lv3 · 島の守り 1 【理由】CoC の攻撃前の守り要約
+ */
+export function attackScoutDef(factory: number, guard: number): string {
+  return `${TERM.factory} Lv${factory} · ${TERM.islandGuard} ${guard}`;
+}
+
+/**
+ * Scout loot line under an 攻める row (TKT-204 案 B).
+ * 【元】（なし） 【案】トロフィー +32 【理由】取ればいくつ増えるかを先に見せる
+ */
+export function attackScoutTrop(trop: number): string {
+  return `${TERM.trophy} +${trop}`;
+}
+
+/**
+ * First-time multiplayer guide cards (TKT-204 案 C).
+ * 【元】（なし） 【案】3 枚 【理由】お隣→前線の拠点→核·トロフィー
+ */
+export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
+  {
+    title: TERM.seaIslands,
+    body: `海に面した拠点を、${TERM.seaIslands}と${TERM.contest}。`,
+  },
+  {
+    title: `${TERM.front}の拠点`,
+    body: `地図の「${TERM.attack}」が付いた拠点へ、${TERM.gate}から${TERM.sortie}する。`,
+  },
+  {
+    title: TERM.captureCore,
+    body: `${TERM.core}を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
+  },
+];
+
+/** Guide next / done button labels (TKT-204 案 C). */
+export const mpHowtoNext = (last: boolean): string => (last ? "分かった" : "次へ");
+
+/** Re-export for view callers (canonical: meta/neighbours.ts). */
+export { aiLabel } from "../meta/neighbours";
+
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;
 }
@@ -386,7 +494,7 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
-  { bad: "仕返し", keep: "attack", note: "地図で攻める（E4）。信号所ボタンは置かない" },
+  { bad: "仕返し", keep: "revenge", note: "やり返す（TKT-204 案 F）。旧・遠征送りは廃止" },
   { bad: "取り返す", keep: "attack", note: "攻めるに統合（E4）" },
   /**
    * Exact match only in lint (送る ⊂ 倉庫へ送る). 中継ボックスの「倉庫へ送る」は別 TERM.

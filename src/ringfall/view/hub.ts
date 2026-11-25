@@ -1,7 +1,8 @@
 import { PLAYER } from "../sim/config";
-import { neighboursFor } from "../island-net";
+import { aiSalt, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
+import { attackScouts, revengeNodeFromLine, type AttackScout } from "../meta/attack-scout";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -14,11 +15,11 @@ import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, s
 import { rivalOf } from "../sim/holds";
 import { ExpeditionPanel } from "./expeditions";
 import { logLine, newsVisible, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
-import { frontNodes, ownNodes } from "../sim/front";
+import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, liberationLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -56,8 +57,10 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
   const label = (n: (typeof NODES)[number], i: number): string => {
     const who = rivalOf(holds[i]);
     if (!who) return n.name;
+    const hit = neigh.find((x) => x.code === who || (who.startsWith("ai-") && x.code === who.slice(3)));
+    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名. AI → 「カゲウツ · AIの浄水場」(TKT-204 案 G).
+    if (hit) return `${hit.ai ? aiLabel(hit.name) : hit.name}の${n.name}`;
     const owner = neighbourNameByCode(who, neigh);
-    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名. Unknown code → 他のプレイヤー (not the slot's name).
     return owner ? `${owner}の${n.name}` : `他のプレイヤーの${n.name}`;
   };
   const near = NODES.map((n, i) => ({ n, i }))
@@ -70,6 +73,26 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
       return Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z);
     })[0];
   return near ? { name: label(near.n, near.i), x: near.n.x, z: near.n.z } : null;
+}
+
+/**
+ * When a rival holds a contested hub that is not yet on the front: which front node to take first
+ * (TKT-204 案 D — 「先に中継塔を取ると攻められる」).
+ */
+export function rivalGateHint(p: Profile, from: { x: number; z: number } = CAMP.wake): string | null {
+  if (rivalFrontPick(p, from)) return null;
+  const holds = islandHolds(p);
+  const front = frontNodes(holds);
+  const blocked = NODES.map((n, i) => ({ n, i }))
+    .filter(({ n, i }) => isContestedShore(n.id) && rivalOf(holds[i]) !== null && !front[i])
+    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z));
+  for (const { i } of blocked) {
+    const gate = NEIGHBOURS[i]
+      .filter((k) => front[k] && holds[k] === "foe")
+      .sort((a, b) => Math.hypot(NODES[a].x - from.x, NODES[a].z - from.z) - Math.hypot(NODES[b].x - from.x, NODES[b].z - from.z))[0];
+    if (gate !== undefined) return contestGateHint(NODES[gate].name);
+  }
+  return null;
 }
 
 /**
@@ -496,6 +519,11 @@ export class Hub {
    * Cleared once the departure opens on it.
    */
   focusPoi: PoiId | null = null;
+  /**
+   * Contested hub chosen on the 攻める list (TKT-204 案 B). Drives the departure goal and
+   * nearest-start pick; set by `selectAttack()` / やり返す (案 F).
+   */
+  attackFocus: NodeId | null = null;
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
   private exped: ExpeditionPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -527,6 +555,10 @@ export class Hub {
         // 地図で見る carries both the POI and the valuable kind (set goal + open depart).
         if (act === "src-map") {
           this.act(act, el.dataset.poi ?? "", el.dataset.kind ?? "");
+          return;
+        }
+        if (act === "revenge") {
+          this.act(act, el.dataset.node ?? el.dataset.arg ?? "");
           return;
         }
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
@@ -697,6 +729,14 @@ export class Hub {
     if (act === "open-signal") {
       sfx.click();
       return this.open("signal");
+    }
+    if (act === "revenge") {
+      // やり返す → 攻める一覧でその拠点を選んだ出撃（案 F）。
+      if (arg && this.revenge(arg as NodeId)) {
+        sfx.click();
+        this.close();
+      }
+      return;
     }
     if (act.startsWith("exp-")) {
       sfx.click();
@@ -949,6 +989,56 @@ export class Hub {
   }
 
   /**
+   * Contested hubs another player holds, for the departure's 攻める list (TKT-204 案 B).
+   * Front ones first; includes shut rows that need a gate taken first.
+   */
+  attackTargets(): AttackScout[] {
+    const p = this.profile;
+    const at = this.startPoints().find((q) => q.on) ?? { x: CAMP.wake.x, z: CAMP.wake.z };
+    return attackScouts(p.poiState, p.day, neighboursFor(p), p.trophies ?? TROPHY.start, p.parcels ?? [], aiSalt(), at);
+  }
+
+  /**
+   * Picks a hub on the 攻める list: frames the goal, chooses the nearest open start, and remembers
+   * the focus for the side panel. False when the hub is unknown. With `force`, a shut (not-yet-front)
+   * hub is still focused so やり返す can open the list on it.
+   */
+  selectAttack(id: NodeId, opts: { force?: boolean } = {}): boolean {
+    const hit = this.attackTargets().find((t) => t.id === id);
+    if (!hit) return false;
+    if (!hit.onFront && !opts.force) return false;
+    this.attackFocus = id;
+    this.peeked = null;
+    if (hit.onFront) {
+      const starts = this.startPoints().filter((q) => q.open);
+      const near = [...starts].sort((a, b) => Math.hypot(a.x - hit.x, a.z - hit.z) - Math.hypot(b.x - hit.x, b.z - hit.z))[0];
+      if (near) this.choose(near.kind, near.id);
+    }
+    return true;
+  }
+
+  /**
+   * やり返す (TKT-204 案 F): focus the hub they took (still rival-held) and open the departure on it
+   * via `focusPoi` (same path as 地図で見る).
+   */
+  revenge(id: NodeId): boolean {
+    if (!this.selectAttack(id, { force: true })) return false;
+    this.focusPoi = id;
+    return true;
+  }
+
+  /** The scout row the departure highlights: explicit focus, else the nearest front rival hub. */
+  attackPick(): AttackScout | null {
+    const targets = this.attackTargets();
+    if (!targets.length) return null;
+    if (this.attackFocus) {
+      const hit = targets.find((t) => t.id === this.attackFocus);
+      if (hit) return hit;
+    }
+    return targets.find((t) => t.onFront) ?? null;
+  }
+
+  /**
    * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
    * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
    */
@@ -1088,7 +1178,13 @@ export class Hub {
 
   /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）と島の守り。 */
   private signalNews(): string {
-    const archive = (this.profile.news ?? []).map((line) => `<li>${esc(line)}</li>`);
+    const archive = (this.profile.news ?? []).map((line) => {
+      const node = revengeNodeFromLine(this.profile.poiState, line);
+      const btn = node
+        ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
+        : "";
+      return `<li>${esc(line)}${btn}</li>`;
+    });
     const aid = namedAid(this.profile).slice(0, 4).map(
       (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
     );
@@ -1290,16 +1386,22 @@ export class Hub {
     this.fixStart();
     const p = this.profile;
     const front = this.frontPick();
+    // TKT-204 案 B/D: 攻める一覧の選択（なければ前線の相手持ち）を野営と同じ言い方で。
+    const attack = this.attackPick();
+    const rival = attack ? { name: attack.title, x: attack.x, z: attack.z } : rivalFrontPick(p);
     const teach = teachFrontCapture(p) && front;
     const goal = finaleOpen(p)
       ? esc(`${liberationLine({ kind: "finale" })}`)
-      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+      : rival
+        ? esc(attackGoal(rival.name))
+        : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
+    const hint = rivalGateHint(p);
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
       [PLAN_GOAL, goal],
     ];
-    return { rows, warn: [] };
+    return { rows, warn: hint ? [hint] : [] };
   }
 
   /**
@@ -1340,7 +1442,7 @@ export class Hub {
         : [
             PLAN_GOAL,
             rival
-              ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を${TERM.attack}`
+              ? `${flagIcon(SIDE.rival)}${esc(attackGoal(rival.name))}`
               : pick
                 ? teach
                   ? `${esc(pick.name)} · ${TERM.captureCore}`

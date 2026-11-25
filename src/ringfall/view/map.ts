@@ -13,7 +13,8 @@ import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
-import { NEIGHBOUR_SLOTS, neighbourNameByCode, routeOpen, type Neighbour } from "../meta/neighbours";
+import { isContestedShore, NEIGHBOUR_SLOTS, neighbourNameByCode, type Neighbour } from "../meta/neighbours";
+import { aiLabel, attackOwner, contestOwner } from "./copy";
 import { UI, alpha } from "./palette";
 
 /*
@@ -64,6 +65,29 @@ export const holdCss = (h: PoiHold) => (h === "foe" || h === "own" ? HOLD_CSS[h]
  * A flare as the HUD's icon draws it, centred on (x, y) and `r` tall from its middle: a red stick
  * under a yellow flame, lit; a grey outline when the flare is gone (its bin searched).
  */
+/**
+ * Small pennant beside a contested hub the player can attack (TKT-204 案 A).
+ * CoC-like: the attackable village itself carries the attack cue, not a sea island.
+ */
+export function drawAttackFlag(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
+  g.save();
+  g.strokeStyle = alpha(UI.night, 0.85);
+  g.fillStyle = color;
+  g.lineWidth = Math.max(1, s * 0.12);
+  g.beginPath();
+  g.moveTo(x, y - s * 0.55);
+  g.lineTo(x, y + s * 0.45);
+  g.stroke();
+  g.beginPath();
+  g.moveTo(x, y - s * 0.5);
+  g.lineTo(x + s * 0.7, y - s * 0.28);
+  g.lineTo(x, y - s * 0.06);
+  g.closePath();
+  g.fill();
+  g.stroke();
+  g.restore();
+}
+
 export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: number, lit: boolean) {
   g.save();
   // A dark disc behind it, so it reads on the red and blue ground alike.
@@ -478,7 +502,10 @@ export class IslandMap {
   locks = true;
   /** Who holds each node and what changed, and nothing else: no names but the scene's, no ways off, depots, routes or what a node opens. The results' map. */
   plain = false;
-  /** Other players' islands the server offers this one (meta/neighbours.ts), drawn out at sea on the camp's maps. */
+  /**
+   * Other players' islands (meta/neighbours.ts): name lookup for contested coastal hubs.
+   * Sea-corner islands and 海の道 lines were removed (TKT-204 案 A) — attack cues sit on the hubs.
+   */
   neighbours: readonly Neighbour[] = [];
   /**
    * The minimap (the HUD's corner): half the side of the square it shows round the player, in metres,
@@ -1017,16 +1044,38 @@ export class IslandMap {
     // A POI the enemy held as the raid began and the player cleared gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "foe";
     const poiText = (i: number) => (s.cleared[i] && hold(i) === "foe" ? `${POIS[i].name} ✓` : POIS[i].name);
-    // 方向 A: rival holds (esp. contested coastal hubs) show the owner's name (AI tagged) under the mark.
-    const rivalWho = (i: number): string | null => {
-      const owner = rivalOf(hold(i));
-      if (!owner) return null;
+    // Owner display name (AI → 「名前 · AI」). Used under hub marks and for 攻める / 取り合う lines.
+    const ownerName = (owner: string): string => {
       if (isAiOwner(owner)) {
         const n = neighbourNameByCode(owner, this.neighbours);
-        return n ? `${n} AI` : "AI";
+        return n ? aiLabel(n) : "AI";
       }
+      const n = this.neighbours.find((x) => x.code === owner);
+      if (n) return n.ai ? aiLabel(n.name) : n.name;
       return neighbourNameByCode(owner, this.neighbours) ?? "他のプレイヤー";
     };
+    /**
+     * Caption under a POI mark (TKT-204 案 A):
+     * - rival contested → 「ツバキ · 攻める」
+     * - foe contested facing a neighbour → 「カゲウツ · AIと取り合う」
+     * - other rival → owner name only
+     */
+    const shoreCaption = (i: number): string | null => {
+      const id = POIS[i].id;
+      const h = hold(i);
+      const owner = rivalOf(h);
+      if (owner) {
+        const who = ownerName(owner);
+        return isContestedShore(id) ? attackOwner(who) : who;
+      }
+      if (h !== "foe" || !isContestedShore(id)) return null;
+      const slot = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === id);
+      if (slot < 0) return null;
+      const n = this.neighbours.find((x) => x.slot === slot);
+      if (!n) return null;
+      return contestOwner(n.ai ? aiLabel(n.name) : n.name);
+    };
+    const attackable = (i: number): boolean => isContestedShore(POIS[i].id) && rivalOf(hold(i)) !== null;
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
     // The POI names written: goal POIs and nodes that changed hands come first (and are never
@@ -1082,50 +1131,7 @@ export class IslandMap {
       taken.push(box(x.short, spot.x, spot.y, 10));
       return spot;
     });
-    // The neighbours: other players' islands out at sea, each at a slot of its own, in their green,
-    // with whose it is and how many of its nodes its owner holds.
-    // Drawn on any map handed them (the camp's two, the raid's), the departure's plain one included.
-    for (const n of this.neighbours) {
-      const k = n.slot;
-      const slot = NEIGHBOUR_SLOTS[k];
-      if (!slot) continue;
-      const p = at(slot.x, slot.z);
-      const r = 13 * dpr;
-      if (p.x < -r || p.y < -r || p.x > g.canvas.width + r || p.y > g.canvas.height + r) continue;
-      // The sea route from the coast's node: lit while the player holds that node, faint and dashed till then.
-      const open = routeOpen(k, (id) => hold(poiIndex(id)) === "own");
-      const shore = POIS[poiIndex(slot.shore)];
-      const q = at(shore.x, shore.z);
-      g.save();
-      g.strokeStyle = open ? UI.rivalLight : alpha(UI.paper, 0.3);
-      g.lineWidth = (open ? 2 : 1.5) * dpr;
-      g.setLineDash(open ? [] : [4 * dpr, 5 * dpr]);
-      g.beginPath();
-      g.moveTo(q.x, q.y);
-      g.lineTo(p.x, p.y);
-      g.stroke();
-      g.restore();
-      g.save();
-      g.fillStyle = alpha(UI.rival, open ? 0.6 : 0.3);
-      g.strokeStyle = open ? UI.rivalLight : alpha(UI.rivalLight, 0.5);
-      g.lineWidth = 1.5 * dpr;
-      g.beginPath();
-      // A low island: three overlapping rounds, the same shape for every neighbour.
-      for (const [dx, dy, rr] of [
-        [-0.55, 0.1, 0.7],
-        [0.2, -0.15, 0.85],
-        [0.75, 0.2, 0.6],
-      ])
-        g.ellipse(p.x + dx * r, p.y + dy * r, rr * r, rr * r * 0.7, 0, 0, Math.PI * 2);
-      g.fill();
-      g.stroke();
-      g.restore();
-      g.textAlign = "center";
-      // Whose island, trophies (お隣の組み合わせの基準), and how much they hold.
-      const trop = n.trophies != null ? ` · ${n.trophies}` : "";
-      label(`${n.name}${n.ai ? " AI" : ""}${trop} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
-      taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
-    }
+    // Neighbour islands out at sea and 海の道 lines: deleted (TKT-204 案 A). Attack cues sit on coastal hubs.
     // Districts and landmarks between the POIs, small and muted under everything else.
     for (const d of plain ? [] : LANDMARKS) {
       // A district's name is learnt by going there.
@@ -1350,6 +1356,10 @@ export class IslandMap {
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
         if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "own");
+        // Contested hub held by a neighbour: 攻める pennant (raid / depart / minimap / results).
+        if (attackable(i)) {
+          drawAttackFlag(g, p.x + r * 1.55, p.y - r * 0.85, (this.mini ? 9 : 11) * dpr, RIVAL_CSS);
+        }
       }
       if (poi.boss && s.finale) {
         // Open to the decisive battle: a gold ring, pulsing.
@@ -1444,12 +1454,12 @@ export class IslandMap {
         g.restore();
       }
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
-    // Rival holds also get the owner's name under the mark (E4).
+    // Contested hubs: owner · 攻める / {誰}と取り合う under the mark (TKT-204 案 A).
     for (const i of this.mini ? [] : named) {
       const p = at(POIS[i].x, POIS[i].z);
       label(poiText(i), p.x, p.y - 15 * dpr, dim(i) ? UI.mist : UI.white, 12);
-      const who = rivalWho(i);
-      if (who) label(who, p.x, p.y + 14 * dpr, RIVAL_CSS, 9);
+      const cap = shoreCaption(i);
+      if (cap) label(cap, p.x, p.y + 14 * dpr, RIVAL_CSS, 9);
       // Goal source tag when it is not the POI name (タイタン beside 発着場).
       for (const t of this.goalTags) {
         if (t.poi !== POIS[i].id) continue;
