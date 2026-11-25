@@ -7,6 +7,7 @@
 import { rivalOf, type PoiHold } from "../sim/holds";
 import type { NodeId } from "../sim/map";
 import { ISLAND_TABLE } from "./island-table";
+import { isContestedShore } from "./neighbours";
 
 /**
  * Numbers for the ranking layer. Soft season reset is left to a later pass.
@@ -65,8 +66,9 @@ export function trophySwap(attacker: number, defender: number): { gain: number; 
 export const rivalTrophies = (_owner: string, self: number): number => self;
 
 /**
- * Net trophy change for one settle: nodes taken from rivals at raid start, and nodes lost to
- * rivals by day's end. `rivalTrophiesOf` supplies the other side's standing (neighbours / default).
+ * Net trophy change for one settle: contested coastal hubs taken from rivals / lost to rivals.
+ * Non-contested rival nodes (legacy) do not move trophies — ownership change of 取り合う拠点 only
+ * (design-direction 「トロフィーと物資」). `rivalTrophiesOf` supplies the other side's standing.
  */
 export function trophyDelta(
   self: number,
@@ -81,17 +83,18 @@ export function trophyDelta(
   // ISLAND_TABLE.nodes is NODES order (server-safe; importing map.ts would build the world in the Worker).
   for (let i = 0; i < ISLAND_TABLE.nodes.length; i++) {
     const id = ISLAND_TABLE.nodes[i].id as NodeId;
+    if (!isContestedShore(id)) continue;
     const was = before[i] ?? "foe";
     const now = after[i] ?? "foe";
     const wasRival = rivalOf(was);
     const nowRival = rivalOf(now);
-    // Took a rival (or any non-own that ends own from a rival start).
+    // Took a contested rival hub.
     if (wasRival !== null && now === "own") {
       const { gain } = trophySwap(self + gained - lost, rivalTrophiesOf(wasRival));
       gained += gain;
       taken.push(id);
     }
-    // Lost an owned node to a rival.
+    // Lost a contested hub to a rival.
     if (was === "own" && nowRival !== null) {
       const { loss } = trophySwap(rivalTrophiesOf(nowRival), self + gained - lost);
       lost += loss;

@@ -4,10 +4,11 @@
  */
 import assert from "node:assert/strict";
 import { applySync } from "../src/ringfall/meta/expeditions";
-import { newProfile, parseProfile } from "../src/ringfall/meta/profile";
+import { CONTESTED_SHORES } from "../src/ringfall/meta/neighbours";
+import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
 import { SEIZE, TROPHY, clampTrophies, trophyDelta, trophySwap } from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
-import { NODES } from "../src/ringfall/sim/map";
+import { NODES, POIS, nodeIndex, poiIndex } from "../src/ringfall/sim/map";
 
 assert.equal(clampTrophies(-10), 0);
 assert.equal(clampTrophies(99999), TROPHY.max);
@@ -25,23 +26,39 @@ assert.equal(SEIZE.bonus, 2);
   assert.ok(down.gain < TROPHY.base);
 }
 
+const shore = CONTESTED_SHORES[0]!;
+const shoreI = nodeIndex(shore);
+
 {
   const before = NODES.map(() => "foe" as const);
   const after = [...before];
-  const i = 0;
-  before[i] = rivalHold("AAAAAA");
-  after[i] = "own";
+  before[shoreI] = rivalHold("AAAAAA");
+  after[shoreI] = "own";
   const d = trophyDelta(1000, before, after);
   assert.ok(d.gained >= TROPHY.base - TROPHY.maxBonus);
   assert.equal(d.taken.length, 1);
+  assert.equal(d.taken[0], shore);
   assert.equal(d.next, 1000 + d.gained);
+}
+
+{
+  // Non-contested rival → own does not move trophies.
+  const before = NODES.map(() => "foe" as const);
+  const after = [...before];
+  const supply = nodeIndex("supply");
+  before[supply] = rivalHold("AAAAAA");
+  after[supply] = "own";
+  const d = trophyDelta(1000, before, after);
+  assert.equal(d.gained, 0);
+  assert.equal(d.taken.length, 0);
+  assert.equal(d.next, 1000);
 }
 
 {
   const before = NODES.map(() => "foe" as const);
   const after = [...before];
-  before[0] = "own";
-  after[0] = rivalHold("BBBBBB");
+  before[shoreI] = "own";
+  after[shoreI] = rivalHold("BBBBBB");
   const d = trophyDelta(1000, before, after);
   assert.ok(d.lost > 0);
   assert.equal(d.dropped.length, 1);
@@ -61,19 +78,33 @@ assert.equal(SEIZE.bonus, 2);
   assert.equal(old.trophies, TROPHY.start);
 }
 
-// Sync that transfers a freed node to a rival deducts trophies (Codex P2) and leaves a news note.
+// Sync that transfers a contested hub to a rival deducts trophies and leaves a news note.
 {
   const p = newProfile(3);
-  const id = NODES[0].id;
-  p.poiState = { ...p.poiState, [id]: { state: "own" } };
+  p.poiState = { ...p.poiState, [shore]: { state: "own" } };
   const before = p.trophies;
-  const { profile, notes } = applySync(p, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
+  const { profile, notes } = applySync(p, { holds: [{ id: shore, hold: rivalHold("ZZZZZZ") }] });
   assert.ok(profile.trophies! < before);
   assert.ok(notes.length === 1 && notes[0].includes("トロフィー"));
   // A second sync with the same hold does not deduct again.
-  const again = applySync(profile, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
+  const again = applySync(profile, { holds: [{ id: shore, hold: rivalHold("ZZZZZZ") }] });
   assert.equal(again.profile.trophies, profile.trophies);
   assert.equal(again.notes.length, 0);
+}
+
+// 核 · 制圧 loot: empty stock pays emptyReserve + bonus (AI / rival alike).
+{
+  const p = newProfile(5);
+  const hold = POIS.map(() => "foe" as const);
+  hold[poiIndex(shore)] = rivalHold("ai-TEST01");
+  const loot = seizeRivalLoot(p, {
+    hold,
+    seed: p.seed,
+    stats: { captured: [shore] },
+  });
+  assert.ok(loot.at.length === 1);
+  assert.equal(loot.at[0]!.kinds.length, SEIZE.emptyReserve + SEIZE.bonus);
+  assert.equal(loot.items.length, SEIZE.emptyReserve + SEIZE.bonus);
 }
 
 console.log("trophies ok");
