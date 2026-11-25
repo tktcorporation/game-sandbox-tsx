@@ -248,3 +248,34 @@ export function parseWarScore(raw: unknown): WarScore {
 /** Bounty target id from a foe team (max outer). */
 export const bountyTargetOf = (foe: Pick<Team, "members"> | null | undefined): string | null =>
   pickLeader((foe?.members ?? []).map((m: TeamMember) => ({ id: m.id, outer: m.outer })));
+
+/** Whether `owner` matches a bounty target id (bare code / `ai-` prefix either way). */
+export function ownerMatches(owner: string, target: string): boolean {
+  if (owner === target) return true;
+  if (owner.startsWith("ai-") && owner.slice(3) === target) return true;
+  if (target.startsWith("ai-") && target.slice(3) === owner) return true;
+  return false;
+}
+
+/**
+ * Owners who pay the leader bounty for a raid (作り順⑥).
+ * `heldBy` = rival id → contested hubs they hold at raid start (same population as 攻める).
+ * Pays only when that leader is among `captured` owners.
+ */
+export function bountyOwnersFrom(
+  heldBy: ReadonlyMap<string, number>,
+  captured: readonly string[],
+  hookTarget?: string | null,
+): Set<string> {
+  const out = new Set<string>();
+  if (!captured.length) return out;
+  const leader = pickLeader([...heldBy].map(([id, outer]) => ({ id, outer })));
+  const add = (id: string) => {
+    out.add(id);
+    if (!id.startsWith("ai-")) out.add(`ai-${id}`);
+    else out.add(id.slice(3));
+  };
+  if (leader && captured.some((c) => ownerMatches(c, leader))) add(leader);
+  if (hookTarget && captured.some((c) => ownerMatches(c, hookTarget))) add(hookTarget);
+  return out;
+}

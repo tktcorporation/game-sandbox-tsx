@@ -27,9 +27,9 @@ import {
 import {
   addBattleScore,
   BOUNTY,
+  bountyOwnersFrom,
   emptyWarScore,
   parseWarScore,
-  pickLeader,
   recordOuterDay,
   takeHomeSlots,
   type WarScore,
@@ -981,29 +981,28 @@ export function keptSeized(
 }
 
 /**
- * Owners who pay the leader bounty this raid (作り順⑥): strongest rival among captured hubs,
- * plus the 部隊戦 hooks bounty target when it matches a captured owner.
+ * Owners who pay the leader bounty this raid (作り順⑥).
+ * Leader is the strongest rival among **all** contested holders at raid start — not among
+ * captured only — so taking a weak hub never pays the leader bounty by accident.
  */
 function bountyOwners(p: Pick<Profile, "teamBattle">, s: Pick<State, "hold" | "stats">): Set<string> {
-  const out = new Set<string>();
   const hold = s.hold;
-  if (!hold) return out;
-  const captured: { id: string; outer?: number }[] = [];
+  if (!hold) return new Set();
+  const captured: string[] = [];
   for (const id of capturedIds(s)) {
     const i = poiIndex(id);
     if (i < 0) continue;
     const who = rivalOf(hold[i] ?? "foe");
+    if (who) captured.push(who);
+  }
+  const heldBy = new Map<string, number>();
+  for (let i = 0; i < POIS.length; i++) {
+    if (!isContestedShore(POIS[i]!.id)) continue;
+    const who = rivalOf(hold[i] ?? "foe");
     if (!who) continue;
-    captured.push({ id: who });
+    heldBy.set(who, (heldBy.get(who) ?? 0) + 1);
   }
-  const leader = pickLeader(captured);
-  if (leader) out.add(leader);
-  const hook = p.teamBattle?.hooks?.bountyTarget;
-  if (hook && captured.some((c) => c.id === hook || c.id === `ai-${hook}` || (c.id.startsWith("ai-") && c.id.slice(3) === hook))) {
-    out.add(hook);
-    out.add(`ai-${hook}`);
-  }
-  return out;
+  return bountyOwnersFrom(heldBy, captured, p.teamBattle?.hooks?.bountyTarget);
 }
 
 /**

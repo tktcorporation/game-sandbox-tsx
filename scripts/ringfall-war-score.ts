@@ -6,13 +6,14 @@
  * WAR_SCORE window + battle points, Profile v48 migrate, pouch take-home unchanged by power.
  */
 import assert from "node:assert/strict";
-import { newProfile, parseProfile, settle, seizeRivalLoot } from "../src/ringfall/meta/profile";
+import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
 import {
   BOUNTY,
   RAID_TARGET,
   WAR_POWER,
   WAR_SCORE,
   addBattleScore,
+  bountyOwnersFrom,
   canRaidOwner,
   emptyWarScore,
   fieldHoldsOvernight,
@@ -24,6 +25,7 @@ import {
   takeHomeSlots,
   warPowerOf,
 } from "../src/ringfall/meta/war-score";
+import { rivalOf } from "../src/ringfall/sim/holds";
 import {
   autoDefendField,
   startBattle,
@@ -35,6 +37,9 @@ import { SEIZE } from "../src/ringfall/meta/trophies";
 import { attackScouts } from "../src/ringfall/meta/attack-scout";
 import { newIsland } from "../src/ringfall/meta/island";
 import { META } from "../src/ringfall/sim/config";
+import { POIS, poiIndex } from "../src/ringfall/sim/map";
+import { CONTESTED_SHORES } from "../src/ringfall/meta/neighbours";
+import { rivalHold, type PoiHold } from "../src/ringfall/sim/holds";
 
 const SELF = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "テスト", code: "ABCDEF" };
 const SALT = 42;
@@ -107,10 +112,41 @@ const SALT = 42;
   assert.equal(pickLeader([{ id: "a", outer: 2 }, { id: "b", outer: 5 }, { id: "c", outer: 5, trophies: 10 }]), "c");
   const rows = attackScouts(newIsland(), 1, [], 1000, [], 0, { x: 0, z: 0 }, { foe: null });
   assert.ok(Array.isArray(rows));
-  // seizeRivalLoot bounty extras
+
+  // Rank among ALL holders at raid start — capturing only the weak rival pays no bounty.
+  const weak = "ai-WEAK01";
+  const strong = "ai-STRNG1";
+  const shores = CONTESTED_SHORES.filter((id) => poiIndex(id) >= 0);
+  assert.ok(shores.length >= 3, "need ≥3 contested shores for bounty test");
+  const hold = POIS.map((): PoiHold => "foe");
+  hold[poiIndex(shores[0]!)] = rivalHold(weak);
+  hold[poiIndex(shores[1]!)] = rivalHold(strong);
+  hold[poiIndex(shores[2]!)] = rivalHold(strong);
+  const p = newProfile(5);
   const base = SEIZE.emptyReserve + SEIZE.bonus;
-  assert.equal(base + BOUNTY.extraMaterials, SEIZE.emptyReserve + SEIZE.bonus + 3);
-  console.log(`bounty: leader +${BOUNTY.extraMaterials} materials`);
+  const heldBy = new Map<string, number>();
+  for (const h of hold) {
+    const who = rivalOf(h);
+    if (!who) continue;
+    heldBy.set(who, (heldBy.get(who) ?? 0) + 1);
+  }
+  assert.equal(heldBy.get(strong), 2);
+  assert.equal(heldBy.get(weak), 1);
+  assert.equal(bountyOwnersFrom(heldBy, [weak]).has(weak), false, "weak alone is not the leader");
+  assert.equal(bountyOwnersFrom(heldBy, [strong]).has(strong), true, "strong is the leader");
+  const weakLoot = seizeRivalLoot(p, { hold, seed: p.seed, stats: { captured: [shores[0]!] } }, bountyOwnersFrom(heldBy, [weak]));
+  assert.equal(weakLoot.at[0]!.kinds.length, base, "weak capture must not pay leader bounty");
+  const strongLoot = seizeRivalLoot(
+    p,
+    { hold, seed: p.seed, stats: { captured: [shores[1]!] } },
+    bountyOwnersFrom(heldBy, [strong]),
+  );
+  assert.equal(
+    strongLoot.at[0]!.kinds.length,
+    base + BOUNTY.extraMaterials,
+    "capturing the leader pays bounty",
+  );
+  console.log(`bounty: leader +${BOUNTY.extraMaterials} materials · weak=${base} strong=${base + BOUNTY.extraMaterials}`);
 }
 
 // --- Score window + battle points ---
@@ -147,20 +183,6 @@ const SALT = 42;
   assert.ok(migrated!.warScore);
   assert.equal(migrated!.warScore.total, 0);
   console.log("profile: v48 new + v47→v48 migrate");
-}
-
-// --- Settle records outer day ---
-{
-  const p0 = newProfile(11);
-  // Give the player some outer hubs via poiState own on a contested id — settle records count.
-  const s = {
-    ...p0,
-    // Minimal extracted raid stub is heavy; just recordOuterDay path via parse is enough above.
-  };
-  void s;
-  void settle;
-  void seizeRivalLoot;
-  console.log("settle helpers imported (field path covered by team-battle script + power tests)");
 }
 
 console.log("ringfall-war-score: ok");
