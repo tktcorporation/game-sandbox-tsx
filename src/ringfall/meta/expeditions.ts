@@ -15,7 +15,7 @@ import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
-import { clampTrophies, defendGain, trophyDelta } from "./trophies";
+import { clampTrophies, defendGain, rivalTrophies, trophyDelta } from "./trophies";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -206,6 +206,7 @@ export interface Synced {
 export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number }>(
   p: P,
   s: Synced,
+  rivalTrop?: (owner: string) => number,
 ): { profile: P; news: IslandLogEntry[]; notes: string[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
   const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
@@ -223,7 +224,8 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
     let lost = 0;
     let next = p.trophies;
     if (poiState !== p.poiState) {
-      const d = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState));
+      const lookup = rivalTrop ?? ((o: string) => rivalTrophies(o, p.trophies!));
+      const d = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState), lookup);
       gained = d.gained;
       lost = d.lost;
       next = d.next;

@@ -8,6 +8,8 @@ import { raiseAlly } from "./ally";
 import { coreReward } from "./mods";
 import type { Battle } from "./battle";
 import type { PoiHold } from "./island";
+import { isAiOwner, rivalOf } from "./holds";
+import { isContestedShore } from "../meta/neighbours";
 import type { State } from "./state";
 import { hypot2 } from "./hypot";
 
@@ -129,6 +131,12 @@ export function useCore(s: State, i: number) {
   if (s.capture?.node === i) return;
   s.capture = { node: i, t: 0, held: false, waves: 0, wait: 0, coming: null };
   s.events.push({ t: "coreStart", node: i });
+  // Contested hub held by a real neighbour: starting 核 · 制圧 counts as an attack (TKT-201).
+  const id = NODES[i].id;
+  const owner = rivalOf(s.nodes[i]);
+  if (isContestedShore(id) && owner && !isAiOwner(owner) && !s.stats.contestedTried.some((t) => t.id === id)) {
+    s.stats.contestedTried.push({ id, owner });
+  }
   const c = NODES[i].core;
   s.squads.forEach((sq, k) => {
     if (!garrisonOf(s, i, k)) return;
@@ -321,6 +329,24 @@ export function garrisonLeaves(s: State, i: number) {
 
 /** The node ids the raid took, as the island counts them (a record from before the front took none). */
 export const capturedIds = (s: { stats: { captured?: NodeId[] } }): NodeId[] => (s.stats.captured ?? []).filter((id, k, all) => nodeIndex(id) >= 0 && all.indexOf(id) === k);
+
+/**
+ * Contested coastal hubs whose capture was started against a real neighbour but not finished
+ * (TKT-201): each shore and that neighbour's island code, for the defender's 守りきった notice.
+ */
+export function contestedFailed(s: {
+  stats: { captured?: NodeId[]; contestedTried?: { id: NodeId; owner: string }[] };
+}): { shore: NodeId; owner: string }[] {
+  const got = new Set(capturedIds(s));
+  const seen = new Set<string>();
+  const out: { shore: NodeId; owner: string }[] = [];
+  for (const t of s.stats.contestedTried ?? []) {
+    if (got.has(t.id) || seen.has(t.id) || !isContestedShore(t.id)) continue;
+    seen.add(t.id);
+    out.push({ shore: t.id, owner: t.owner });
+  }
+  return out;
+}
 
 /** A node has just turned the player's: the enemy's counter-attack on it is due `COUNTER.delay` seconds on (sim/battle.ts). */
 export function dueCounter(b: Battle, i: number) {

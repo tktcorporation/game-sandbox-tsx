@@ -223,8 +223,10 @@ export type IslandOp =
   | { t: "whois"; player: string }
   | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[]; x2?: true }
   | { t: "assault"; from: string; id: number; won: boolean }
-  /** Mirror contested ownership onto this island's shore (方向 A): set hold to rival:owner or own. */
-  | { t: "contestedMirror"; shore: string; owner: string; at: number }
+  /** Mirror contested ownership onto this island's shore (方向 A): set hold to rival:owner or own. `name` is the owner's player-facing name for the log. */
+  | { t: "contestedMirror"; shore: string; owner: string; name?: string; at: number }
+  /** Failed contested attack on this island's shore (TKT-201): log 守りきった for the defender. */
+  | { t: "contestedDefend"; shore: string; from: Attacker; at: number }
   | { t: "ping"; player: string; name: string; x: number; z: number }
   | { t: "aid"; from: Attacker; poi: string; kind: string };
 
@@ -597,13 +599,23 @@ function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState 
  * again from the island as reported: a raid stands every garrison whole.
  */
 /**
- * Owner's report. Returns contested shores just retaken (for neighbour mirror sync) and any that
- * were refused for same-day shield.
+ * Owner's report. Returns contested shores that became the owner's this report (for neighbour mirror
+ * sync: foe→own and rival→own alike, TKT-201) and any refused for same-day shield.
+ * `contestedRetaken` is kept as the rival→own subset for older API callers.
  */
-function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: number): { contestedRetaken: { shore: string; from: string }[]; shielded: string[] } {
+function report(
+  s: IslandState,
+  op: Extract<IslandOp, { t: "report" }>,
+  now: number,
+): {
+  contestedTaken: { shore: string; from: string | null }[];
+  contestedRetaken: { shore: string; from: string }[];
+  shielded: string[];
+} {
   s.owner.name = op.player.name;
   s.factory = op.factory;
   s.day = op.day;
+  const contestedTaken: { shore: string; from: string | null }[] = [];
   const contestedRetaken: { shore: string; from: string }[] = [];
   const shielded: string[] = [];
   op.holds.forEach((h, i) => {
@@ -619,8 +631,18 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
       const gone = s.expeditions.filter((e) => e.target === i);
       s.expeditions = s.expeditions.filter((e) => e.target !== i);
       appendLog(s, now, "retaken", i, gone[0]?.by ?? { code: from, name: "" });
-      if (isContestedShore(NODE_IDS[i])) contestedRetaken.push({ shore: NODE_IDS[i], from });
-    } else if (h === "foe" || h === "own") s.holds[i] = h;
+      if (isContestedShore(NODE_IDS[i])) {
+        contestedTaken.push({ shore: NODE_IDS[i], from });
+        contestedRetaken.push({ shore: NODE_IDS[i], from });
+      }
+    } else if (h === "foe" || h === "own") {
+      const was = cur;
+      s.holds[i] = h;
+      // Contested shore claimed from the enemy (方向 A / TKT-201): mirror onto this week's neighbour.
+      if (h === "own" && was !== "own" && isContestedShore(NODE_IDS[i]) && op.retaken.includes(NODE_IDS[i])) {
+        contestedTaken.push({ shore: NODE_IDS[i], from: null });
+      }
+    }
   });
   // What the raid made of the expeditions it took in, while its lease stands; a report after it ran out says nothing of them.
   const live = s.lease && now < s.lease.until ? s.lease.ids : [];
@@ -681,7 +703,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
     // One held back as the report lands starts its node's fight when it may attack (`tick()`).
     else if (e.arrived && !e.holding) e.waiting = true;
   }
-  return { contestedRetaken, shielded };
+  return { contestedTaken, contestedRetaken, shielded };
 }
 
 /**
@@ -749,10 +771,23 @@ function assault(s: IslandState, from: string, id: number, won: boolean, now: nu
  * Mirror a contested hub onto this island: if `owner` is this island's code, shore becomes own;
  * otherwise rival:owner. Applies same-day shield. Refuses when already shielded today.
  */
-function contestedMirror(s: IslandState, shore: string, owner: string, at: number): { status: number; body: unknown } {
+/**
+ * Defender notice for a failed contested attack (TKT-201): appends `wiped` so the owner's sync
+ * shows 「{誰}が{拠点}を攻めた · 守りきった」 and awards `TROPHY.defend`. Holds unchanged.
+ */
+function contestedDefend(s: IslandState, shore: string, from: Attacker, at: number): { status: number; body: unknown } {
+  const i = NODE_IDS.indexOf(shore);
+  if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
+  if (!from?.code || typeof from.name !== "string") return { status: 400, body: fail("bad-request") };
+  appendLog(s, at, "wiped", i, { code: from.code, name: from.name.trim().slice(0, 24) });
+  return { status: 200, body: { ok: true } };
+}
+
+function contestedMirror(s: IslandState, shore: string, owner: string, at: number, name = ""): { status: number; body: unknown } {
   const i = NODE_IDS.indexOf(shore);
   if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
   const next: PoiHold = owner === s.owner.code ? "own" : rivalHold(owner);
+  const who = { code: owner, name: name.trim().slice(0, 24) };
   if (s.holds[i] === next) {
     shieldNode(s, i, at);
     return { status: 200, body: { ok: true, hold: s.holds[i], idempotent: true } };
@@ -763,7 +798,7 @@ function contestedMirror(s: IslandState, shore: string, owner: string, at: numbe
   s.expeditions = s.expeditions.filter((e) => e.target !== i);
   // Shield without counting as an expedition day-take (appendLog "taken" would bump perDay).
   shieldNode(s, i, at);
-  s.log.push({ seq: ++s.seq, at, t: owner === s.owner.code ? "retaken" : "taken", node: shore, by: { code: owner, name: "" } });
+  s.log.push({ seq: ++s.seq, at, t: owner === s.owner.code ? "retaken" : "taken", node: shore, by: who });
   if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);
   return { status: 200, body: { ok: true, hold: s.holds[i] } };
 }
@@ -795,10 +830,18 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     if (s.owner.id !== op.player.id) return done(403, fail("not-owner"));
     op.holds = op.holds.map(normalizeHold);
     const r = report(s, op, now);
-    return done(200, { ok: true, holds: s.holds, contestedRetaken: r.contestedRetaken, shielded: r.shielded }, true);
+    return done(
+      200,
+      { ok: true, holds: s.holds, contestedTaken: r.contestedTaken, contestedRetaken: r.contestedRetaken, shielded: r.shielded },
+      true,
+    );
   }
   if (op.t === "contestedMirror") {
-    const r = contestedMirror(s, op.shore, op.owner, op.at);
+    const r = contestedMirror(s, op.shore, op.owner, op.at, op.name);
+    return done(r.status, r.body, r.status === 200);
+  }
+  if (op.t === "contestedDefend") {
+    const r = contestedDefend(s, op.shore, op.from, op.at);
     return done(r.status, r.body, r.status === 200);
   }
   if (op.t === "lease") {
@@ -873,6 +916,23 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   s.expeditions.push(e);
   appendLog(s, now, "noticed", i, e.by);
   return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt, ...(op.x2 ? { x2: true } : {}) }, true);
+}
+
+/** Failed contested attacks in a report (TKT-201), or null when unreadable. Left out, none. */
+export function parseContestedFailed(raw: unknown): { shore: string; owner: string }[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > CONTESTED_SHORES.length) return null;
+  const out: { shore: string; owner: string }[] = [];
+  const seen = new Set<string>();
+  for (const r of raw) {
+    if (!r || typeof r !== "object") return null;
+    const o = r as Record<string, unknown>;
+    if (typeof o.shore !== "string" || !isContestedShore(o.shore) || typeof o.owner !== "string" || !o.owner) return null;
+    if (seen.has(o.shore)) continue;
+    seen.add(o.shore);
+    out.push({ shore: o.shore, owner: o.owner.slice(0, 16) });
+  }
+  return out;
 }
 
 /** The nodes a report names as taken back in the raid, or null: node ids, each once, at most one per node. Left out, none. */

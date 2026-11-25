@@ -14,6 +14,7 @@ import { aiByCode, aiChanges, aiIncoming, aiLent, aiRefresh, aiView, withAi } fr
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import { pushNews } from "./view/copy";
+import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import type { NodeId } from "./sim/map";
 
 /** An answer: the body of a success, or why it failed. */
@@ -217,6 +218,11 @@ export interface RaidReport {
   parcels?: { poi: string; kind: string; from: { code: string; name: string } }[];
   /** Aid parcel ids taken this raid. */
   takenParcels?: number[];
+  /**
+   * Contested hubs whose 核 · 制圧 was started against a real neighbour but not finished
+   * (TKT-201): defender gets 「… · 守りきった」.
+   */
+  contestedFailed?: { shore: string; owner: string }[];
 }
 
 /**
@@ -322,6 +328,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         ...(raid?.lent.length ? { lent: raid.lent } : {}),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
+        ...(raid?.contestedFailed?.length ? { contestedFailed: raid.contestedFailed } : {}),
       }),
     });
     if (!r.ok) return r;
@@ -353,10 +360,13 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
  * pending list): for an answer whose holds must not be taken now. It leaves which sync was last taken
  * as it was, so an older sync's answer can still be taken whole.
  */
-export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }).profile;
+const tropLookup = (p: Profile) => rivalTrophiesLookup(p.trophies ?? TROPHY.start, trophiesTable(neighboursFor(p)));
+
+export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }, tropLookup(p)).profile;
 
 export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[]; notes: string[] } {
-  const r = s.ticket < applied ? applySync(p, { reported: s.synced.reported }) : ((applied = s.ticket), applySync(p, s.synced));
+  const lookup = tropLookup(p);
+  const r = s.ticket < applied ? applySync(p, { reported: s.synced.reported }, lookup) : ((applied = s.ticket), applySync(p, s.synced, lookup));
   // トロフィーの増減は必ず知らせの一行と一緒に Profile.news へ残す.
   if (!r.notes.length) return { profile: r.profile, news: r.news, notes: r.notes };
   return { profile: { ...r.profile, news: pushNews(r.profile.news ?? [], r.notes) }, news: r.news, notes: r.notes };

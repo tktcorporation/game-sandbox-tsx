@@ -18,7 +18,8 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { handleApi, MAX_BODY, parseIslandPost, type ApiEnv, type Db, type DbStatement } from "../worker/api";
+import { handleApi, MAX_BODY, parseIslandPost, type ApiEnv, type Db, type DbStatement, type IslandNamespace } from "../worker/api";
+import { islandOp, NODE_IDS, type IslandOp, type IslandState } from "../worker/island";
 import { NODES } from "../src/ringfall/sim/map";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { newRun, starterKit } from "../src/ringfall/sim/state";
@@ -26,7 +27,8 @@ import { holds } from "../src/ringfall/meta/island";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { islandPost } from "../src/ringfall/meta/summary";
 import { defaultName, loadIdentity, parseIdentity } from "../src/ringfall/meta/identity";
-import { parseNeighbours } from "../src/ringfall/meta/neighbours";
+import { NEIGHBOUR_SLOTS, parseNeighbours } from "../src/ringfall/meta/neighbours";
+import { picksAreMutual, type PairPick } from "../worker/neighbour-pair";
 
 /** D1's statement over node:sqlite: bind, then run / first / all. */
 class Statement implements DbStatement {
@@ -328,6 +330,96 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(put.status === 405, `neighbours: a POST answered ${put.status}, not 405`);
   const bare = await answer({}, new Request(BASE + "/api/neighbours", { headers: { authorization: `Bearer ${ids[0]}` } }));
   check(bare.status === 202, `neighbours: no database answered ${bare.status}, not 202`);
+
+  // Mutual pairing (TKT-201): each listed neighbour also lists the owner this week.
+  const week = Math.floor(T / (7 * 24 * 3600 * 1000));
+  const ownerPicks = sqlite
+    .prepare("SELECT slot, code FROM neighbour_picks WHERE player_id = ?1 AND week = ?2")
+    .all(ids[0], week) as { slot: number; code: string }[];
+  const byCode = new Map<string, PairPick[]>();
+  byCode.set("AB0000", ownerPicks);
+  for (const p of ownerPicks) {
+    const pid = (sqlite.prepare("SELECT player_id AS id FROM islands WHERE code = ?1").get(p.code) as { id: string }).id;
+    const theirs = sqlite.prepare("SELECT slot, code FROM neighbour_picks WHERE player_id = ?1 AND week = ?2").all(pid, week) as PairPick[];
+    byCode.set(p.code, theirs);
+  }
+  check(picksAreMutual("AB0000", ownerPicks, byCode), `neighbours: draw is not mutual (${JSON.stringify([...byCode])})`);
+  // Asking a listed neighbour returns the owner among their picks.
+  const neighId = (sqlite.prepare("SELECT player_id AS id FROM islands WHERE code = ?1").get(ownerPicks[0]!.code) as { id: string }).id;
+  const back = await ask(neighId);
+  const backList = ((back.body as { neighbours?: { code: string }[] }).neighbours ?? []).map((n) => n.code);
+  check(backList.includes("AB0000"), `neighbours: reciprocal missing owner (got ${backList.join(",")})`);
+}
+
+// --- contested write to opponent island (TKT-201): foe→own on A mirrors rival:A onto B's facing shore
+{
+  const DAY = 24 * 3600 * 1000;
+  const T = 1_900_000_000_000;
+  const idA = "0f8fad5b-d9cb-469f-a165-aaaaaaaaaaa1";
+  const idB = "0f8fad5b-d9cb-469f-a165-aaaaaaaaaaa2";
+  const codeA = "CTSTA1";
+  const codeB = "CTSTB2";
+  for (const [id, name, code, trop] of [
+    [idA, "ツバキ", codeA, 1000],
+    [idB, "アサヒ", codeB, 1000],
+  ] as const) {
+    await answer(
+      env,
+      post({ player: { id, name }, island: { day: 5, held: 3, enemy: 18, rival: 0, factory: 1, strength: 1, trophies: trop } }),
+      T,
+    );
+    sqlite.prepare("INSERT INTO islands (code, player_id, created_at) VALUES (?1, ?2, ?3)").run(code, id, T);
+  }
+  const week = Math.floor(T / (7 * 24 * 3600 * 1000));
+  // Mutual picks: A slot 0 ↔ B slot 0 (station faces station).
+  sqlite.prepare("INSERT INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, 0, ?3)").run(idA, week, codeB);
+  sqlite.prepare("INSERT INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, 0, ?3)").run(idB, week, codeA);
+
+  const mem = new Map<string, IslandState | null>();
+  const ns: IslandNamespace = {
+    idFromName: (name) => name,
+    get: (id) => ({
+      async fetch(req: Request) {
+        const { op, now } = (await req.json()) as { op: IslandOp; now: number };
+        const r = islandOp(mem.get(id as string) ?? null, op, now);
+        mem.set(id as string, r.state);
+        return Response.json(r.body, { status: r.status });
+      },
+    }),
+  };
+  // Claim both islands into the DO stand-in via the same ops the Worker uses.
+  mem.set(codeA, islandOp(null, { t: "claim", player: { id: idA, name: "ツバキ" }, code: codeA }, T).state);
+  mem.set(codeB, islandOp(null, { t: "claim", player: { id: idB, name: "アサヒ" }, code: codeB }, T).state);
+  // Seed A with foe station (and own supply so the report is a normal mid-game island).
+  const seedA = mem.get(codeA)!;
+  seedA.holds = NODE_IDS.map((id) => (id === "supply" ? "own" : "foe"));
+  mem.set(codeA, seedA);
+  const holds = NODE_IDS.map((id) => (id === "station" || id === "supply" ? "own" : "foe"));
+  const rep = await answer(
+    { DB: env.DB, ISLAND: ns },
+    new Request(BASE + `/api/islands/${codeA}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        player: { id: idA, name: "ツバキ" },
+        holds,
+        retaken: ["station"],
+        factory: 1,
+        day: 5,
+      }),
+    }),
+    T + 1000,
+  );
+  check(rep.status === 200, `contested write: report ${rep.status}`);
+  const bIsle = mem.get(codeB)!;
+  const station = NODE_IDS.indexOf("station");
+  check(bIsle.holds[station] === `rival:${codeA}`, `contested write: B station is ${bIsle.holds[station]}, want rival:${codeA}`);
+  check(NEIGHBOUR_SLOTS[0]!.shore === "station", "contested write: slot 0 is not station");
+  check(
+    bIsle.log.some((e) => e.t === "taken" && e.node === "station" && e.by.code === codeA && e.by.name === "ツバキ"),
+    `contested write: B log missing ツバキ (${JSON.stringify(bIsle.log.slice(-2))})`,
+  );
+  console.log(`contested write: A took station → B holds rival:${codeA} (log names ツバキ)`);
 }
 
 if (errors.length) {

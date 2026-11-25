@@ -1,10 +1,11 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { TROPHY } from "../src/ringfall/meta/trophies";
-import { parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
+import { parseContestedFailed, parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
 import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
+import { planMutualPicks, type PairCandidate, type PairPick } from "./neighbour-pair";
 
 /*
  * RINGFALL's API under /api/ (docs/ringfall/multiplayer.md, サーバー). A plain handler of a request
@@ -243,8 +244,19 @@ export const NEIGHBOURS = { count: 4, pool: 24, weekMs: 7 * 24 * 3600 * 1000, ac
 /**
  * After a contested coastal hub flips on `aCode`, mirror ownership onto the neighbour `bCode`'s
  * shore that faces `aCode` this week, and record the shared owner in contested_holds.
+ * Mutual weekly pairing (TKT-201) keeps each listed on the other; prefer B's pick of A, else A's
+ * slot of B (same sea slot → same shore id faces the pair).
  */
-async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string, bCode: string, aShore: string, ownerCode: string, now: number) {
+async function syncContestedPair(
+  env: ApiEnv,
+  ns: IslandNamespace,
+  aCode: string,
+  bCode: string,
+  aShore: string,
+  ownerCode: string,
+  now: number,
+  ownerName = "",
+) {
   const db = env.DB;
   if (db) {
     try {
@@ -260,9 +272,7 @@ async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string
     }
   }
   const week = Math.floor(now / NEIGHBOURS.weekMs);
-  // Mirror only when B's weekly picks name A (an explicit shore pair). Do not fall back to the
-  // same node id — B's same-named shore may face a different neighbour C (Codex / TKT-195).
-  const row = (
+  const theirPick = (
     await db
       ?.prepare(
         "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
@@ -271,9 +281,80 @@ async function syncContestedPair(env: ApiEnv, ns: IslandNamespace, aCode: string
       .bind(bCode, week, aCode)
       .all<{ slot: number }>()
   )?.results[0];
-  const theirShore = row !== undefined && NEIGHBOUR_SLOTS[row.slot] ? NEIGHBOUR_SLOTS[row.slot].shore : undefined;
+  let theirShore = theirPick !== undefined && NEIGHBOUR_SLOTS[theirPick.slot] ? NEIGHBOUR_SLOTS[theirPick.slot].shore : undefined;
+  if (!theirShore) {
+    // Same-slot fall back when reciprocal row is mid-write: A's slot facing B.
+    const ours = (
+      await db
+        ?.prepare(
+          "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
+            "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
+        )
+        .bind(aCode, week, bCode)
+        .all<{ slot: number }>()
+    )?.results[0];
+    theirShore = ours !== undefined && NEIGHBOUR_SLOTS[ours.slot] ? NEIGHBOUR_SLOTS[ours.slot].shore : undefined;
+  }
   if (!theirShore) return;
-  await ask(ns, bCode, { t: "contestedMirror", shore: theirShore, owner: ownerCode, at: now }, now);
+  await ask(ns, bCode, { t: "contestedMirror", shore: theirShore, owner: ownerCode, name: ownerName, at: now }, now);
+}
+
+/**
+ * This week's neighbour whose sea slot faces `shore` on the owner's island, or null.
+ */
+async function neighbourFacingShore(env: ApiEnv, playerId: string, shore: string, now: number): Promise<string | null> {
+  const slot = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === shore);
+  if (slot < 0 || !env.DB) return null;
+  const week = Math.floor(now / NEIGHBOURS.weekMs);
+  const row = (
+    await env.DB.prepare("SELECT code FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 AND slot = ?3")
+      .bind(playerId, week, slot)
+      .all<{ code: string }>()
+  ).results[0];
+  return row?.code ?? null;
+}
+
+/**
+ * Shore on `defenderCode`'s island that faces `attackerCode` this week (mutual pairing → same slot).
+ */
+async function shoreFacingAttacker(env: ApiEnv, defenderCode: string, attackerCode: string, fallbackShore: string, now: number): Promise<string | undefined> {
+  const db = env.DB;
+  const week = Math.floor(now / NEIGHBOURS.weekMs);
+  const theirPick = (
+    await db
+      ?.prepare(
+        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
+          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
+      )
+      .bind(defenderCode, week, attackerCode)
+      .all<{ slot: number }>()
+  )?.results[0];
+  if (theirPick !== undefined && NEIGHBOUR_SLOTS[theirPick.slot]) return NEIGHBOUR_SLOTS[theirPick.slot].shore;
+  const ours = (
+    await db
+      ?.prepare(
+        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
+          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
+      )
+      .bind(attackerCode, week, defenderCode)
+      .all<{ slot: number }>()
+  )?.results[0];
+  if (ours !== undefined && NEIGHBOUR_SLOTS[ours.slot]) return NEIGHBOUR_SLOTS[ours.slot].shore;
+  return NEIGHBOUR_SLOTS.some((s) => s.shore === fallbackShore) ? fallbackShore : undefined;
+}
+
+/** Tell the defender a contested attack failed (守りきった). */
+async function notifyContestedDefend(
+  env: ApiEnv,
+  ns: IslandNamespace,
+  attackerCode: string,
+  attackerName: string,
+  fail: { shore: string; owner: string },
+  now: number,
+) {
+  const theirShore = await shoreFacingAttacker(env, fail.owner, attackerCode, fail.shore, now);
+  if (!theirShore) return;
+  await ask(ns, fail.owner, { t: "contestedDefend", shore: theirShore, from: { code: attackerCode, name: attackerName }, at: now }, now);
 }
 
 /** A neighbour as the owner's camp shows it: whose island, its code, how far its owner has come, and what they did last. */
@@ -296,18 +377,12 @@ export interface Neighbour {
   slot?: number;
 }
 
-const mix32 = (s: string) => {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  return h >>> 0;
-};
-
 /**
  * The owner's neighbours (`GET /api/neighbours`, the owner's id in the header): islands whose owners
- * played in the last two weeks, nearest in trophies to the owner's (方向 A / TKT-195), a few of the
- * nearest drawn by a hash of the owner, the island and the week. The draw is kept for the week, each
- * pick in its slot at sea (`neighbour_picks`), so trophies moving in the week neither swap a neighbour
- * nor move one onto another sea route; what is shown of each (nodes held, its last raid) is read live.
+ * played in the last two weeks, nearest in trophies to the owner's (方向 A / TKT-195), drawn as a
+ * **mutual** set for the week (TKT-201: if A lists B, B lists A). Kept in `neighbour_picks` so
+ * trophies moving mid-week neither swap a neighbour nor move one onto another sea route; what is
+ * shown of each (nodes held, its last raid) is read live.
  */
 async function neighbours(env: ApiEnv, player: string, now: number): Promise<Response> {
   const db = env.DB;
@@ -324,25 +399,43 @@ async function neighbours(env: ApiEnv, player: string, now: number): Promise<Res
     const kept = async () => (await db.prepare("SELECT slot, code FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 ORDER BY slot").bind(player, week).all<{ slot: number; code: string }>()).results;
     let picks = await kept();
     if (!picks.length) {
-      // The week's draw: nearness in trophies first; the week's hash shuffles only islands within a couple of trophy bands of each other.
       const trop = mine.trophies ?? TROPHY.start;
       const rows = (
         await db
           .prepare(
-            "SELECT i.code AS code, COALESCE(s.trophies, ?5) AS trophies FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
+            "SELECT i.code AS code, i.player_id AS playerId, COALESCE(s.trophies, ?5) AS trophies FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
               "WHERE i.player_id != ?1 AND s.updated_at > ?2 ORDER BY abs(COALESCE(s.trophies, ?5) - ?3), s.updated_at DESC LIMIT ?4",
           )
           .bind(player, now - NEIGHBOURS.activeMs, trop, NEIGHBOURS.pool, TROPHY.start)
-          .all<{ code: string; trophies: number }>()
+          .all<{ code: string; playerId: string; trophies: number }>()
       ).results;
-      const drawn = rows
-        .map((r) => ({ r, key: Math.abs(r.trophies - trop) / 50 + ((mix32(`${mine.code}:${r.code}:${week}`) % 1000) / 1000) * 2 }))
-        .sort((a, b) => a.key - b.key)
-        .slice(0, NEIGHBOURS.count);
-      // Kept for the week (a draw that raced another keeps the first), and last weeks' let go.
+      const pool: PairCandidate[] = rows.map((r) => ({ code: r.code, playerId: r.playerId, trophies: r.trophies }));
+      // Existing picks of candidates this week (so we prefer already-mutual and skip full weeks).
+      const existingByPlayer = new Map<string, PairPick[]>();
+      if (pool.length) {
+        const ids = pool.map((c) => c.playerId);
+        const existing = (
+          await db
+            .prepare(
+              `SELECT player_id AS playerId, slot, code FROM neighbour_picks WHERE week = ?1 AND player_id IN (${ids.map((_, k) => `?${k + 2}`).join(", ")})`,
+            )
+            .bind(week, ...ids)
+            .all<{ playerId: string; slot: number; code: string }>()
+        ).results;
+        for (const e of existing) {
+          const list = existingByPlayer.get(e.playerId) ?? [];
+          list.push({ slot: e.slot, code: e.code });
+          existingByPlayer.set(e.playerId, list);
+        }
+      }
+      const planned = planMutualPicks({ code: mine.code, trophies: trop }, pool, week, existingByPlayer, NEIGHBOURS.count);
+      // Kept for the week (a draw that raced another keeps the first), reciprocal INSERT OR IGNORE, old weeks let go.
       await db.batch([
         db.prepare("DELETE FROM neighbour_picks WHERE player_id = ?1 AND week < ?2").bind(player, week),
-        ...drawn.map(({ r }, slot) => db.prepare("INSERT OR IGNORE INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, ?3, ?4)").bind(player, week, slot, r.code)),
+        ...planned.self.map((p) => db.prepare("INSERT OR IGNORE INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, ?3, ?4)").bind(player, week, p.slot, p.code)),
+        ...planned.reciprocal.map((r) =>
+          db.prepare("INSERT OR IGNORE INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, ?3, ?4)").bind(r.playerId, week, r.slot, r.code),
+        ),
       ]);
       picks = await kept();
     }
@@ -430,15 +523,29 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const lent = parseLent(raw.lent);
     const parcels = parseParcels(raw.parcels);
     const takenParcels = parseTakenParcels(raw.takenParcels);
-    if (!player || !holds || !retaken || !lent || !parcels || !takenParcels || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    const contestedFailed = parseContestedFailed(raw.contestedFailed);
+    if (!player || !holds || !retaken || !lent || !parcels || !takenParcels || !contestedFailed || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
     const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, parcels, takenParcels }, now);
     if (r.status === 200) {
       await ownCode(env, code, player.id, now);
-      // Contested pair sync (方向 A): retaken coastal hubs flip the neighbour's facing shore too.
+      // Contested pair sync (方向 A / TKT-201): any contested shore that became own flips the
+      // neighbour's facing shore (foe→own uses this week's pick; rival→own uses the previous holder).
       try {
-        const body = (await r.clone().json()) as { contestedRetaken?: { shore: string; from: string }[] };
-        for (const c of body.contestedRetaken ?? []) {
-          await syncContestedPair(env, ns, code, c.from, c.shore, code, now);
+        const body = (await r.clone().json()) as {
+          contestedTaken?: { shore: string; from: string | null }[];
+          contestedRetaken?: { shore: string; from: string }[];
+        };
+        // Prefer contestedTaken (foe + rival); fall back to contestedRetaken for older island DO builds.
+        const taken =
+          body.contestedTaken ??
+          (body.contestedRetaken ?? []).map((c) => ({ shore: c.shore, from: c.from as string | null }));
+        for (const c of taken) {
+          const neighbour = c.from ?? (await neighbourFacingShore(env, player.id, c.shore, now));
+          if (!neighbour) continue;
+          await syncContestedPair(env, ns, code, neighbour, c.shore, code, now, player.name);
+        }
+        for (const f of contestedFailed) {
+          await notifyContestedDefend(env, ns, code, player.name, f, now);
         }
       } catch {
         /* mirror best-effort; report already succeeded */
@@ -471,7 +578,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     if (ar.status === 200 && raw.won) {
       try {
         const body = (await ar.clone().json()) as { contested?: { shore: string; owner: string } };
-        if (body.contested) await syncContestedPair(env, ns, code, fromCode, body.contested.shore, fromCode, now);
+        if (body.contested) await syncContestedPair(env, ns, code, fromCode, body.contested.shore, fromCode, now, name);
       } catch {
         /* best-effort */
       }

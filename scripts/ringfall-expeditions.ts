@@ -654,10 +654,24 @@ const T2 = T1 + 400_000;
     nextDay,
   );
   check(shLater.status === 200 && shIsle.holds[station] === "own", "shield: next-day retake of station refused");
+  // Contested take from foe (TKT-201): report returns contestedTaken with from: null.
+  const foeIsle = island({ station: "foe", supply: "own" }, 0);
+  const foeTake = op(
+    foeIsle,
+    { t: "report", player: A, retaken: ["station"], holds: holdsWith({ station: "own", supply: "own" }) as IslandState["holds"], factory: 0, day: 52 },
+    nextDay + DAY,
+  );
+  check(foeTake.status === 200 && foeIsle.holds[station] === "own", "foe take: station not own");
+  const foeBody = foeTake.body as { contestedTaken?: { shore: string; from: string | null }[] };
+  check(
+    (foeBody.contestedTaken ?? []).some((c) => c.shore === "station" && c.from === null),
+    `foe take: contestedTaken missing station/null (${JSON.stringify(foeBody.contestedTaken)})`,
+  );
   // Contested mirror: neighbour's facing shore becomes rival:owner (or own).
   const mir = island({ station: "own", supply: "own" }, 0);
-  const mirSet = op(mir, { t: "contestedMirror", shore: "station", owner: B.code, at: T1 }, T1);
+  const mirSet = op(mir, { t: "contestedMirror", shore: "station", owner: B.code, name: B.name, at: T1 }, T1);
   check(mirSet.status === 200 && mir.holds[station] === `rival:${B.code}` && mir.shielded?.nodes.includes(station), "mirror: set rival hold failed");
+  check(mir.log.some((e) => e.t === "taken" && e.by.code === B.code && e.by.name === B.name), "mirror: log missing attacker name");
   const mirAgain = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + 1000 }, T1 + 1000);
   check(mirAgain.status === 409 && (mirAgain.body as { error?: string }).error === "shielded", "mirror: same-day flip was allowed");
   const mirFlip = op(mir, { t: "contestedMirror", shore: "station", owner: A.code, at: T1 + DAY }, T1 + DAY);
@@ -701,6 +715,16 @@ const T2 = T1 + 400_000;
     "shield lent: wipe+retaken bypassed same-day shield",
   );
   console.log(`shield: station shielded then retaken next day; mirror flip blocked same day`);
+
+  // Contested defend notice (TKT-201): failed attack logs wiped with attacker name.
+  const defIsle = island({ station: "own", supply: "own" }, 0);
+  const def = op(defIsle, { t: "contestedDefend", shore: "station", from: { code: B.code, name: B.name }, at: T1 + 2 * DAY }, T1 + 2 * DAY);
+  check(def.status === 200, "defend: contestedDefend refused");
+  check(
+    defIsle.log.some((e) => e.t === "wiped" && e.node === "station" && e.by.code === B.code && e.by.name === B.name),
+    `defend: wiped log missing (${JSON.stringify(defIsle.log.slice(-1))})`,
+  );
+  console.log(`defend: ${B.name} failed → wiped log on defender`);
 }
 
 if (errors.length) {

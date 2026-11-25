@@ -7,10 +7,11 @@ import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, ty
 import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
-import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
+import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { poisWith } from "./meta/hideout";
 import { pouchSlots } from "./meta/hideout";
@@ -281,7 +282,7 @@ function onEvent(e: GameEvent, s: State) {
     if (fresh !== hub.profile) hub.update(fresh);
     const before = hub.profile;
     profileBefore = before;
-    const settled = settle(before, s);
+    const settled = settle(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before))));
     settlement = settled;
     hub.reload(settled.profile);
     saveProfile(hub.profile);
@@ -366,6 +367,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     // Defence stock from deposits this raid (silent; no separate "aid" verb).
     parcels: who.code ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
+    contestedFailed: contestedFailed(settled),
   };
   raidLent = [];
   void syncOwn(p, true, raid).then((r) => {
