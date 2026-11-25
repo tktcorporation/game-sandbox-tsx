@@ -1551,8 +1551,14 @@ body.camp #pause .keys .raid {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 0;
+  padding: 4px 0 4px 8px;
   border-bottom: 1px solid rgb(var(--white-rgb) / 0.08);
+  border-left: 3px solid var(--c, var(--r0));
+}
+#organize .org-row .chip {
+  border-left: 0;
+  padding-left: 0;
+  background: transparent;
 }
 #organize .org-acts {
   display: flex;
@@ -1742,7 +1748,7 @@ body.touch #hub-close kbd {
 .hub-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow-y: auto;
   min-height: 0;
   padding-right: 4px;
@@ -1753,14 +1759,15 @@ body.touch #hub-close kbd {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto;
-  column-gap: 12px;
+  column-gap: 10px;
   align-items: center;
   text-align: left;
-  font-size: 16px;
-  padding: 7px 12px;
+  font-size: 14px;
+  padding: 4px 10px 4px 8px;
   background: var(--plate);
   color: var(--white);
   box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.12);
+  border-left: 3px solid var(--c, var(--r0));
 }
 #hub .item:hover:not(:disabled) {
   transform: none;
@@ -1788,7 +1795,7 @@ body.touch #hub-close kbd {
   grid-column: 2;
   grid-row: 1 / 3;
   font-family: var(--num);
-  font-size: 18px;
+  font-size: 16px;
   color: var(--hot);
 }
 .hub-list .slot {
@@ -2186,8 +2193,9 @@ body.touch .hub-head h2 {
   font-size: 20px;
 }
 body.touch #hub .item {
-  font-size: 14px;
-  padding: 5px 10px;
+  font-size: 13px;
+  padding: 3px 8px 3px 6px;
+  column-gap: 8px;
 }
 body.touch .hub-foot button {
   font-size: 16px;
@@ -5271,13 +5279,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .wstats {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px 12px;
+  gap: 1px 8px;
   vertical-align: middle;
 }
 .wstats .g {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-family: var(--num);
   font-weight: 600;
 }
@@ -5286,13 +5294,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 .wstats .g .bar {
   flex: none;
-  width: 34px;
-  height: 5px;
+  width: 28px;
+  height: 4px;
   background: linear-gradient(to right, var(--white) calc(var(--v) * 100%), rgb(var(--white-rgb) / 0.2) 0);
 }
 .wstats .g .n {
-  min-width: 2.6em;
-  font-size: 13px;
+  min-width: 2.2em;
+  font-size: 12px;
   font-weight: 600;
   color: var(--white);
 }
@@ -5386,10 +5394,11 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 /* On a phone the three gauges share one line beside the row's button. */
 body.touch .wstats {
-  gap: 2px 8px;
+  gap: 1px 6px;
 }
 body.touch .wstats .g .bar {
-  width: 26px;
+  width: 22px;
+  height: 3px;
 }
 body.touch .wstats .g .n {
   min-width: 2em;

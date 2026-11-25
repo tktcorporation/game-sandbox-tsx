@@ -962,7 +962,11 @@ export class Hub {
     const text = itemNote(item, body.need);
     const note = text ? `<small class="${body.warn ? "warn" : needed ? "need" : ""}">${text}</small>` : "";
     const inner = `<span style="color:${itemColor(item)}">${starterMark(item)}${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
-    return body.act ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}">${inner}</button>` : `<div class="item">${inner}</div>`;
+    // Left rarity edge via --c (same as 整理 / .chip); name colour stays, no rarity words added.
+    const edge = ` style="--c:${itemShade(item)}"`;
+    return body.act
+      ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}"${edge}>${inner}</button>`
+      : `<div class="item"${edge}>${inner}</div>`;
   }
 
   /** The radio's report on the next raid into the chosen region, or null without a radio. */
@@ -1378,7 +1382,7 @@ export class Hub {
         shelfTiers(p) +
         withSectionHeaders(goods, ({ item, index }) => {
           const n = index[0]!;
-          return `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`;
+          return `<button type="button" class="item" data-act="buy" data-arg="${n}" style="--c:${itemShade(item)}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`;
         });
     } else $("hub-side").innerHTML = this.kitPanel();
     // The shelves' footer: what the next raid takes out, in a line.
