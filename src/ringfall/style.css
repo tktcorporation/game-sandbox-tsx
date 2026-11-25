@@ -1512,10 +1512,37 @@ body.camp #pause .keys .raid {
 
 /* --- the base between raids */
 /* --- a camp station's panel, over the camp it stands in */
-#hub {
+#hub,
+#organize {
   place-items: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgb(var(--ink-rgb) / 0.5);
+}
+#organize .org-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgb(var(--white-rgb) / 0.08);
+}
+#organize .org-acts {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+#organize .org-acts button {
+  font-size: 13px;
+  padding: 4px 10px;
+}
+#organize .hub-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#organize .hub-foot[hidden] {
+  display: flex;
 }
 .hub-inner {
   display: grid;

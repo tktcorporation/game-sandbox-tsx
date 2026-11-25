@@ -575,6 +575,48 @@ export const needsOrganize = (p: Pick<Profile, "pending">) => (p.pending?.length
 /** Free stash slots (starter weapons take none). */
 export const stashRoom = (p: Pick<Profile, "stash" | "hideout">) => Math.max(0, stashCap(p.hideout) - stashUsed(p));
 
+/**
+ * Sells one pending item during 倉庫の整理. Returns null when the index is out of range.
+ * Credits go to the profile; the item leaves pending.
+ */
+export function sellPending(p: Profile, index: number): { profile: Profile; sold: Item; soldFor: number } | null {
+  const i = p.pending[index];
+  if (!i) return null;
+  const soldFor = sellPrice(i);
+  return {
+    profile: { ...p, cash: p.cash + soldFor, pending: p.pending.filter((_, n) => n !== index) },
+    sold: i,
+    soldFor,
+  };
+}
+
+/**
+ * Sells one stash entry during 倉庫の整理 to free a slot. A starter weapon is not for sale.
+ */
+export function sellForOrganize(p: Profile, index: number): { profile: Profile; sold: Item; soldFor: number } | null {
+  const i = p.stash[index];
+  if (!i || isStarter(i)) return null;
+  const soldFor = sellPrice(i);
+  return {
+    profile: { ...p, cash: p.cash + soldFor, stash: p.stash.filter((_, n) => n !== index) },
+    sold: i,
+    soldFor,
+  };
+}
+
+/**
+ * Moves one pending item into the stash when there is room. Null when full or the index is bad.
+ */
+export function keepPending(p: Profile, index: number): Profile | null {
+  const i = p.pending[index];
+  if (!i || stashRoom(p) <= 0) return null;
+  return {
+    ...p,
+    stash: [...p.stash, i],
+    pending: p.pending.filter((_, n) => n !== index),
+  };
+}
+
 /** Mod kinds as a known list: real ones only, once each, in `MOD_KINDS` order, always with `MOD_START`. */
 export const knownMods = (ids: readonly unknown[]): ModKind[] => MOD_KINDS.filter((k) => MOD_START.includes(k) || ids.includes(k));
 

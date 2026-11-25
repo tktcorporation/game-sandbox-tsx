@@ -1639,8 +1639,10 @@ export class Hud {
             ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span class="learned"><span class="turn">${entryIcon(false)}${entryIcon()}</span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`
             : "") +
           (settled.opened.length ? `<h3>開いた道</h3><p>${settled.opened.map((id) => `<span>${routeIcon(true)}${routeOf(id).name}</span>`).join("")}</p>` : "") +
-          (settled.sold.length
-            ? `<h3>倉庫に入らなかった</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`
+          (settled.pending?.length || settled.sold.length
+            ? settled.soldFor > 0 && !(settled.pending?.length)
+              ? `<h3>${PHRASE.organizeSold}</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`
+              : `<h3>${PHRASE.stashOverflowOrganize}</h3><p><span>${(settled.pending?.length ?? settled.sold.length)} 点 · ${TERM.organize}</span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`
             : "")
         : "") +
       this.analysis(s, settled, known, analysed);

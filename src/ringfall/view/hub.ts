@@ -6,7 +6,7 @@ import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, 
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
 import { departDepots, finaleOpen, islandHolds, liberationStatus, playerNodes, shopRarity, unlocked } from "../meta/island";
@@ -75,6 +75,8 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
  * 施設育成が可能ならそれを案内し、なければ出撃（前線制圧・攻める）を促す。
  */
 export function nextHandFor(p: Profile): string {
+  // 倉庫の整理 waits before any sortie or build tip.
+  if (needsOrganize(p)) return PHRASE.nextOrganize;
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
@@ -665,9 +667,10 @@ export class Hub {
     return this.from ? relayOf(POIS[poiIndex(this.from)].name) : entryOf(this.entry ?? this.profile.entry).name;
   }
 
-  /** Why the chosen start cannot be departed from now (the loadout over the depot's allowance), or "" when it can. */
+  /** Why the chosen start cannot be departed from now (整理待ち, or the loadout over the depot's allowance), or "" when it can. */
   rideRefused(): string {
     this.fixStart();
+    if (needsOrganize(this.profile)) return TERM.organize;
     if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";

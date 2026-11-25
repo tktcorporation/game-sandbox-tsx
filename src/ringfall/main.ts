@@ -10,7 +10,8 @@ import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, raidThreat, settle, type Profile, type Settlement } from "./meta/profile";
+import { analyse, needsOrganize, raidThreat, settle, type Profile, type Settlement } from "./meta/profile";
+import { Organize } from "./view/organize";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds } from "./meta/island";
@@ -78,6 +79,7 @@ function applyLevel(l: Level) {
   world.setRatio(l.ratio);
 }
 const hud = new Hud();
+const organize = new Organize();
 
 let state: State = newRun(Date.now() & 0xffff);
 /** A raid is under way. */
@@ -177,6 +179,11 @@ addEventListener("keydown", (e) => {
     else if (["ArrowRight", "ArrowDown", "KeyD", "Tab"].includes(e.code)) picker.cycle(e.shiftKey && e.code === "Tab" ? -1 : 1);
     else if (["ArrowLeft", "ArrowUp", "KeyA"].includes(e.code)) picker.cycle(-1);
     e.preventDefault();
+    return;
+  }
+  // Esc closes 倉庫の整理 mid-way (it reopens until 確定); pending stays saved.
+  if (e.code === "Escape" && organize.open) {
+    organize.hide();
     return;
   }
   // Esc closes a camp station's panel (the pointer is already free while one is open).
@@ -555,6 +562,21 @@ let analysed: ModKind | null = null;
 const loaded = loadProfile();
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => lock());
+organize.bind((p) => {
+  hub.reload(p);
+  saveProfile(hub.profile);
+  if (settlement) {
+    settlement = {
+      ...settlement,
+      profile: p,
+      pending: p.pending,
+      sold: organize.sold.length ? organize.sold : settlement.sold,
+      soldFor: organize.soldFor || settlement.soldFor,
+    };
+  }
+});
+// Resume 倉庫の整理 after a reload when pending remains.
+if (needsOrganize(hub.profile)) organize.ensure(hub.profile);
 // The game's own islands answer from the profile the page plays (island-net.ts, AI の島).
 useAi(() => hub.profile);
 const campView = new CampView();
@@ -579,7 +601,7 @@ let inside: { x: number; y: number; z: number; yaw: number } | null = null;
 let awaySheetOpen = false;
 let awayBooted = false;
 
-const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen;
+const campFrozen = () => hub.station !== null || departing !== null || fading || awaySheetOpen || organize.open;
 
 /** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
 function fade(on: boolean, now = false) {
@@ -713,6 +735,11 @@ function openPanel(id: StationId) {
 
 /** Puts up the departure: the island with every start on it (the last one chosen), the kit and the objective. */
 function askDepart(walk: boolean) {
+  // 整理待ちのあいだは門から出撃しない。
+  if (needsOrganize(hub.profile)) {
+    organize.show(hub.profile);
+    return;
+  }
   departing = { walk, back: walk ? inside : null };
   // The raid about to start takes in the expeditions on the island; nothing waits on the answer.
   lease = null;
@@ -929,6 +956,7 @@ function finish() {
   fire = ads = adsLatch = false;
   $("banner").className = "";
   hud.show(false);
+  organize.resetSession();
   const next = settlement ? hub.nextHand() : "";
   const expLines = hub.expeditionNews();
   if (settlement?.takenRival?.length) {
@@ -954,6 +982,8 @@ function finish() {
   sound.reset();
   $("results").hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
+  // 倉庫に入りきらない → 整理画面（モンハンの狩り後の整理）。
+  if (needsOrganize(hub.profile)) organize.show(hub.profile);
 }
 
 // Analysing a mod part on the results: its kind is known from now on, and the card says so.
@@ -999,7 +1029,26 @@ $("start").addEventListener("click", openCamp);
 $("depart-go").addEventListener("click", () => answerDepart(true));
 $("depart-cancel").addEventListener("click", () => answerDepart(false));
 $("restart").textContent = TERM.backToCamp;
-$("restart").addEventListener("click", openCamp);
+$("restart").addEventListener("click", () => {
+  // Closing results with pending still opens 倉庫の整理 again.
+  if (needsOrganize(hub.profile)) {
+    organize.show(hub.profile);
+    return;
+  }
+  openCamp();
+});
+$("organize").addEventListener("click", (e) => {
+  const r = organize.click(e.target as HTMLElement, hub.profile);
+  if (!r) return;
+  sfx.click();
+  if (r.done) {
+    // Refresh results with what organize sold, then go back to camp.
+    if (settlement) {
+      hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand(), hub.expeditionNews());
+    }
+    openCamp();
+  }
+});
 // HTML fallback still says 出撃する; depart render overwrites from PHRASE.sortieDo.
 ($("depart-go") as HTMLButtonElement).dataset.copy = PHRASE.sortieDo;
 $("resume").addEventListener("click", () => {

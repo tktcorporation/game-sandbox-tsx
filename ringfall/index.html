@@ -162,6 +162,30 @@
       </div>
     </section>
 
+    <section id="organize" class="screen" hidden>
+      <div class="hub-inner org-inner">
+        <header class="hub-head">
+          <h2 id="org-title"></h2>
+          <div class="hub-cash"><small id="org-count"></small></div>
+          <button id="org-close" class="ghost" type="button" data-org="close">閉じる<kbd>Esc</kbd></button>
+        </header>
+        <div class="hub-cols">
+          <div class="hub-col">
+            <h3 id="org-pending-title"></h3>
+            <div class="hub-list" id="org-pending"></div>
+          </div>
+          <div class="hub-col">
+            <h3 id="org-stash-title"></h3>
+            <div class="hub-list" id="org-stash"></div>
+          </div>
+        </div>
+        <footer class="hub-foot">
+          <span class="hub-foot-note" id="org-hint"></span>
+          <button id="org-confirm" type="button" data-org="confirm" disabled></button>
+        </footer>
+      </div>
+    </section>
+
     <script type="module" src="/src/ringfall/main.ts"></script>
   </body>
 </html>
