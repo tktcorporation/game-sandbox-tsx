@@ -102,8 +102,8 @@ const tipBase = {
 };
 const funded = give(tipBase, HIDEOUT.storage.levels[0]!.items);
 const hand = nextHandFor(funded);
-if (hand !== PHRASE.nextStashRaise) {
-  console.error(`next-hand: expected ${PHRASE.nextStashRaise}, got ${hand}`);
+if (hand !== PHRASE.nextWorkshopRaise) {
+  console.error(`next-hand: expected ${PHRASE.nextWorkshopRaise}, got ${hand}`);
   process.exit(1);
 }
-console.log(`次の一手チェック: 倉庫 Lv1 が作れるとき「${PHRASE.nextStashRaise}」。OK`);
+console.log(`次の一手チェック: 倉庫 Lv1 が作れるとき「${PHRASE.nextWorkshopRaise}」。OK`);

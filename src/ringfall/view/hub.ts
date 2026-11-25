@@ -87,9 +87,8 @@ export function nextHandFor(p: Profile): string {
     return pick ? nextFrontCapture(pick.name) : PHRASE.nextGate;
   }
   if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
-  // 倉庫 capacity is raised only at the shelves (作業場には倉庫カードを置かない).
-  if (canBuild(p, "storage")) return PHRASE.nextStashRaise;
-  if (MODULES.some((m) => m !== "storage" && canBuild(p, m))) return PHRASE.nextWorkshopRaise;
+  // 倉庫を含む隠れ家設備は作業場で上げる（工場は工場）。
+  if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
   const pick = frontPickFor(p);
   return pick ? nextFront(pick.name) : PHRASE.nextGate;
 }
@@ -490,8 +489,6 @@ export class Hub {
     $("hub-side").scrollTop = 0;
     $("hub-stash").scrollTop = 0;
     sfx.tab();
-    // Shelves show the warehouse card open so capacity can be raised where the count is.
-    if (station === "stash") this.module = "storage";
     if (station === "signal") this.newsSeen = true;
     this.render();
     if (station === "signal") this.exped.open();
@@ -904,16 +901,16 @@ export class Hub {
   /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report on the shelves. */
   marks(): Record<StationId, string> {
     const p = this.profile;
-    // 倉庫は倉庫の棚だけの入口: 作業場の ▲ に数えない.
-    const buildable = MODULES.filter((m) => m !== "storage" && canBuild(p, m)).length;
+    // 倉庫を含む隠れ家設備は作業場の ▲ に数える.
+    const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
     // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
     const unread = this.news.length + this.expNews.length + aid;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
-    // Shelves: warehouse growth, and the radio's report (moved here from the removed map table).
-    const stash = [p.hideout.radio ? "無線" : "", canBuild(p, "storage") ? `▲ Lv${p.hideout.storage + 1}` : ""].filter(Boolean).join("・");
+    // Shelves: the radio's report (warehouse growth is at the workshop).
+    const stash = p.hideout.radio ? "無線" : "";
     return { stash, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
@@ -1103,8 +1100,7 @@ export class Hub {
     const next = nextLevel(p.hideout, m);
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
     const state = buildState(p, m);
-    // Shelves keep the warehouse card open (capacity is why the player opened them).
-    const open = this.module === m || (this.station === "stash" && m === "storage");
+    const open = this.module === m;
     const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
     const body = open
@@ -1160,9 +1156,8 @@ export class Hub {
   }
 
   /**
-   * Shelves' side column: the radio's report (when built), the warehouse card (raise capacity
-   * where the count is seen), then the next raid's kit. The workshop still lists every hideout
-   * module, warehouse included.
+   * Shelves' side column: the radio's report (when built), then the next raid's kit.
+   * Warehouse capacity is raised at the workshop, not here.
    */
   private kitPanel(): string {
     const p = this.profile;
@@ -1194,7 +1189,7 @@ export class Hub {
         .join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
       `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`;
-    return `${intelSlot}${room}${this.moduleCard("storage")}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
+    return `${intelSlot}${room}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
   }
 
   /**
@@ -1333,11 +1328,8 @@ export class Hub {
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
-      // 倉庫のレベルは倉庫の棚だけ: 作業場の一覧から外す.
-      $("hub-side").innerHTML =
-        MODULES.filter((m) => m !== "storage")
-          .map((m) => this.moduleCard(m))
-          .join("") + this.routes();
+      // 倉庫を含む隠れ家設備は作業場の一覧で上げる.
+      $("hub-side").innerHTML = MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);
