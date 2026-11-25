@@ -87,9 +87,8 @@ export function nextHandFor(p: Profile): string {
     return pick ? nextFrontCapture(pick.name) : PHRASE.nextGate;
   }
   if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
-  // 倉庫 capacity is raised only at the shelves (作業場には倉庫カードを置かない).
-  if (canBuild(p, "storage")) return PHRASE.nextStashRaise;
-  if (MODULES.some((m) => m !== "storage" && canBuild(p, m))) return PHRASE.nextWorkshopRaise;
+  // 倉庫を含む隠れ家設備は作業場で上げる（工場は工場）。
+  if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
   const pick = frontPickFor(p);
   return pick ? nextFront(pick.name) : PHRASE.nextGate;
 }
@@ -112,6 +111,23 @@ export function itemName(i: Item): string {
     case "tool":
       return TOOLS[i.kind].label;
   }
+}
+
+/**
+ * Warehouse used / cap with a fill bar. When full, warn colour and an optional lock-note
+ * (売るか、作業場で倉庫を上げる) beside the count.
+ */
+export function capMeter(used: number, cap: number, note = ""): string {
+  const full = cap > 0 && used >= cap;
+  const p = cap > 0 ? Math.min(1, used / cap) : 1;
+  const lock = note ? `<span class="lock-note cap-note">${lockIcon()}${note}</span>` : "";
+  return `<span class="cap-line${full ? " full" : ""}">${stashIcon()}${used} / ${cap}${lock}</span><span class="cap-meter${full ? " full" : ""}" style="--p:${p.toFixed(3)}" aria-hidden="true"><i></i></span>`;
+}
+
+/** Full-warehouse lock copy for the count line (empty when not full). */
+export function warehouseFullNote(p: Pick<Profile, "stash" | "hideout">): string {
+  if (stashUsed(p) < stashCap(p.hideout)) return "";
+  return nextLevel(p.hideout, "storage") ? PHRASE.warehouseFullRaise : PHRASE.warehouseFullSell;
 }
 
 /** The gauges' full lengths: a shot's damage, shots a minute, the magazine. */
@@ -188,9 +204,21 @@ export const itemColor = (i: Item) =>
 const itemShade = (i: Item) =>
   i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" || i.t === "tool" ? RARITY_CSS[3] : "var(--white)";
 
-/** Weapons, armour and keys are listed one by one; heals and valuables are counted. */
-function rows(stash: Item[]): { item: Item; index: number[] }[] {
-  const out: { item: Item; index: number[] }[] = [];
+/** Player-facing type headers (棚・屋台・整理). Existing kit / objective words only. */
+export const ITEM_SECTION: Record<Item["t"], string> = {
+  weapon: "武器",
+  armor: "アーマー",
+  key: "鍵",
+  tool: "道具",
+  heal: "回復",
+  valuable: "回収品",
+};
+
+export type StashRow = { item: Item; index: number[] };
+
+/** Weapons, armour and keys are listed one by one; heals, valuables and tools are counted. */
+export function rows(stash: Item[]): StashRow[] {
+  const out: StashRow[] = [];
   stash.forEach((item, n) => {
     if (item.t === "heal" || item.t === "valuable" || item.t === "tool") {
       const row = out.find((r) => r.item.t === item.t && (r.item as { kind: string }).kind === item.kind);
@@ -201,6 +229,18 @@ function rows(stash: Item[]): { item: Item; index: number[] }[] {
   const order = { weapon: 0, armor: 1, key: 2, tool: 3, heal: 4, valuable: 5 };
   // The starter weapons head the weapons.
   return out.sort((a, b) => order[a.item.t] - order[b.item.t] || Number(isStarter(b.item)) - Number(isStarter(a.item)));
+}
+
+/** Inserts a type header before each new `Item.t` group (order from `rows`). */
+export function withSectionHeaders(list: StashRow[], rowHtml: (row: StashRow) => string): string {
+  let last: Item["t"] | null = null;
+  return list
+    .map((row) => {
+      const head = row.item.t !== last ? `<h4 class="item-section">${ITEM_SECTION[row.item.t]}</h4>` : "";
+      last = row.item.t;
+      return head + rowHtml(row);
+    })
+    .join("");
 }
 
 /**
@@ -475,6 +515,11 @@ export class Hub {
       (n) => this.takeNews(n),
     );
     $("hub").addEventListener("click", (e) => {
+      const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-hub-tab]");
+      if (tab?.dataset.hubTab) {
+        this.setTab(tab.dataset.hubTab as "stash" | "side");
+        return;
+      }
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) {
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
@@ -483,15 +528,25 @@ export class Hub {
     });
   }
 
+  /** Narrow layout: which column is shown (stash | side). Wide layout ignores this. */
+  private hubTab: "stash" | "side" = "stash";
+
+  private setTab(tab: "stash" | "side", sound = true) {
+    this.hubTab = tab;
+    $("hub-cols").dataset.tab = tab;
+    $("hub-tab-stash").classList.toggle("on", tab === "stash");
+    $("hub-tab-side").classList.toggle("on", tab === "side");
+    if (sound) sfx.tab();
+  }
+
   open(station: StationId) {
     this.station = station;
     this.load = this.fit(this.load);
     $("hub").hidden = false;
     $("hub-side").scrollTop = 0;
     $("hub-stash").scrollTop = 0;
+    this.setTab("stash", false);
     sfx.tab();
-    // Shelves show the warehouse card open so capacity can be raised where the count is.
-    if (station === "stash") this.module = "storage";
     if (station === "signal") this.newsSeen = true;
     this.render();
     if (station === "signal") this.exped.open();
@@ -904,16 +959,16 @@ export class Hub {
   /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report on the shelves. */
   marks(): Record<StationId, string> {
     const p = this.profile;
-    // 倉庫は倉庫の棚だけの入口: 作業場の ▲ に数えない.
-    const buildable = MODULES.filter((m) => m !== "storage" && canBuild(p, m)).length;
+    // 倉庫を含む隠れ家設備は作業場の ▲ に数える.
+    const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
     // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
     const unread = this.news.length + this.expNews.length + aid;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
-    // Shelves: warehouse growth, and the radio's report (moved here from the removed map table).
-    const stash = [p.hideout.radio ? "無線" : "", canBuild(p, "storage") ? `▲ Lv${p.hideout.storage + 1}` : ""].filter(Boolean).join("・");
+    // Shelves: the radio's report (warehouse growth is at the workshop).
+    const stash = p.hideout.radio ? "無線" : "";
     return { stash, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
@@ -924,7 +979,11 @@ export class Hub {
     const text = itemNote(item, body.need);
     const note = text ? `<small class="${body.warn ? "warn" : needed ? "need" : ""}">${text}</small>` : "";
     const inner = `<span style="color:${itemColor(item)}">${starterMark(item)}${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
-    return body.act ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}">${inner}</button>` : `<div class="item">${inner}</div>`;
+    // Left rarity edge via --c (same as 整理 / .chip); name colour stays, no rarity words added.
+    const edge = ` style="--c:${itemShade(item)}"`;
+    return body.act
+      ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}"${edge}>${inner}</button>`
+      : `<div class="item"${edge}>${inner}</div>`;
   }
 
   /** The radio's report on the next raid into the chosen region, or null without a radio. */
@@ -1103,17 +1162,18 @@ export class Hub {
     const next = nextLevel(p.hideout, m);
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
     const state = buildState(p, m);
-    // Shelves keep the warehouse card open (capacity is why the player opened them).
-    const open = this.module === m || (this.station === "stash" && m === "storage");
+    const open = this.module === m;
     const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
+    // 倉庫 card: current used / cap with the same bar as the shelves.
+    const room = m === "storage" ? `<div class="mod-cap">${capMeter(stashUsed(p), stashCap(p.hideout), warehouseFullNote(p))}</div>` : "";
     const body = open
       ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : ""}</div>`
       : "";
     return (
       `<div class="mod up-card${open ? " open" : ""}" data-mod="${m}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
       `<strong>${MODULE_ICON[m]()}${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
-      `${gain}</button>${body}</div>`
+      `${gain}${room}</button>${body}</div>`
     );
   }
 
@@ -1160,9 +1220,8 @@ export class Hub {
   }
 
   /**
-   * Shelves' side column: the radio's report (when built), the warehouse card (raise capacity
-   * where the count is seen), then the next raid's kit. The workshop still lists every hideout
-   * module, warehouse included.
+   * Shelves' side column: the radio's report (when built), then the next raid's kit.
+   * Warehouse capacity is raised at the workshop, not here.
    */
   private kitPanel(): string {
     const p = this.profile;
@@ -1178,10 +1237,6 @@ export class Hub {
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
     const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
-    const full = stashUsed(p) >= stashCap(p.hideout);
-    const room = full
-      ? `<p class="lock-note">${lockIcon()}${nextLevel(p.hideout, "storage") ? PHRASE.warehouseFullRaise : PHRASE.warehouseFullSell}</p>`
-      : "";
     const intel = this.intel();
     const intelSlot = intel ? `<div class="slot intel"><small>${radioIcon()}無線</small><span>${intel}</span></div>` : "";
     const kit =
@@ -1194,7 +1249,8 @@ export class Hub {
         .join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
       `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`;
-    return `${intelSlot}${room}${this.moduleCard("storage")}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
+    // Full lock-note sits beside the stash count (capMeter), not in this column.
+    return `${intelSlot}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
   }
 
   /**
@@ -1294,8 +1350,9 @@ export class Hub {
     $("hub-title").textContent = panel.title;
     $("hub-cash").textContent = yen(p.cash);
     $("hub-record").textContent = `${TERM.sortie} ${p.raids} ・ 生還 ${p.extracted}`;
-    // The storage's crate: the room it gives is the count's right side.
-    $("hub-stash-count").innerHTML = `${stashIcon()}${stashUsed(p)} / ${stashCap(p.hideout)}`;
+    // Count + capacity bar above the lists (always visible in narrow tabs too).
+    $("hub-cap-strip").hidden = !panel.stash;
+    $("hub-stash-count").innerHTML = panel.stash ? capMeter(stashUsed(p), stashCap(p.hideout), warehouseFullNote(p)) : "";
     $("hub").dataset.station = st;
     $("hub-stash-col").hidden = !panel.stash;
     $("hub-cols").classList.toggle("one", !panel.stash);
@@ -1307,21 +1364,20 @@ export class Hub {
     this.fixStart();
     if (panel.stash) {
       const used = new Set([...this.load.weapons, ...this.load.keys, ...(this.load.armor === null ? [] : [this.load.armor])]);
+      const list = rows(p.stash);
       $("hub-stash").innerHTML =
-        rows(p.stash)
-          .map(({ item, index }) => {
-            const on = kit && used.has(index[0]);
-            // When the start is a depot, each pick shows what it costs of the depot's allowance.
-            const cost = kit && this.from && itemCost(item) > 0 ? `枠 ${itemCost(item)}` : "";
-            // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
-            const fixed = isStarter(item);
-            const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
-            const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
-            return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
-          })
-          .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
+        withSectionHeaders(list, ({ item, index }) => {
+          const on = kit && used.has(index[0]);
+          // When the start is a depot, each pick shows what it costs of the depot's allowance.
+          const cost = kit && this.from && itemCost(item) > 0 ? `枠 ${itemCost(item)}` : "";
+          // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
+          const fixed = isStarter(item);
+          const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
+          const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
+          return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
+        }) || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
-    $("hub-side-title").textContent = shop
+    const sideTitle = shop
       ? TERM.wares
       : st === "workshop"
         ? PHRASE.sideWorkshop
@@ -1330,26 +1386,30 @@ export class Hub {
           : st === "signal"
             ? TERM.seaIslands
             : TERM.loadout;
+    $("hub-side-title").textContent = sideTitle;
+    // Narrow tabs: 倉庫 / 右列の見出し。One-column stations hide the tab bar.
+    const twoCol = panel.stash;
+    $("hub-tabs").hidden = !twoCol;
+    $("hub-tab-stash").textContent = TERM.warehouse;
+    $("hub-tab-side").textContent = sideTitle;
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
-      // 倉庫のレベルは倉庫の棚だけ: 作業場の一覧から外す.
-      $("hub-side").innerHTML =
-        MODULES.filter((m) => m !== "storage")
-          .map((m) => this.moduleCard(m))
-          .join("") + this.routes();
+      // 倉庫を含む隠れ家設備は作業場の一覧で上げる.
+      $("hub-side").innerHTML = MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);
-      // Every buy is shut while the stash is full: the shelf says so, and what makes room.
-      const room = full
-        ? `<p class="lock-note">${lockIcon()}${nextLevel(p.hideout, "storage") ? PHRASE.warehouseFullRaise : PHRASE.warehouseFullSell}</p>`
-        : "";
-      $("hub-side").innerHTML = room + shelfTiers(p) + wares(p)
-        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
-        .join("");
+      // Full lock-note sits beside the stash count (capMeter). Buys stay shut while full.
+      const goods = wares(p).map((item, n) => ({ item, index: [n] }));
+      $("hub-side").innerHTML =
+        shelfTiers(p) +
+        withSectionHeaders(goods, ({ item, index }) => {
+          const n = index[0]!;
+          return `<button type="button" class="item" data-act="buy" data-arg="${n}" style="--c:${itemShade(item)}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`;
+        });
     } else $("hub-side").innerHTML = this.kitPanel();
-    // The shelves' footer: what the next raid takes out, in a line.
+    // The shelves' footer: what the next raid takes out, in a line. Grid row keeps it below the lists.
     $("hub-foot").hidden = !kit;
     if (kit) {
       $("hub-foot-note").innerHTML = this.kitMarks();

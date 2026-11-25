@@ -9,7 +9,7 @@
 import { HIDEOUT, HIDEOUT_EFFECT, META, VALUABLES, type ValuableKind } from "../src/ringfall/sim/config";
 import { emptyHideout, stashCap } from "../src/ringfall/meta/hideout";
 import { build, newProfile, sellPrice, type Item, type Profile } from "../src/ringfall/meta/profile";
-import { nextHandFor } from "../src/ringfall/view/hub";
+import { capMeter, nextHandFor, warehouseFullNote } from "../src/ringfall/view/hub";
 import { PHRASE } from "../src/ringfall/view/copy";
 
 const haulBag = (n: number): Item[] => {
@@ -102,8 +102,20 @@ const tipBase = {
 };
 const funded = give(tipBase, HIDEOUT.storage.levels[0]!.items);
 const hand = nextHandFor(funded);
-if (hand !== PHRASE.nextStashRaise) {
-  console.error(`next-hand: expected ${PHRASE.nextStashRaise}, got ${hand}`);
+if (hand !== PHRASE.nextWorkshopRaise) {
+  console.error(`next-hand: expected ${PHRASE.nextWorkshopRaise}, got ${hand}`);
   process.exit(1);
 }
-console.log(`次の一手チェック: 倉庫 Lv1 が作れるとき「${PHRASE.nextStashRaise}」。OK`);
+console.log(`次の一手チェック: 倉庫 Lv1 が作れるとき「${PHRASE.nextWorkshopRaise}」。OK`);
+
+const emptyMeter = capMeter(0, META.stash, warehouseFullNote(newProfile()));
+if (!emptyMeter.includes("cap-meter") || emptyMeter.includes(" full") || emptyMeter.includes("cap-note")) {
+  console.error(`cap-meter empty: unexpected ${emptyMeter}`);
+  process.exit(1);
+}
+const fullMeter = capMeter(META.stash, META.stash, PHRASE.warehouseFullSell);
+if (!fullMeter.includes("cap-meter full") || !fullMeter.includes("cap-note") || !fullMeter.includes(PHRASE.warehouseFullSell)) {
+  console.error(`cap-meter full: unexpected ${fullMeter}`);
+  process.exit(1);
+}
+console.log("容量バーチェック: 空は通常色、満杯は hot + 案内。OK");

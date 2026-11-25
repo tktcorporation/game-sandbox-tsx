@@ -1545,14 +1545,22 @@ body.camp #pause .keys .raid {
   place-items: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgb(var(--ink-rgb) / 0.5);
+  /* Above the title if both were ever visible; boot opens 整理 only after 野営地へ. */
+  z-index: 3;
 }
 #organize .org-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 0;
+  padding: 4px 0 4px 8px;
   border-bottom: 1px solid rgb(var(--white-rgb) / 0.08);
+  border-left: 3px solid var(--c, var(--r0));
+}
+#organize .org-row .chip {
+  border-left: 0;
+  padding-left: 0;
+  background: transparent;
 }
 #organize .org-acts {
   display: flex;
@@ -1563,6 +1571,16 @@ body.camp #pause .keys .raid {
   font-size: 13px;
   padding: 4px 10px;
 }
+/* Disabled 倉庫に入れる / 確定: muted grey, not the hot yellow (same as #hub .hub-foot button:disabled). */
+#organize .org-acts button:disabled,
+#organize .hub-foot button:disabled {
+  background: var(--slate-dim);
+  color: var(--mist);
+  box-shadow: none;
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
 #organize .hub-foot {
   display: flex;
   align-items: center;
@@ -1571,6 +1589,23 @@ body.camp #pause .keys .raid {
 }
 #organize .hub-foot[hidden] {
   display: flex;
+}
+#organize .org-row i {
+  font-style: normal;
+  font-family: var(--num);
+  color: var(--muted);
+}
+/* Type section headers on 棚 / 屋台 / 整理. */
+.item-section {
+  margin: 10px 0 2px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--mist);
+}
+.item-section:first-child {
+  margin-top: 0;
 }
 .src-guide {
   display: grid;
@@ -1616,6 +1651,29 @@ body.camp #pause .keys .raid {
   padding: 16px 18px;
   background: rgb(var(--ink-rgb) / 0.9);
   box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12), 6px 6px 0 rgb(var(--shade-rgb) / 0.25);
+}
+/* Narrow tabs (倉庫 / 持っていく物). Hidden on wide layouts; shown under ~900px / phone frame. */
+.hub-tabs {
+  display: none;
+  grid-column: 1 / -1;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hub-tabs[hidden] {
+  display: none !important;
+}
+.hub-tabs button {
+  flex: 1 1 auto;
+  font-size: 14px;
+  padding: 6px 12px;
+  background: rgb(var(--paper-rgb) / 0.08);
+  color: var(--mist);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.14);
+}
+.hub-tabs button.on {
+  background: var(--hot);
+  color: var(--ink);
+  box-shadow: none;
 }
 /* A station with one list of its own (the workshop): a narrower panel. */
 #hub[data-station="workshop"] .hub-inner {
@@ -1696,6 +1754,33 @@ body.touch #hub-close kbd {
   grid-template-columns: 1fr 1fr;
   gap: 18px;
   min-height: 0;
+  /* Footer stays in its grid row; lists scroll inside. */
+  overflow: hidden;
+}
+/* Capacity sits above the stash list on wide; full-width above both columns when tabs show. */
+.hub-cap-strip {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.hub-cap-strip[hidden] {
+  display: none !important;
+}
+.hub-cols:not(.one) > .hub-tabs[hidden] ~ .hub-cap-strip {
+  grid-column: 1;
+}
+.hub-cols:not(.one) > .hub-tabs[hidden] ~ #hub-stash-col {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+}
+.hub-cols:not(.one) > .hub-tabs[hidden] ~ #hub-side-col {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  min-height: 0;
+}
+.hub-cols.one > .hub-cap-strip {
+  display: none !important;
 }
 .hub-col {
   display: flex;
@@ -1715,7 +1800,7 @@ body.touch #hub-close kbd {
 .hub-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow-y: auto;
   min-height: 0;
   padding-right: 4px;
@@ -1726,14 +1811,15 @@ body.touch #hub-close kbd {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto;
-  column-gap: 12px;
+  column-gap: 10px;
   align-items: center;
   text-align: left;
-  font-size: 16px;
-  padding: 7px 12px;
+  font-size: 14px;
+  padding: 4px 10px 4px 8px;
   background: var(--plate);
   color: var(--white);
   box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.12);
+  border-left: 3px solid var(--c, var(--r0));
 }
 #hub .item:hover:not(:disabled) {
   transform: none;
@@ -1761,7 +1847,7 @@ body.touch #hub-close kbd {
   grid-column: 2;
   grid-row: 1 / 3;
   font-family: var(--num);
-  font-size: 18px;
+  font-size: 16px;
   color: var(--hot);
 }
 .hub-list .slot {
@@ -2159,8 +2245,9 @@ body.touch .hub-head h2 {
   font-size: 20px;
 }
 body.touch #hub .item {
-  font-size: 14px;
-  padding: 5px 10px;
+  font-size: 13px;
+  padding: 3px 8px 3px 6px;
+  column-gap: 8px;
 }
 body.touch .hub-foot button {
   font-size: 16px;
@@ -5140,6 +5227,118 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin-right: 4px;
   vertical-align: -2px;
 }
+/* Warehouse used / cap + fill bar (shelves, trader, organize, workshop card). */
+.hub-cap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-weight: 800;
+}
+.hub-cap-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.cap-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.cap-line.full {
+  color: var(--hot);
+}
+.cap-line .cap-note {
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 800;
+  border-left: 3px solid var(--hot);
+  background: rgb(var(--hot-rgb) / 0.12);
+  color: var(--paper);
+}
+.cap-meter {
+  display: block;
+  flex: 1 1 100%;
+  height: 6px;
+  margin: 2px 0 4px;
+  border-radius: 0;
+  background: rgb(var(--paper-rgb) / 0.12);
+  overflow: hidden;
+}
+.cap-meter > i {
+  display: block;
+  width: calc(100% * var(--p, 0));
+  height: 100%;
+  background: var(--own);
+}
+.cap-meter.full > i {
+  background: var(--hot);
+}
+.mod-cap {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+.mod-cap .cap-meter {
+  margin-bottom: 0;
+}
+.mod-cap .cap-line .cap-note {
+  font-size: 11px;
+}
+#organize .hub-cap {
+  flex-direction: column;
+  align-items: flex-start;
+}
+#organize .org-left {
+  font-weight: 800;
+  color: var(--mist);
+}
+/* Below ~900px or the 740×360 phone frame: tabs switch columns; kit foot stays clear. */
+@media (max-width: 900px), (max-height: 400px) {
+  .hub-tabs:not([hidden]) {
+    display: flex;
+  }
+  #hub .hub-cols:not(.one),
+  #organize .hub-cols {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  #hub .hub-cols:not(.one) > .hub-cap-strip {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  #hub .hub-cols:not(.one) > .hub-tabs:not([hidden]) {
+    grid-row: 1;
+  }
+  #hub .hub-cols:not(.one) > #hub-stash-col,
+  #hub .hub-cols:not(.one) > #hub-side-col {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  #hub .hub-cols:not(.one)[data-tab="stash"] #hub-side-col,
+  #hub .hub-cols:not(.one)[data-tab="side"] #hub-stash-col,
+  #organize .hub-cols[data-tab="pending"] #org-stash-col,
+  #organize .hub-cols[data-tab="stash"] #org-pending-col {
+    display: none;
+  }
+  /* Side / organize column titles duplicate the tabs. Cap strip stays for used/cap + full note. */
+  #hub .hub-cols:not(.one) #hub-side-col > h3,
+  #organize .hub-cols .hub-col > h3 {
+    display: none;
+  }
+  #hub .hub-cols:not(.one) .hub-cap-head {
+    margin: 0 0 4px;
+  }
+  .hub-inner {
+    height: min(720px, 100%);
+    max-height: 100%;
+  }
+  .hub-foot {
+    flex-shrink: 0;
+  }
+}
 /* The use key's prompt at something shut: where the thing that opens it lies, smaller after the marks. */
 #prompt small {
   margin-left: 4px;
@@ -5176,13 +5375,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .wstats {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px 12px;
+  gap: 1px 8px;
   vertical-align: middle;
 }
 .wstats .g {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-family: var(--num);
   font-weight: 600;
 }
@@ -5191,13 +5390,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 .wstats .g .bar {
   flex: none;
-  width: 34px;
-  height: 5px;
+  width: 28px;
+  height: 4px;
   background: linear-gradient(to right, var(--white) calc(var(--v) * 100%), rgb(var(--white-rgb) / 0.2) 0);
 }
 .wstats .g .n {
-  min-width: 2.6em;
-  font-size: 13px;
+  min-width: 2.2em;
+  font-size: 12px;
   font-weight: 600;
   color: var(--white);
 }
@@ -5291,10 +5490,11 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 /* On a phone the three gauges share one line beside the row's button. */
 body.touch .wstats {
-  gap: 2px 8px;
+  gap: 1px 6px;
 }
 body.touch .wstats .g .bar {
-  width: 26px;
+  width: 22px;
+  height: 3px;
 }
 body.touch .wstats .g .n {
   min-width: 2em;

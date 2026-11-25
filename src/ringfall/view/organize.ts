@@ -4,6 +4,7 @@
  */
 import { VALUABLES } from "../sim/config";
 import {
+  isStarter,
   keepPending,
   needsOrganize,
   sellForOrganize,
@@ -16,8 +17,7 @@ import {
 } from "../meta/profile";
 import { stashCap } from "../meta/hideout";
 import { PHRASE, TERM } from "./copy";
-import { itemColor, itemName } from "./hub";
-import { stashIcon } from "./icons";
+import { capMeter, itemColor, itemName, rows, withSectionHeaders } from "./hub";
 import { UI } from "./palette";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -26,18 +26,21 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function row(i: Item, side: "pending" | "stash", index: number, room: number): string {
+/** One stacked row (× n) — sells / puts away a single item at `index[0]`. */
+function row(i: Item, side: "pending" | "stash", index: number[], room: number): string {
   const name = esc(itemName(i));
   const price = sellPrice(i);
   const tint = itemColor(i);
+  const n = index.length > 1 ? ` <i>× ${index.length}</i>` : "";
+  const at = index[0]!;
   const acts =
     side === "pending"
-      ? `<button type="button" data-org="sell-pending" data-i="${index}">売る ${price}</button>` +
+      ? `<button type="button" data-org="sell-pending" data-i="${at}">売る ${price}</button>` +
         (room > 0
-          ? `<button type="button" data-org="keep-pending" data-i="${index}">${TERM.putInWarehouse}</button>`
+          ? `<button type="button" data-org="keep-pending" data-i="${at}">${TERM.putInWarehouse}</button>`
           : `<button type="button" disabled>${TERM.putInWarehouse}</button>`)
-      : `<button type="button" data-org="sell-stash" data-i="${index}">売る ${price}</button>`;
-  return `<div class="org-row" style="--c:${tint}"><span class="chip" style="color:${tint}">${name}</span><span class="org-acts">${acts}</span></div>`;
+      : `<button type="button" data-org="sell-stash" data-i="${at}">売る ${price}</button>`;
+  return `<div class="org-row" style="--c:${tint}"><span class="chip" style="color:${tint}">${name}${n}</span><span class="org-acts">${acts}</span></div>`;
 }
 
 export class Organize {
@@ -62,7 +65,17 @@ export class Organize {
     $("org-title").textContent = TERM.organize;
     $("org-pending-title").textContent = TERM.broughtHome;
     $("org-stash-title").textContent = TERM.warehouse;
+    $("org-tab-pending").textContent = TERM.broughtHome;
+    $("org-tab-stash").textContent = TERM.warehouse;
+    $("org-tabs").hidden = false;
+    this.setTab("pending");
     this.render(p);
+  }
+
+  private setTab(tab: "pending" | "stash") {
+    $("org-cols").dataset.tab = tab;
+    $("org-tab-pending").classList.toggle("on", tab === "pending");
+    $("org-tab-stash").classList.toggle("on", tab === "stash");
   }
 
   hide() {
@@ -78,15 +91,18 @@ export class Organize {
 
   render(p: Profile) {
     const room = stashRoom(p);
-    $("org-count").innerHTML = `${stashIcon()}${stashUsed(p)} / ${stashCap(p.hideout)} · あと ${p.pending.length} 点`;
+    const used = stashUsed(p);
+    const cap = stashCap(p.hideout);
+    // Same capacity bar as the shelves; pending remainder stays on the count line.
+    $("org-count").innerHTML = `${capMeter(used, cap)}<small class="org-left">あと ${p.pending.length} 点</small>`;
+    const pending = rows(p.pending);
     $("org-pending").innerHTML =
-      p.pending.map((i, n) => row(i, "pending", n, room)).join("") || `<p class="empty">入りきらない物はない</p>`;
+      withSectionHeaders(pending, ({ item, index }) => row(item, "pending", index, room)) ||
+      `<p class="empty">入りきらない物はない</p>`;
+    const stash = rows(p.stash).filter(({ item }) => !(item.t === "weapon" && isStarter(item)));
     $("org-stash").innerHTML =
-      p.stash
-        .map((i, n) => ({ i, n }))
-        .filter(({ i }) => i.t !== "weapon" || !i.starter)
-        .map(({ i, n }) => row(i, "stash", n, room))
-        .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
+      withSectionHeaders(stash, ({ item, index }) => row(item, "stash", index, room)) ||
+      `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     const ready = !needsOrganize(p);
     const btn = $("org-confirm") as HTMLButtonElement;
     btn.disabled = !ready;

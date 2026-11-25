@@ -126,12 +126,18 @@
           <div class="hub-cash"><small>クレジット</small><b id="hub-cash"></b><small id="hub-record"></small></div>
           <button id="hub-close" class="ghost" type="button" data-act="close">閉じる<kbd>Esc</kbd></button>
         </header>
-        <div class="hub-cols" id="hub-cols">
+        <div class="hub-cols" id="hub-cols" data-tab="stash">
+          <div class="hub-tabs" id="hub-tabs" role="tablist" hidden>
+            <button type="button" role="tab" data-hub-tab="stash" class="on" id="hub-tab-stash">倉庫</button>
+            <button type="button" role="tab" data-hub-tab="side" id="hub-tab-side"></button>
+          </div>
+          <div class="hub-cap-strip" id="hub-cap-strip" hidden>
+            <h3 class="hub-cap-head">倉庫 <span id="hub-stash-count" class="hub-cap"></span></h3>
+          </div>
           <div class="hub-col" id="hub-stash-col">
-            <h3>倉庫 <small id="hub-stash-count"></small></h3>
             <div class="hub-list" id="hub-stash"></div>
           </div>
-          <div class="hub-col">
+          <div class="hub-col" id="hub-side-col">
             <h3 id="hub-side-title"></h3>
             <div class="hub-list" id="hub-side"></div>
           </div>
@@ -167,15 +173,19 @@
       <div class="hub-inner org-inner">
         <header class="hub-head">
           <h2 id="org-title"></h2>
-          <div class="hub-cash"><small id="org-count"></small></div>
+          <div class="hub-cash"><span id="org-count" class="hub-cap"></span></div>
           <button id="org-close" class="ghost" type="button" data-org="close">閉じる<kbd>Esc</kbd></button>
         </header>
-        <div class="hub-cols">
-          <div class="hub-col">
+        <div class="hub-cols" id="org-cols" data-tab="pending">
+          <div class="hub-tabs org-tabs" id="org-tabs" role="tablist" hidden>
+            <button type="button" role="tab" data-org-tab="pending" class="on" id="org-tab-pending"></button>
+            <button type="button" role="tab" data-org-tab="stash" id="org-tab-stash"></button>
+          </div>
+          <div class="hub-col" id="org-pending-col">
             <h3 id="org-pending-title"></h3>
             <div class="hub-list" id="org-pending"></div>
           </div>
-          <div class="hub-col">
+          <div class="hub-col" id="org-stash-col">
             <h3 id="org-stash-title"></h3>
             <div class="hub-list" id="org-stash"></div>
           </div>
