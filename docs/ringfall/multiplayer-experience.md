@@ -1,5 +1,7 @@
 # マルチプレイ体験の一本化
 
+> **2026-11-27:** 方向 A（お隣は自分の島の前線に立つ）は [camp-raid.md](camp-raid.md)（島で漁り、野営地を攻める）で置き換える方針になった。本紙は置き換えが済むまでの現状の記録。
+
 方針: [design-direction.md](design-direction.md)（拠点が主役・非同期の攻守・線に溶かす・新語を増やさない）。  
 用語の正本: [glossary.md](glossary.md)／[`copy.ts`](../src/ringfall/view/copy.ts)。  
 仕組みの詳細: [multiplayer.md](multiplayer.md)、[raid-loot.md](raid-loot.md)。  

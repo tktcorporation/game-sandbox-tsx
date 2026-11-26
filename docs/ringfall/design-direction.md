@@ -4,6 +4,8 @@
 
 関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[glossary.md](glossary.md)（プレイヤー向け用語の正本）、[multiplayer-experience.md](multiplayer-experience.md)（マルチ体験の一本化）、[game-design-review.md](game-design-review.md)（楽しさ・進行・動機の点検・実装前）、[simplify-candidates.md](simplify-candidates.md)（簡素化の候補と決定・依頼板／反応型守り／島の出来事／夜の襲撃削除）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[warehouse.md](warehouse.md)（倉庫のレベル）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
 
+**島で漁り、野営地を攻める（方針・2026-11-27）:** 一回の出撃に目的が三つ重なり、育てる場所（野営地）と攻められる場所（外側の拠点）が分かれていて、体験が流れとして成立していない。そこで、自分の島はロボット相手の漁り、対人は**お隣の野営地を攻める**に分ける。野営地を CoC の村に当て、育てる場所＝攻められる場所にする。外側の拠点の取り合い（作り順②）と荒地の戦場（作り順⑤）は置き換えたうえで削除する予定。この節より下の対人の決定のうち、外側の取り合いと部隊戦の場に関わるものは、置き換えが済むまでの現状の記録として読む。詳細は [camp-raid.md](camp-raid.md)。
+
 **簡素化の決定（要約・2026-11-24）:** 外した機能はコードごと削除する（`FEATURES` フラグは使わない）。復活は Git 履歴（削除直前のコミット）から。依頼板（入門・今日の依頼・物語）、反応型の対人守り（来る遠征の予告→核で固めるの迎撃 UI）、島の出来事（破片の落下・嵐・回収部隊）、**夜の襲撃**（今夜の狙い・日をまたいでの拠点喪失）、**地図の机**は削除済み（前スタック PR1〜4）。**出撃の入口は門だけ**（車両の出撃導線・設備は削除）。**核 · 固める**（来る遠征向けの非同期閉門）も削除済み（§0g）。出撃・島眺めは **門**、トロフィー・島の知らせ・島の守りは **信号所**。詳細は [simplify-candidates.md](simplify-candidates.md) §0／§0b／§0c／§0d／§0e／§0f／§0g、[pvp-clarity.md](pvp-clarity.md)。
 
 **お隣は自分の島の前線に立つ（方向 A・2026-11-25／TKT-195 → 作り順②）:** 外側の拠点をお隣と取り合い、普段のレイドでその核を制圧することが攻めになる。短いレイド・「○○の前線」・出ている遠征・遠征に出すはコードごと削除（スタック PR6）。取り合い対象の拡大は作り順②。詳細は下の「お隣は前線に立つ」と「島は終わりなく育てる」、[multiplayer-experience.md](multiplayer-experience.md)、[multiplayer.md](multiplayer.md)。
