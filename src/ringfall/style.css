@@ -3849,6 +3849,9 @@ body.touch #camp-prompt {
 #depart-attack-list .attack-body .scout-trop {
   color: var(--hot);
 }
+#depart-attack-list .attack-body .scout-bonus {
+  color: var(--amber);
+}
 #depart-attack-list .attack-body .scout-bounty {
   color: var(--amber);
 }

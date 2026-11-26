@@ -17,6 +17,7 @@ import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } f
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 import { outerCap, TEAM, type Team } from "../meta/team";
 import { battleOpen, daysLeft, hubCounts, TEAM_BATTLE, warPowerOf, type TeamBattle } from "../meta/team-battle";
+import { fieldStars } from "../meta/trophies";
 import { FIELD_HUBS } from "../sim/team-field";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -291,7 +292,7 @@ export class ExpeditionPanel {
     const status = open
       ? esc(fieldBattleLine(daysLeft(battle, p.day), n.ours, total))
       : battle.result
-        ? esc(fieldResultLine(battle.result, n.ours, total))
+        ? esc(fieldResultLine(battle.result, n.ours, total, fieldStars(n.ours, total)))
         : esc(TERM.battleField);
     const bar = `<span class="exp-held" style="--w:${Math.round((100 * n.ours) / Math.max(1, total))}%"></span>`;
     const hubs = FIELD_HUBS.map((h) => {

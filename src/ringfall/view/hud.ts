@@ -5,7 +5,7 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, raidStarsLine, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine } from "./copy";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, leagueChangeLine, PHRASE, TERM, moduleRaiseReady, newsIncursion, raidStarsLine, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine, winBonusMark } from "./copy";
 import { raidTrophyDelta } from "../meta/trophies";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { capturedIds } from "../sim/front";
@@ -1727,11 +1727,18 @@ export class Hud {
     const tropBreakdown = tropMoved
       ? `<p class="trop-line">${trophyLine(trop!.before, trop!.after, trop!.gained, trop!.lost, trop!.defended ?? 0)}</p>`
       : "";
+    const leagueLine = settled?.league
+      ? `<p class="trop-line">${esc(leagueChangeLine(settled.league.from, settled.league.to))}</p>`
+      : "";
+    const bonusLine =
+      settled?.winBonus && settled.winBonus > 0
+        ? `<p class="trop-line">${esc(winBonusMark(settled.winBonus))}</p>`
+        : "";
     const robotNote = tookRobotHub ? `<p class="trop-line">${esc(robotHubTropNote())}</p>` : "";
-    const tropLine = `${starLine}${tropBreakdown}${robotNote}`;
-    // 作り順⑤: 部隊戦 result when the period just closed.
+    const tropLine = `${starLine}${tropBreakdown}${leagueLine}${bonusLine}${robotNote}`;
+    // 作り順⑤ + TKT-219: 部隊戦 result with clan-war stars (trophies do not move).
     const fieldLine = settled?.fieldBattle
-      ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs))}</p>`
+      ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs, settled.fieldBattle.stars))}</p>`
       : s.teamField
         ? `<p class="field-result">${esc(TERM.battleField)}</p>`
         : "";

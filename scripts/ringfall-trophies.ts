@@ -8,11 +8,17 @@ import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
 import {
   AI_RAID_STARS,
+  LEAGUE,
   SEIZE,
   TROPHY,
+  WIN_BONUS,
   clampTrophies,
   defenceWin,
+  fieldStars,
   gapBonus,
+  leagueChanged,
+  leagueIndex,
+  leagueOf,
   raidOdds,
   raidTrophyDelta,
   rivalTrophies,
@@ -21,6 +27,8 @@ import {
   trophyDelta,
   trophySwap,
   trophiesTable,
+  winBonusBase,
+  winBonusMaterials,
 } from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { NODES, POIS, nodeIndex, poiIndex } from "../src/ringfall/sim/map";
@@ -164,6 +172,29 @@ const shoreI = nodeIndex(shore);
   assert.ok(loot.at.length === 1);
   assert.equal(loot.at[0]!.kinds.length, SEIZE.emptyReserve + SEIZE.bonus);
   assert.equal(loot.items.length, SEIZE.emptyReserve + SEIZE.bonus);
+}
+
+// TKT-219: league bands + win bonus + field stars.
+{
+  assert.equal(LEAGUE.length, 7);
+  assert.equal(WIN_BONUS.length, 7);
+  assert.equal(leagueOf(TROPHY.start).name, "銅");
+  assert.equal(leagueIndex(TROPHY.start), 1);
+  assert.equal(winBonusBase(TROPHY.start), 1);
+  assert.equal(winBonusMaterials(TROPHY.start, 3), 1);
+  assert.equal(winBonusMaterials(TROPHY.start, 0), 0);
+  assert.equal(winBonusBase(0), 0);
+  assert.equal(winBonusMaterials(0, 3), 0);
+  assert.equal(winBonusBase(3400), 6);
+  assert.equal(winBonusMaterials(3400, 3), 6);
+  assert.equal(winBonusMaterials(3400, 2), 4);
+  assert.equal(winBonusMaterials(3400, 1), 2);
+  assert.deepEqual(leagueChanged(1000, 1200), { from: "銅", to: "銀" });
+  assert.equal(leagueChanged(1000, 1100), null);
+  assert.equal(fieldStars(0, 5), 0);
+  assert.equal(fieldStars(5, 5), 3);
+  assert.equal(fieldStars(3, 5), 2);
+  assert.equal(fieldStars(1, 5), 1);
 }
 
 console.log("trophies ok");

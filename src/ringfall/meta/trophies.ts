@@ -1,7 +1,8 @@
 /*
- * Trophy ranking (docs/ringfall/design-direction.md, CoC 型 / TKT-218):
+ * Trophy ranking (docs/ringfall/design-direction.md, CoC 型 / TKT-218–219):
  * 「攻める」raid scores ★0–3; win +N×★/3, 0★ −M. Defender loses what the attacker gained;
- * 守りきった → +M. Materials from 核 · 制圧 stay separate (`SEIZE`).
+ * 守りきった → +M. League win-bonus materials +0..+6 ×★/3. Field battle shows stars
+ * without moving trophies. Materials from 核 · 制圧 stay separate (`SEIZE`).
  */
 import { rivalOf, type PoiHold } from "../sim/holds";
 import type { NodeId } from "../sim/map";
@@ -33,7 +34,7 @@ export const TROPHY = {
 } as const;
 
 /**
- * League bands from design-direction (CoC-shaped). Display-only for win-bonus materials later.
+ * League bands from design-direction (CoC-shaped / TKT-219).
  * Inclusive min; the next band's min is exclusive upper for this one.
  */
 export const LEAGUE: readonly { name: string; min: number }[] = [
@@ -46,6 +47,12 @@ export const LEAGUE: readonly { name: string; min: number }[] = [
   { name: "伝説", min: 3400 },
 ];
 
+/**
+ * Win-bonus materials by league index (見習い…伝説 → 0…6).
+ * Awarded as base ×★/3 on a 「攻める」raid (robot hubs / field excluded).
+ */
+export const WIN_BONUS: readonly number[] = [0, 1, 2, 3, 4, 5, 6];
+
 /** League name for a trophy count (start 1000 → 銅). */
 export function leagueOf(trophies: number): { name: string; min: number } {
   const n = Math.max(0, Math.round(trophies));
@@ -55,6 +62,48 @@ export function leagueOf(trophies: number): { name: string; min: number } {
     else break;
   }
   return hit;
+}
+
+/** 0 = 見習い … 6 = 伝説. */
+export function leagueIndex(trophies: number): number {
+  const name = leagueOf(trophies).name;
+  const i = LEAGUE.findIndex((b) => b.name === name);
+  return i < 0 ? 0 : i;
+}
+
+/** Full ★★★ win-bonus materials for the attacker's current league. */
+export function winBonusBase(trophies: number): number {
+  return WIN_BONUS[leagueIndex(trophies)] ?? 0;
+}
+
+/**
+ * League win-bonus materials for a raid star count (TKT-219).
+ * base ×★/3 (見習い 0; 伝説 ★★★ → 6). ★0 → 0.
+ */
+export function winBonusMaterials(trophies: number, stars: number): number {
+  const base = winBonusBase(trophies);
+  const s = Math.max(0, Math.min(3, Math.round(stars)));
+  if (base <= 0 || s <= 0) return 0;
+  return Math.max(1, Math.round((base * s) / 3));
+}
+
+/** Whether trophies crossed a league band (results). */
+export function leagueChanged(before: number, after: number): { from: string; to: string } | null {
+  const from = leagueOf(before).name;
+  const to = leagueOf(after).name;
+  return from === to ? null : { from, to };
+}
+
+/**
+ * 部隊戦 result stars (clan-war shaped; trophies do not move).
+ * From hubs held at settle: 0 → ☆☆☆; all → ★★★; otherwise proportional.
+ */
+export function fieldStars(ours: number, total: number): 0 | 1 | 2 | 3 {
+  const t = Math.max(1, Math.round(total));
+  const o = Math.max(0, Math.min(t, Math.round(ours)));
+  if (o <= 0) return 0;
+  if (o >= t) return 3;
+  return Math.min(3, Math.max(1, Math.round((o * 3) / t))) as 1 | 2 | 3;
 }
 
 /**

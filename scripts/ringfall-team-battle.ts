@@ -26,6 +26,7 @@ import {
   startBattle,
 } from "../src/ringfall/meta/team-battle";
 import { FIELD_HUBS, FIELD_NODES } from "../src/ringfall/sim/team-field";
+import { fieldStars } from "../src/ringfall/meta/trophies";
 import { advanceDay, raidDay } from "../src/ringfall/meta/island";
 import { formTeam, TEAM } from "../src/ringfall/meta/team";
 import { newRun, starterKit } from "../src/ringfall/sim/state";
@@ -90,11 +91,14 @@ const SALT = 42;
   b = settleBattle(b);
   assert.equal(b.result, "win");
   assert.equal(outcomeOf(openingHolds()), TEAM_BATTLE.startOurs > TEAM_BATTLE.hubs - TEAM_BATTLE.startOurs ? "win" : "loss");
+  // TKT-219: all hubs → ★★★ (trophies do not move).
+  assert.equal(fieldStars(TEAM_BATTLE.hubs, TEAM_BATTLE.hubs), 3);
+  assert.equal(fieldStars(0, TEAM_BATTLE.hubs), 0);
   // ensureBattle opens the next match after the period.
   const next = ensureBattle(b, formTeam(SELF, SALT, 8, 0), SALT, 8);
   assert.equal(next.result, null);
   assert.equal(next.started, 8);
-  console.log(`settle: win → next battle day ${next.started}`);
+  console.log(`settle: win → next battle day ${next.started} · ★3`);
 }
 
 // --- Profile carries teamBattle (v48 current; v46 migrates in) ---
