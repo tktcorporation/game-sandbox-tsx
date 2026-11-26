@@ -71,6 +71,13 @@ if (rows) {
   const goal = await pg.locator("#depart").innerText();
   if (!goal.includes("攻める")) errors.push("the departure's objective does not say 攻める");
   await shot("02-depart-chosen");
+  // Clicking the start still lit makes it a raid of the island again (it does not launch the sortie).
+  await pg.locator("#depart-points button.pick.on").first().click();
+  await pg.waitForTimeout(200);
+  if (!(await read()).camp?.depart) errors.push("clicking the lit start launched the sortie");
+  else if ((await pg.locator("#depart-attack-list button.on").count()) !== 0) errors.push("clicking the lit start kept the sortie chosen");
+  await pg.locator("#depart-attack-list button[data-owner]").first().click();
+  await pg.waitForTimeout(200);
   await pg.click("#depart-go");
   await pg.waitForFunction(() => document.body.classList.contains("playing"), null, { timeout: 8000 }).catch(() => errors.push("the sortie did not start"));
   await pg.waitForTimeout(800);

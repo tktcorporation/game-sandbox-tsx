@@ -918,6 +918,8 @@ export class Hub {
     this.fixStart();
     if (needsOrganize(this.profile)) return TERM.organize;
     if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
+    // A sortie takes the kit as from a way in: a depot chosen before has no say in it.
+    if (this.sortiePick()) return "";
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
   }

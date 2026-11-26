@@ -60,7 +60,8 @@ export class DepartPicker {
         this.render();
         return;
       }
-      if (el.classList.contains("on")) {
+      // While a sortie is chosen the start still lit is not the departure: clicking it makes the raid one of the island again.
+      if (el.classList.contains("on") && !this.hub.sortiePick()) {
         if (this.hub.rideRefused()) return;
         this.go();
         return;
