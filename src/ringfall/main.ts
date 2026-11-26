@@ -325,6 +325,8 @@ function onEvent(e: GameEvent, s: State) {
               gained: t?.gained ?? 0,
               lost: t?.lost ?? 0,
               defended: (t?.defended ?? 0) + def.defended,
+              // Keep 「攻める」star count so the results' star line still draws (Codex P2).
+              ...(t?.stars !== undefined ? { stars: t.stars } : {}),
             },
           };
         }
