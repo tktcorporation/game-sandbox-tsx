@@ -37,7 +37,7 @@ import { NODES } from "../src/ringfall/sim/map";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
-import { holds } from "../src/ringfall/meta/island";
+import { blankIsland, holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
 import { expeditionsOut, answerRecall, incomingLine, incomingOf, LANDING, lentResults, lentRivals, parseLease, recallAll, numbered, answerSend, dropStale, factoryAhead, sendingEntry, SENDING_MS, applySync, retakenNodes, awayIncome, factorySquads, squadsRemaining, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
@@ -56,10 +56,10 @@ const B = "Z3P9TR";
 const ID_A = "7c9e6679-7425-40de-944b-e07fc1f0d3c4";
 const ID_B = "1b4e28ba-2fa1-41d2-883f-0016d3cca427";
 
-/** A new profile with `freed` the player's and `rival` held by island `B`. */
+/** A new profile with `freed` the player's and `rival` held by island `B` (blank base — no starting shores). */
 function island(freed: string[], rival: string[] = []): Profile {
   const p = newProfile(3);
-  const poiState = { ...p.poiState };
+  const poiState = { ...blankIsland() };
   for (const id of freed) poiState[id as keyof typeof poiState] = { state: "own" };
   for (const id of rival) poiState[id as keyof typeof poiState] = { state: rivalHold(B) };
   return { ...p, poiState };
@@ -430,16 +430,21 @@ function island(freed: string[], rival: string[] = []): Profile {
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(current?.v === 47 && current.expeditions.length === 1 && current.expeditions[0]!.state === "recalling" && current.expeditions[0]!.id === 2 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not recall its expeditions / keep log and nodes taken back");
-  check(v27?.v === 47 && v27.expeditions.length === 1 && v27.expeditions[0]!.state === "recalling" && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not recall its expeditions / keep log and nodes taken back");
+  check(current?.v === 48 && current.expeditions.length === 1 && current.expeditions[0]!.state === "recalling" && current.expeditions[0]!.id === 2 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not recall its expeditions / keep log and nodes taken back");
+  check(v27?.v === 48 && v27.expeditions.length === 1 && v27.expeditions[0]!.state === "recalling" && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not recall its expeditions / keep log and nodes taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, expeditions: [{ code: A, node: "relay", sentAt: 5, id: 0, units: 3, state: "sending" }] })))?.expeditions.length === 0, "saves: a sending expedition was kept after send UI removal");
-  check(v26?.v === 47 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(v26?.v === 48 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
   check(current?.outerGuard && current.outerGuard.lost === 0 && !current.outerGuard.island, "saves: outerGuard missing on current");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 44 })))?.outerGuard.lost === 0, "saves: v44 did not gain empty outerGuard");
   check(current?.team?.members.length === 4 && current.team.members.filter((m) => m.ai).length === 3, "saves: team missing or not 4 with AI fill");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 45, team: undefined })))?.team.members.length === 4, "saves: v45 did not gain a 4-person team");
   check(current?.teamBattle && current.teamBattle.days === 3 && current.teamBattle.foe.members.length === 4, "saves: teamBattle missing on current");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 46, teamBattle: undefined })))?.teamBattle?.days === 3, "saves: v46 did not gain a teamBattle");
+  check(current?.teamBattle && typeof current.teamBattle.score === "number" && current.teamBattle.score === 0, "saves: teamBattle.score missing on current");
+  {
+    const fromV47 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 47, warScore: { total: 9, outerByDay: [] } })));
+    check(!!fromV47?.teamBattle && !("warScore" in fromV47), "saves: v47 personal warScore was kept");
+  }
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");

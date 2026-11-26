@@ -5,8 +5,9 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
-import { neighbourNameByCode } from "../meta/neighbours";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine } from "./copy";
+import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
+import { capturedIds } from "../sim/front";
 import { itemColor, itemName, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -240,7 +241,7 @@ export class Hud {
       else el.className = "tick";
       strip.appendChild(el);
     }
-    // CoC left stack: trophies always readable without opening the signal station.
+    // CoC left stack: trophies + league always readable without opening the signal station.
     const trop = $("hud-trophy");
     trop.querySelector("small")!.textContent = TERM.trophy;
     trop.setAttribute("aria-label", TERM.trophy);
@@ -254,7 +255,9 @@ export class Hud {
   /** Ranking count for the raid HUD's top-left (profile at raid start; unchanged until settle). */
   setTrophies(n: number) {
     const el = $("hud-trophy");
+    el.querySelector("small")!.textContent = trophyHead(n);
     el.querySelector("b")!.textContent = Math.max(0, Math.round(n)).toLocaleString("ja-JP");
+    el.setAttribute("aria-label", trophyHead(n));
     el.hidden = false;
   }
 
@@ -591,15 +594,17 @@ export class Hud {
         break;
       case "coreTaken": {
         // e.node is a NODES index; s.hold is per POI (who held it when the raid began).
-        const startHold = s.hold?.[poiIndex(NODES[e.node].id)] ?? "foe";
-        const whoHub = rivalWhoHub(startHold, NODES[e.node].name, this.rivalNames);
-        this.toast(
-          whoHub
-            ? `${coreIcon(SIDE.own)}${esc(attackSeized(whoHub))}<span class="toast-sub">倉庫へ届く</span>`
-            : `${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}`,
-          1,
-          5000,
-        );
+        const hub = NODES[e.node];
+        const startHold = s.hold?.[poiIndex(hub.id)] ?? "foe";
+        const whoHub = rivalWhoHub(startHold, hub.name, this.rivalNames);
+        if (whoHub) {
+          this.toast(`${coreIcon(SIDE.own)}${esc(attackSeized(whoHub))}<span class="toast-sub">倉庫へ届く</span>`, 1, 5000);
+          break;
+        }
+        // Robot-held outer hub: trophies do not move (neighbours already raid from day 1).
+        const robotToast =
+          isContestedShore(hub.id) && startHold === "foe" ? robotHubSeized(hub.name) : `制圧した · ${hub.name}`;
+        this.toast(`${coreIcon(SIDE.own)}${esc(robotToast)}`, 1, 5000);
         break;
       }
       case "counter":
@@ -1699,9 +1704,24 @@ export class Hud {
       : [];
     this.newsKeep = [...expNews, ...takeLines];
     const allNews = [...this.newsKeep, ...news];
-    const tropLine = settled?.trophies
-      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
+    // 2026-11-26: robot outer hubs taken → note that those captures do not move trophies.
+    // Keep any real trophy breakdown (defence awards / overnight losses can coexist).
+    const tookRobotHub =
+      !!settled &&
+      !(settled.takenRival?.length) &&
+      capturedIds(s).some((id) => {
+        const i = poiIndex(id);
+        return isContestedShore(id) && (s.hold?.[i] ?? "foe") === "foe";
+      });
+    const trop = settled?.trophies;
+    const tropMoved =
+      !!trop &&
+      (trop.before !== trop.after || trop.gained > 0 || trop.lost > 0 || (trop.defended ?? 0) > 0);
+    const tropBreakdown = tropMoved
+      ? `<p class="trop-line">${trophyLine(trop!.before, trop!.after, trop!.gained, trop!.lost, trop!.defended ?? 0)}</p>`
       : "";
+    const robotNote = tookRobotHub ? `<p class="trop-line">${esc(robotHubTropNote())}</p>` : "";
+    const tropLine = `${tropBreakdown}${robotNote}`;
     // 作り順⑤: 部隊戦 result when the period just closed.
     const fieldLine = settled?.fieldBattle
       ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs))}</p>`

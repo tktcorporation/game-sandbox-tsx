@@ -1,6 +1,9 @@
 /*
  * CoC-style attack scouting for the departure screen (TKT-204 案 B):
  * list contested coastal hubs a neighbour holds, with defence + trophy preview.
+ *
+ * 作り順⑥ / 2026-11-26: order by trophy closeness within ±RAID_TARGET.trophyBand;
+ * mark the leader (懸賞金) among eligible owners. No opponent-team preference.
  */
 import { DEFENCE_AID } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
@@ -13,6 +16,15 @@ import { aiLabel, isContestedShore, neighbourNameByCode, type Neighbour } from "
 import { SEIZE, trophySwap, trophiesTable, rivalTrophies } from "./trophies";
 import type { Parcel } from "./parcels";
 import type { IslandLogEntry } from "./expeditions";
+import type { Team } from "./team";
+import {
+  BOUNTY,
+  canRaidOwner,
+  foeOwnerKeys,
+  isFoeTeamOwner,
+  pickLeader,
+  raidTargetRank,
+} from "./war-score";
 
 /** One attackable contested hub as the depart screen lists it. */
 export interface AttackScout {
@@ -27,18 +39,29 @@ export interface AttackScout {
   guard: number;
   /** Trophy gain if taken (from real rival trophies). */
   trop: number;
-  /** Materials expected from 核 · 制圧 (empty reserve + bonus). */
+  /** Materials expected from 核 · 制圧 (empty reserve + bonus + bounty). */
   loot: number;
   onFront: boolean;
   /** When not on the front: the enemy node to take first so this hub faces the player. */
   gate: string | null;
   x: number;
   z: number;
+  /** Owner is on the current 相手チーム (badge only; not a sort key). */
+  foeTeam?: boolean;
+  /** Taking this hub pays the leader bounty. */
+  bounty?: boolean;
 }
+
+/** Optional 作り順⑥ context for bounty / foe badge. */
+export type AttackScoutOpts = {
+  /** Current 部隊戦 foe team (bounty / badge only — not raid gating). */
+  foe?: Pick<Team, "members"> | null;
+};
 
 /**
  * Contested coastal hubs held by a neighbour, for the 攻める list.
- * Front ones first, then nearer to `from`.
+ * Filter by trophy band (RAID_TARGET.requireBand); sort by trophy closeness then distance.
+ * Front ones still float above shut rows.
  */
 export function attackScouts(
   poiState: Island,
@@ -48,12 +71,14 @@ export function attackScouts(
   parcels: readonly Parcel[] = [],
   salt = 0,
   from: { x: number; z: number } = { x: 0, z: 0 },
+  opts: AttackScoutOpts = {},
 ): AttackScout[] {
   const holds = islandHolds({ poiState });
   const front = frontNodes(holds);
   const defence = new Map(contestedDefence(poiState, day, neighbours, salt).map((d) => [d.owner, d.factory]));
   const table = trophiesTable(neighbours);
   const guardAt = (id: NodeId) => Math.min(DEFENCE_AID, parcels.filter((q) => q.poi === id).length);
+  const foeKeys = foeOwnerKeys(opts.foe ?? null);
 
   const rows: AttackScout[] = [];
   for (const n of NODES) {
@@ -61,6 +86,8 @@ export function attackScouts(
     const i = nodeIndex(n.id);
     const who = rivalOf(holds[i]);
     if (!who) continue;
+    const rivalTrop = rivalTrophies(who, selfTrop, table);
+    if (!canRaidOwner(who, selfTrop, rivalTrop)) continue;
     const hit = neighbours.find((x) => x.code === who || (isAiOwner(who) && x.code === who.slice(3)));
     const bare = hit?.name ?? neighbourNameByCode(who, neighbours) ?? "他のプレイヤー";
     const ownerName = hit?.ai || isAiOwner(who) ? aiLabel(bare) : bare;
@@ -75,6 +102,7 @@ export function attackScouts(
         .sort((a, b) => Math.hypot(NODES[a].x - from.x, NODES[a].z - from.z) - Math.hypot(NODES[b].x - from.x, NODES[b].z - from.z))[0];
       if (k !== undefined) gate = NODES[k].name;
     }
+    const foeTeam = isFoeTeamOwner(who, foeKeys);
     rows.push({
       id: n.id,
       title: `${ownerName}の${n.name}`,
@@ -83,17 +111,41 @@ export function attackScouts(
       hubName: n.name,
       factory: Math.max(0, Math.round(factory)),
       guard: guardAt(n.id),
-      trop: trophySwap(selfTrop, rivalTrophies(who, selfTrop, table)).gain,
+      trop: trophySwap(selfTrop, rivalTrop).gain,
       loot: SEIZE.emptyReserve + SEIZE.bonus,
       onFront,
       gate,
       x: n.x,
       z: n.z,
+      ...(foeTeam ? { foeTeam: true } : {}),
     });
   }
+
+  // Leader among eligible owners: most outer (neighbour.held), then trophies.
+  const byOwner = new Map<string, { id: string; outer?: number; trophies?: number }>();
+  for (const r of rows) {
+    if (byOwner.has(r.owner)) continue;
+    const hit = neighbours.find((x) => x.code === r.owner || (isAiOwner(r.owner) && x.code === r.owner.slice(3)));
+    byOwner.set(r.owner, {
+      id: r.owner,
+      outer: hit?.held,
+      trophies: hit?.trophies ?? rivalTrophies(r.owner, selfTrop, table),
+    });
+  }
+  const leader = pickLeader([...byOwner.values()]);
+  if (leader) {
+    for (const r of rows) {
+      if (r.owner !== leader) continue;
+      r.bounty = true;
+      r.loot = SEIZE.emptyReserve + SEIZE.bonus + BOUNTY.extraMaterials;
+    }
+  }
+
   return rows.sort((a, b) => {
     if (a.onFront !== b.onFront) return Number(b.onFront) - Number(a.onFront);
-    return Math.hypot(a.x - from.x, a.z - from.z) - Math.hypot(b.x - from.x, b.z - from.z);
+    const ra = raidTargetRank(selfTrop, rivalTrophies(a.owner, selfTrop, table), Math.hypot(a.x - from.x, a.z - from.z));
+    const rb = raidTargetRank(selfTrop, rivalTrophies(b.owner, selfTrop, table), Math.hypot(b.x - from.x, b.z - from.z));
+    return ra - rb;
   });
 }
 

@@ -9,14 +9,14 @@ import { playerNodes } from "../meta/island";
 import { expeditionsOut, numbered, dropStale, recallAll, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
-import { bindTeam, bindTeamBattle, type Profile } from "../meta/profile";
+import { bindStartingFootholds, bindTeam, bindTeamBattle, type Profile } from "../meta/profile";
 import { loadIdentity } from "../meta/identity";
 import { NODES, nodeIndex } from "../sim/map";
-import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM } from "./copy";
+import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM, trophyHead, warPowerLine, warScoreLine } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 import { outerCap, TEAM, type Team } from "../meta/team";
-import { battleOpen, daysLeft, hubCounts, TEAM_BATTLE, type TeamBattle } from "../meta/team-battle";
+import { battleOpen, daysLeft, hubCounts, TEAM_BATTLE, warPowerOf, type TeamBattle } from "../meta/team-battle";
 import { FIELD_HUBS } from "../sim/team-field";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -89,8 +89,10 @@ export class ExpeditionPanel {
     const retired = recallAll(dropStale(p0.expeditions, Date.now()).filter((e) => e.state !== "sending" && e.id > 0));
     // 作り順④/⑤: refresh team seats and ensure an open 部隊戦.
     const who = loadIdentity();
-    const teamBound = bindTeam({ ...p0, expeditions: retired }, { id: who.id, name: who.name, code: who.code }, aiSalt());
-    const battleBound = bindTeamBattle(teamBound, aiSalt());
+    const salt = aiSalt();
+    const footholds = bindStartingFootholds({ ...p0, expeditions: retired }, salt);
+    const teamBound = bindTeam(footholds, { id: who.id, name: who.name, code: who.code }, salt);
+    const battleBound = bindTeamBattle(teamBound, salt);
     if (battleBound !== this.get()) this.put(battleBound);
     // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
     this.neighbours = neighboursFor(this.get());
@@ -224,7 +226,8 @@ export class ExpeditionPanel {
     const c = this.conn;
     // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
     // Trophy is the signal station's primary ranking readout (map table removed): large number first.
-    const trop = `<div class="exp-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>`;
+    const tropN = p.trophies ?? 0;
+    const trop = `<div class="exp-trophy"><small>${trophyHead(tropN)}</small><b>${tropN}</b></div>`;
     // 作り順③: island shield / loss cap under the trophy (protected state + remaining time).
     const now = Date.now();
     const remain = shieldRemainingMs(p.outerGuard, now);
@@ -259,7 +262,7 @@ export class ExpeditionPanel {
   }
 
   /**
-   * 作り順④: four seats with outer-hub counts (部隊戦の力・得点はまだ出さない).
+   * 作り順④: four seats with outer-hub counts (力・得点は fieldBoard に出す).
    * AI seats show 「 · AI」 like neighbours; caption uses TERM.aiMate once for the fill.
    */
   private teamBoard(team: Team | undefined): string {
@@ -277,8 +280,7 @@ export class ExpeditionPanel {
   }
 
   /**
-   * 作り順⑤: 部隊戦 field status — name, days left, hub bar, foe seats, sortie button.
-   * War power / bounty / held-time scoring are not shown yet (⑥).
+   * 作り順⑤+⑥: 部隊戦 field status — name, days left, hub bar, foe seats, 力 / 得点, sortie.
    */
   private fieldBoard(battle: TeamBattle | null | undefined): string {
     if (!battle) return "";
@@ -300,10 +302,14 @@ export class ExpeditionPanel {
       .slice(0, TEAM.size)
       .map((m) => `<span class="field-foe">${esc(memberLabel(m))}</span>`)
       .join("");
+    // 作り順⑥ / 2026-11-26: 部隊戦の力 + この試合のチーム得点（個人トロフィーとは別）。
+    const power = warPowerOf(p.team, battle.hooks);
+    const score = battle.score ?? 0;
+    const meta = `<p class="field-meta"><small>${esc(warPowerLine(power))}</small><small>${esc(warScoreLine(score))}</small></p>`;
     const go = open
       ? `<button type="button" data-act="field-sortie">${esc(TERM.teamBattle)}へ${esc(TERM.sortie)}</button>`
       : "";
-    return `<div class="field-board"><div class="mod-head"><strong>${TERM.teamBattle}</strong><small>${esc(TERM.battleField)}</small></div><p class="field-status">${status}</p>${bar}<div class="field-hubs">${hubs}</div><div class="field-foe-row"><small>${esc(TERM.foeTeam)}</small>${foe}</div>${go}</div>`;
+    return `<div class="field-board"><div class="mod-head"><strong>${TERM.teamBattle}</strong><small>${esc(TERM.battleField)}</small></div><p class="field-status">${status}</p>${bar}<div class="field-hubs">${hubs}</div>${meta}<div class="field-foe-row"><small>${esc(TERM.foeTeam)}</small>${foe}</div>${go}</div>`;
   }
 
   /** Neighbours as a board, plus a looked-up island's nodes (read-only; no send button). */

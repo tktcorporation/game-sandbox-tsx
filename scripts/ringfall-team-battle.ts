@@ -64,8 +64,9 @@ const SALT = 42;
   const firstTheirs = FIELD_HUBS.find((h) => b.holds[h.id] === "theirs")!;
   b = applyFieldCaptures(b, [firstTheirs.node]);
   assert.equal(b.holds[firstTheirs.id], "ours");
-  // Without sortie that day, overnight takes one of ours.
+  // Without sortie that day, overnight takes one of ours when foe power wins (⑥).
   const before = hubCounts(b.holds).ours;
+  b = { ...b, hooks: { ...b.hooks, warPower: 0, foeWarPower: 10 } };
   b = autoDefendField(b, 1);
   assert.equal(hubCounts(b.holds).ours, before - 1);
   // With sortie, overnight leaves holds alone.
@@ -95,10 +96,10 @@ const SALT = 42;
   console.log(`settle: win → next battle day ${next.started}`);
 }
 
-// --- Profile v47 + migrate from v46 ---
+// --- Profile carries teamBattle (v48 current; v46 migrates in) ---
 {
   const p = newProfile(9);
-  assert.equal(p.v, 47);
+  assert.equal(p.v, 48);
   assert.ok(p.teamBattle);
   assert.equal(p.teamBattle!.days, TEAM_BATTLE.days);
   assert.equal(battleOpen(p.teamBattle, p.day), true);
@@ -108,10 +109,10 @@ const SALT = 42;
   delete raw.teamBattle;
   const migrated = parseProfile(raw, 9);
   assert.ok(migrated);
-  assert.equal(migrated!.v, 47);
+  assert.equal(migrated!.v, 48);
   assert.ok(migrated!.teamBattle);
   assert.equal(migrated!.teamBattle!.foe.members.length, TEAM.size);
-  console.log("profile: v47 new + v46→v47 migrate");
+  console.log("profile: v48 teamBattle + v46→v48 migrate");
 }
 
 // --- Field raid island merge + settle does not rewrite home poiState ---

@@ -61,12 +61,15 @@ export const isContestedShore = (id: NodeId | string): boolean => (CONTESTED_SHO
 /** The four hubs that open a sea route to a neighbour slot (unchanged from direction A). */
 export const ROUTE_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
 
-/** Whether the sea route to neighbour slot `k` is open: the player holds the node facing it. */
+/**
+ * Whether the sea route to neighbour slot `k` is open: the player holds the node facing it.
+ * New profiles start holding all four `ROUTE_SHORES` (2026-11-26), so every slot is open from day 1.
+ */
 export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);
 
 /**
- * Whether the player has opened PvP at sea (CoC-style: neighbours stay hidden until then).
- * True once any coastal route is open.
+ * Whether neighbours show on maps (any coastal route open).
+ * New profiles: true from day 1. Lost shores can close a slot until retaken.
  */
 export const pvpSeaOpen = (holds: (id: NodeId) => boolean): boolean => NEIGHBOUR_SLOTS.some((_, k) => routeOpen(k, holds));
 

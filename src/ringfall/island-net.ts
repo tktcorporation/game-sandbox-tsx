@@ -9,7 +9,7 @@
 import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
-import { parseNeighbours, pvpSeaOpen, type Neighbour } from "./meta/neighbours";
+import { parseNeighbours, type Neighbour } from "./meta/neighbours";
 import { aiByCode, aiChanges, aiIncoming, aiLent, aiRefresh, aiView, withAi } from "./meta/ai-islands";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
@@ -127,10 +127,13 @@ export const neighboursFor = (p: Pick<Profile, "day">): Neighbour[] => withAi(ca
 /** The neighbours now, of the profile the page plays (`useAi()`); the server's alone before it is named. */
 export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSource()) : cachedNeighbours());
 
-/** Neighbours drawn on maps / horizon: empty until a sea route opens (序盤のお隣ノイズを出さない). */
+/**
+ * Neighbours drawn on maps / horizon (2026-11-26 early-MP).
+ * Always shown from the first session — sea-route open/shut still gates expeditions (`routeOpen`),
+ * but the islands themselves stay visible so multiplayer is not gated behind first outer ownership.
+ */
 export function neighboursOnMap(p: Pick<Profile, "day" | "poiState">): Neighbour[] {
-  const holds = (id: NodeId) => p.poiState[id]?.state === "own";
-  return pvpSeaOpen(holds) ? neighboursFor(p) : [];
+  return neighboursFor(p);
 }
 
 /** Raid / live map neighbours for the page's profile (`useAi`), gated like `neighboursOnMap`. */

@@ -20,7 +20,7 @@ import { aiOwner, parseHold, rivalHold, rivalOf } from "../src/ringfall/sim/hold
 import { finishBattle } from "../src/ringfall/sim/battle";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
-import { holds } from "../src/ringfall/meta/island";
+import { blankIsland, holds, type Island } from "../src/ringfall/meta/island";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { mergeHolds, reportHolds, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { isIslandCode } from "../src/ringfall/meta/island-code";
@@ -53,24 +53,33 @@ for (const a of aiIslands(SALT)) {
   console.log(`growth: ${a.name} holds ${by.join(" / ")} on days 1 5 10 20 30 60`);
 }
 
-// attack
+// attack — build from blankIsland so closed-route cases are not polluted by starting shores.
 const at = (day: number, freed: NodeId[], expeditions: Outgoing[] = []): Profile => {
   const p = newProfile(3);
-  const poiState = { ...p.poiState };
+  const poiState = { ...blankIsland() } as Island;
   for (const id of freed) poiState[id] = { state: "own" };
   return { ...p, day, poiState, expeditions };
 };
 const shore = NEIGHBOUR_SLOTS[0].shore;
-if (aiAttack(at(AI.start - 1, ["supply", shore]), SALT, []) !== null) fail("an island attacked before its first day");
+if (AI.start !== 1 || AI.scoutDay !== 1) fail(`AI.start/scoutDay should be 1, got ${AI.start}/${AI.scoutDay}`);
+if (aiAttack(at(0, ["supply", shore]), SALT, []) !== null) fail("an island attacked on day 0");
 for (let d = AI.start; d < AI.start + 40; d++) if (aiAttack(at(d, ["supply"]), SALT, []) !== null) fail(`an island attacked on day ${d} with no sea route open`);
-// The first scout: once, as soon as the player's ground faces an island (day 2 on), whatever the day's draw; a small squad.
+// The first scout: once a facing route is open (from day 1), whatever the day's draw; a small squad.
 const scout = aiAttack(at(AI.scoutDay, ["supply", shore]), SALT, [], false);
 if (!scout?.scout || scout.node !== shore) fail(`the first scout reads ${JSON.stringify(scout)}`);
 if (aiAttack(at(AI.scoutDay, ["supply"]), SALT, [], false) !== null) fail("a scout came with no sea route open");
-if (aiAttack(at(AI.scoutDay - 1, ["supply", shore]), SALT, [], false) !== null) fail("a scout came on the first day");
+if (aiAttack(at(0, ["supply", shore]), SALT, [], false) !== null) fail("a scout came on day 0");
 const scoutLent = aiLent(at(AI.scoutDay, ["supply", shore]), SALT, [], false);
 if (scoutLent.length !== 1 || scoutLent[0].kinds.join() !== AI.scout.join()) fail(`the scout lent reads ${JSON.stringify(scoutLent)}`);
 console.log(`scout: ${scout.island.name} on day ${AI.scoutDay}, ${AI.scout.length} robots`);
+
+// New profiles start with all four shores → routes open on day 1 without capturing robots.
+{
+  const fresh = newProfile(3);
+  const hit = aiAttack({ ...fresh, day: 1 }, SALT, [], false);
+  if (!hit?.scout) fail(`fresh profile day-1 scout missing: ${JSON.stringify(hit)}`);
+  console.log(`start shores: day-1 scout from ${hit.island.name} at ${hit.node}`);
+}
 let days = 0;
 let answered = 0;
 const first = aiIslands(SALT)[0];

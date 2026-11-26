@@ -49,7 +49,9 @@ import { squadsAway } from "../src/ringfall/meta/expeditions";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { heldIncome, islandHolds, advanceDay, holds, newIsland, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { START_FOOTHOLDS } from "../src/ringfall/meta/ai-islands";
+import { blankIsland, heldIncome, islandHolds, advanceDay, holds, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { kill } from "../src/ringfall/sim/combat";
 import { META } from "../src/ringfall/sim/config";
@@ -2023,7 +2025,19 @@ function checkIsland(): string | null {
     return s;
   };
   let p = newProfile();
-  if (p.day !== 1 || POIS.some((o) => p.poiState[o.id].state !== "foe")) return `island scenario: a new profile is on day ${p.day} with ${JSON.stringify(p.poiState)}`;
+  // 2026-11-26: sea-route shores start own; early-MP footholds are rival; every other POI is foe.
+  const startOwn = new Set(ROUTE_SHORES as readonly string[]);
+  const startRival = new Set(START_FOOTHOLDS.map((f) => f.id as string));
+  if (
+    p.day !== 1 ||
+    POIS.some((o) => {
+      const st = p.poiState[o.id].state;
+      if (startOwn.has(o.id)) return st !== "own";
+      if (startRival.has(o.id)) return typeof st !== "string" || !st.startsWith("rival:");
+      return st !== "foe";
+    })
+  )
+    return `island scenario: a new profile is on day ${p.day} with ${JSON.stringify(p.poiState)}`;
   // A wipe after capturing is a day too, and the node it took stays the player's.
   const wiped = settle(p, raid(11, { alive: false, cleared: [SUPPLY], visited: [SUPPLY] }));
   if (wiped.profile.day !== 2 || wiped.day !== 1 || wiped.gained.join() !== "supply" || wiped.front.gained.join() !== "supply" || wiped.profile.poiState.supply.state !== "own") return `island scenario: a wipe after capturing the supply depot left ${JSON.stringify({ day: wiped.profile.day, gained: wiped.gained, supply: wiped.profile.poiState.supply })}`;
@@ -2051,12 +2065,13 @@ function checkIsland(): string | null {
   if (newRun(77).strength !== STRENGTH.play || strengthFor(NODES.length) !== STRENGTH.play) return `island scenario: a raid with every node the enemy's plays at strength ${newRun(77).strength}, not ${STRENGTH.play}`;
   for (let k = 1; k <= NODES.length; k++) if (strengthFor(k) < strengthFor(k - 1)) return "island scenario: the enemy's strength falls as the player holds more nodes";
   // The garrisons: held in full and as with no island given, freed empty.
+  // all-foe fixtures use blankIsland() — newIsland() now starts with the four sea-route shores own.
   const count = (s: State, i: number) => s.enemies.filter((e) => e.poi === i).length;
   const plain = newRun(77);
-  const allHeld = newRun(77, starterKit(), "reservoir", { island: holds({ poiState: newIsland() }) });
+  const allHeld = newRun(77, starterKit(), "reservoir", { island: holds({ poiState: blankIsland() }) });
   // (An island all the enemy's plays at the lowest strength, the tables' raid at `STRENGTH.play`: the garrisons are the same.)
   if (allHeld.strength !== strengthFor(0) || POIS.some((_, i) => count(plain, i) !== count(allHeld, i))) return "island scenario: a raid with every POI held stands other garrisons than the raid with no island given";
-  const mixed = { ...newIsland(), quarry: { state: "own" as const }, pad: { state: "own" as const } };
+  const mixed = { ...blankIsland(), quarry: { state: "own" as const }, pad: { state: "own" as const } };
   const m = newRun(77, starterKit(), "reservoir", { island: holds({ poiState: mixed }) });
   if (m.strength !== strengthFor(1)) return `island scenario: a raid with one node the player's plays at strength ${m.strength}`;
   // A POI's squads that walk a beat (`MOBILES`) are out on it, not counted among the POI's own.
@@ -2075,9 +2090,15 @@ function checkIsland(): string | null {
   // Saves: a v12 one is on the day after its raids with every POI the enemy's; one before v22 moves its
   // POIs own and thin to the player and the rest to the enemy, the pad the enemy's, and drops the network and the outposts.
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
-  if (!v12 || v12.v !== 46 || v12.day !== 7 || POIS.some((o) => v12.poiState[o.id].state !== "foe")) return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
+  if (
+    !v12 ||
+    v12.v !== 48 ||
+    v12.day !== 7 ||
+    POIS.some((o) => (startOwn.has(o.id) ? v12.poiState[o.id].state !== "own" : v12.poiState[o.id].state !== "foe"))
+  )
+    return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
   // Legacy v21 strings: "freed" → own, "held" → foe, "thin" → own; pad forced foe.
-  const v21 = { ...p, v: 21, network: 4, pressure: 1.2, outposts: { pumps: "rogue", substation: "freed" }, scores: [{ day: 1, score: [1, 2, 0], won: false }], poiState: { ...newIsland(), supply: { state: "freed", lastVisit: 1, since: 0 }, quarry: { state: "thin", lastVisit: 1, since: 2 }, relay: { state: "held", lastVisit: 0, since: 0 }, pad: { state: "freed", lastVisit: 2, since: 0 } } };
+  const v21 = { ...p, v: 21, network: 4, pressure: 1.2, outposts: { pumps: "rogue", substation: "freed" }, scores: [{ day: 1, score: [1, 2, 0], won: false }], poiState: { ...blankIsland(), supply: { state: "freed", lastVisit: 1, since: 0 }, quarry: { state: "thin", lastVisit: 1, since: 2 }, relay: { state: "held", lastVisit: 0, since: 0 }, pad: { state: "freed", lastVisit: 2, since: 0 } } };
   const back = parseProfile(JSON.parse(JSON.stringify(v21)));
   if (!back || back.v !== 46 || back.day !== p.day || playerNodes(back).join() !== "supply,quarry" || back.poiState.pad.state !== "foe" || "network" in back || "pressure" in back || "outposts" in back || "scores" in back) return `island scenario: a v21 save loaded as ${JSON.stringify(back && { v: back.v, day: back.day, poiState: back.poiState, extra: ["network", "pressure", "outposts", "scores"].filter((k) => k in back) })}`;
   // v32 with legacy "held"/"freed" (and a rival) normalizes to v33 "foe"/"own"/RivalHold and re-saves as the new words.
@@ -2117,7 +2138,8 @@ function checkStrength(): string | null {
   // The island with the player holding the first `k` nodes of the row out from the camp.
   const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge", "yard", "smelter", "cannery", "coldstore", "wreck", "carpark", "highrise", "terminal", "powerplant", "robotworks", "control", "assembly", "launchpad", "fuel", "radar"];
   if (ROW_OUT.length !== NODES.length) return `strength scenario: the row out from the camp names ${ROW_OUT.length} nodes of ${NODES.length}`;
-  const island = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "own" as const }])) } });
+  // blankIsland base: k=0 is every node the enemy's (newIsland() would already own the route shores).
+  const island = (k: number) => holds({ poiState: { ...blankIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "own" as const }])) } });
   for (let k = 0; k <= NODES.length; k++) {
     const n = strengthFor(k);
     const l = STRENGTH.levels[n];
@@ -2617,7 +2639,7 @@ function checkFactions(): string | null {
   ticks(g, 8);
   if (g.squads[gi].foe !== undefined || g.squads[ri].foe !== undefined || g.events.some((e) => e.t === "fall")) return "factions: a POI's garrison fought a rogue squad beside it";
   // Fewer rogues walk as the enemy grows stronger (the player holding none, six, or all of the nodes).
-  const weakened = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(NODES.slice(0, k).map((n) => [n.id, { state: "own" as const }])) } });
+  const weakened = (k: number) => holds({ poiState: { ...blankIsland(), ...Object.fromEntries(NODES.slice(0, k).map((n) => [n.id, { state: "own" as const }])) } });
   for (const region of REGIONS) {
     const rogues = [0, 6, NODES.length].map((k) => newRun(9, starterKit(), region.id, { island: weakened(k) }).enemies.filter((e) => e.rogue && regionHere(e.pos).id === region.id).length);
     if (!(rogues[0] >= rogues[1] && rogues[1] >= rogues[2] && rogues[0] > rogues[2])) return `factions: rogues in ${region.id} with the enemy at its weakest / middling / strongest are ${rogues.join(" / ")}, not fewer as it strengthens`;
@@ -3690,7 +3712,7 @@ function checkMods(): string | null {
 function checkThreat(): string | null {
   // The island at each of the enemy's strengths: the player holding none, three or all of the nodes.
   for (const k of [0, 3, NODES.length]) {
-    const island = holds({ poiState: { ...newIsland(), ...Object.fromEntries(NODES.slice(0, k).map((o) => [o.id, { state: "own" as const }])) } });
+    const island = holds({ poiState: { ...blankIsland(), ...Object.fromEntries(NODES.slice(0, k).map((o) => [o.id, { state: "own" as const }])) } });
     const n = strengthFor(k);
     const l = STRENGTH.levels[n];
     for (const seed of [5, 91]) {
@@ -4042,7 +4064,7 @@ function checkPushPull(): string | null {
   if (paid.spoils !== MOMENTUM.spoils[0] || unpaid.spoils !== undefined || paid.profile.cash - unpaid.profile.cash < MOMENTUM.spoils[0]) return `push-pull: two nodes paid ${paid.spoils} alive and ${unpaid.spoils} wiped out`;
   // 島の解放 is gone: killing the titan never resets the island or raises 強度.
   {
-    const free = (ids: readonly NodeId[]) => ({ ...newIsland(), ...Object.fromEntries(ids.map((id) => [id, { state: "own" as const }])) });
+    const free = (ids: readonly NodeId[]) => ({ ...blankIsland(), ...Object.fromEntries(ids.map((id) => [id, { state: "own" as const }])) });
     const held = NODES.map((n) => n.id).slice(0, 16);
     const endP: Profile = { ...p, day: 23, factory: 3, poiState: free(held) };
     const PAD = POIS.findIndex((o) => o.boss);

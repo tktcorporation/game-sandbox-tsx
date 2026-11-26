@@ -1070,9 +1070,9 @@ export class IslandMap {
       return neighbourNameByCode(owner, this.neighbours) ?? "他のプレイヤー";
     };
     /**
-     * Caption under a POI mark (TKT-204 案 A):
+     * Caption under a POI mark (TKT-204 案 A / 2026-11-26):
      * - rival contested → 「ツバキ · 攻める」
-     * - foe contested facing a neighbour → 「カゲウツ · AIと取り合う」
+     * - foe contested facing a neighbour → 「ロボット · トロフィーなし」
      * - other rival → owner name only
      */
     const shoreCaption = (i: number): string | null => {

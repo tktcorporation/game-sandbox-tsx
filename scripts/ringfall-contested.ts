@@ -5,7 +5,7 @@
 import { FACTORY } from "../src/ringfall/sim/config";
 import { NODES, poiIndex, type NodeId } from "../src/ringfall/sim/map";
 import { CONTESTED_SHORES, ROUTE_SHORES, neighbourNameByCode } from "../src/ringfall/meta/neighbours";
-import { contestedOwned, newIsland, nonContestedNodeCount, type Island } from "../src/ringfall/meta/island";
+import { blankIsland, contestedOwned, nonContestedNodeCount, type Island } from "../src/ringfall/meta/island";
 import { contestedDefence } from "../src/ringfall/meta/contested-defence";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { DEFENCE_AID, defenceKinds, garrison, isContestedPoi } from "../src/ringfall/sim/island";
@@ -40,7 +40,7 @@ check(
 }
 
 const island = (own: NodeId[], rival?: Partial<Record<NodeId, string>>): Island => {
-  const poiState = newIsland();
+  const poiState = blankIsland();
   for (const id of own) poiState[id] = { state: "own" };
   for (const [id, who] of Object.entries(rival ?? {})) poiState[id as NodeId] = { state: rivalHold(who!) };
   return poiState;

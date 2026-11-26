@@ -7,6 +7,7 @@
  * Lint: `npm run lint:ringfall-copy` — fails on banned synonyms and on raw
  * literals of TERM / PHRASE values outside this file and the allowlist.
  */
+import { leagueOf } from "../meta/trophies";
 
 /** Stable ids for player-facing place / action terms (one concept = one id). */
 export type TermId =
@@ -47,6 +48,9 @@ export type TermId =
   | "battleField"
   | "foeTeam"
   | "fieldHubs"
+  | "warPower"
+  | "bounty"
+  | "warScore"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -56,6 +60,7 @@ export type TermId =
   | "seaIslands"
   | "island"
   | "trophy"
+  | "league"
   | "organize"
   | "broughtHome"
   | "putInWarehouse"
@@ -160,6 +165,21 @@ export const TERM = {
    */
   fieldHubs: "戦場の拠点",
   /**
+   * War power from outer hubs on the field (作り順⑥ / 2026-11-26).
+   * 【元】力 【案】部隊戦の力 【理由】部隊戦ボード専用だと分かる。トロフィーと並べない
+   */
+  warPower: "部隊戦の力",
+  /**
+   * Leader bounty on the strongest rival (作り順⑥).
+   * 【元】（なし） 【案】懸賞金 【理由】design-direction の語。先頭への上乗せ（物資。トロフィーではない）
+   */
+  bounty: "懸賞金",
+  /**
+   * Team score inside one 部隊戦 match only (作り順⑥ / 2026-11-26).
+   * 【元】得点（個人の通算） 【案】得点＝チームの得点 【理由】トロフィーと分離。ボードにだけ出す
+   */
+  warScore: "得点",
+  /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
    * 倉庫へ送る is TERM.sendToWarehouse; BANNED 「送る」 is exact-match only.
@@ -179,6 +199,11 @@ export const TERM = {
   island: "島",
   /** Ranking T1 — signal station / results. */
   trophy: "トロフィー",
+  /**
+   * Trophy band label (CoC league; display from day 1).
+   * 【元】（なし） 【案】リーグ 【理由】帯の名前の見出し。数値帯は trophies.leagueOf
+   */
+  league: "リーグ",
   /**
    * Post-raid stash tidy (モンハンの報酬画面にあたる).
    * 【元】（なし） 【案】倉庫の整理 【理由】倉庫・倉庫の棚と同じ語でつなぐ
@@ -359,6 +384,14 @@ export function trophyLine(before: number, after: number, gained = 0, lost = 0, 
   return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;
 }
 
+/**
+ * Trophy header label with league band (day-1 surface).
+ * 【元】トロフィー 【案】トロフィー · 銅 【理由】リーグ帯を常時見せる（開始 1000＝銅）
+ */
+export function trophyHead(trophies: number): string {
+  return `${TERM.trophy} · ${leagueOf(trophies).name}`;
+}
+
 /** 島の知らせの控え: 新しい行を先頭に足し、最新 NEWS_KEEP 件だけ残す。 */
 export function pushNews(prev: readonly string[], lines: readonly string[]): string[] {
   const fresh = lines.map((s) => s.trim()).filter(Boolean);
@@ -439,11 +472,28 @@ export function attackOwner(who: string): string {
 }
 
 /**
- * Map label under a contested hub still held by the enemy, facing a neighbour.
- * 【元】観測所 【案】ツバキと取り合う 【理由】誰と取り合うかを先に見せる（TKT-204 案 A）
+ * Map label under a robot-held contested hub facing a neighbour (2026-11-26).
+ * 【元】カゲウツ · AIと取り合う 【案】ロボット · トロフィーなし 【理由】ロボット拠点はトロフィーが動かないと分かる
  */
-export function contestOwner(who: string): string {
-  return `${who}と${TERM.contest}`;
+export function contestOwner(_who?: string): string {
+  return `ロボット · ${TERM.trophy}なし`;
+}
+
+/**
+ * Toast after seizing a robot-held outer hub (2026-11-26).
+ * 【元】制圧した · {拠点} · {誰}が攻めてくる 【案】制圧した · {拠点} · トロフィーなし
+ * 【理由】お隣は最初から来る。ロボット拠点を取っても海路ゲートではない
+ */
+export function robotHubSeized(hub: string, _who?: string): string {
+  return `制圧した · ${hub} · ${TERM.trophy}なし`;
+}
+
+/**
+ * Results note when only robot hubs were taken this raid (2026-11-26).
+ * 【元】（トロフィー行のみ／無し） 【案】ロボットの拠点 · トロフィーは動かない 【理由】ライバル攻めと混ぜない
+ */
+export function robotHubTropNote(): string {
+  return `ロボットの拠点 · ${TERM.trophy}は動かない`;
 }
 
 /**
@@ -455,11 +505,11 @@ export function attackGoal(whoHub: string): string {
 }
 
 /**
- * Depart hint when a rival hub is held but not yet on the front.
- * 【元】（なし） 【案】先に中継塔を取ると攻められる 【理由】前線に無い相手持ちの理由
+ * Depart hint when a rival hub is held but not yet on the front (not a sea-route gate).
+ * 【元】先に{拠点}を取ると攻められる 【案】前線に出すには先に{拠点} 【理由】海路開放と混同しない。前線の隣接だけ
  */
 export function contestGateHint(gate: string): string {
-  return `先に${gate}を取ると攻められる`;
+  return `前線に出すには先に${gate}`;
 }
 
 /**
@@ -493,7 +543,7 @@ export function lostTodayLine(lost: number, cap: number): string {
 
 /**
  * Team board seat line (作り順④): outer hub count.
- * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種が見える（力そのものはまだ出さない）
+ * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種。力そのものは fieldBoard の「力」
  */
 export function teamOuterLine(outer: number): string {
   return `${TERM.outerHubs} ${outer}`;
@@ -525,21 +575,51 @@ export function attackScoutTrop(trop: number): string {
 }
 
 /**
- * First-time multiplayer guide cards (TKT-204 案 C).
- * 【元】（なし） 【案】3 枚 【理由】お隣→前線の拠点→核·トロフィー
+ * War power line on the field board only (作り順⑥ / 2026-11-26).
+ * 【元】力 12 【案】部隊戦の力 12 【理由】部隊戦ボード専用
+ */
+export function warPowerLine(power: number): string {
+  return `${TERM.warPower} ${power}`;
+}
+
+/**
+ * Team score on the field board only (作り順⑥ / 2026-11-26).
+ * 【元】得点 42 【案】チームの得点 42 【理由】個人トロフィーと並べず、今の部隊戦だけ
+ */
+export function warScoreLine(total: number): string {
+  return `チームの${TERM.warScore} ${total}`;
+}
+
+/**
+ * Bounty mark under an 攻める row (作り順⑥ / 2026-11-26).
+ * 【元】懸賞金 【案】懸賞金 · 物資 +3 【理由】トロフィーではなく物資の上乗せだと分かる
+ */
+export function bountyMark(extraMaterials = 3): string {
+  return `${TERM.bounty} · 物資 +${extraMaterials}`;
+}
+
+/**
+ * First-time multiplayer guide cards (TKT-204 案 C / 2026-11-26 early-MP).
+ * Shown at first camp (not only at the gate).
  */
 export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   {
     title: TERM.seaIslands,
-    body: `外側の拠点を、${TERM.seaIslands}と${TERM.contest}。`,
+    // 【元】お隣の島は最初から外側の拠点を攻めてくる。
+    // 【案】地図にも最初から出る、を足す 【理由】初日可視化：隣島の存在を地図で先に見せる
+    body: `${TERM.seaIslands}は地図に最初から出る。外側の拠点を攻めてくる。`,
   },
   {
-    title: `${TERM.front}の拠点`,
-    body: `地図の「${TERM.attack}」が付いた拠点へ、${TERM.gate}から${TERM.sortie}する。`,
+    title: TERM.attack,
+    // 【元】「攻める」で相手の拠点を選んで出撃。…／前線の拠点
+    // 【案】門の一覧を先に言う 【理由】攻めるリストが初日の入口だと分かる
+    body: `門の「${TERM.attack}」に相手の拠点が一覧で出る。取れば${TERM.trophy}が増え、取られると減る。`,
   },
   {
     title: TERM.captureCore,
-    body: `${TERM.core}を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
+    // 【元】核·制圧するとトロフィー…やり返す。
+    // 【案】信号所のチームも一言 【理由】チーム／部隊戦の存在を初日に出す
+    body: `相手の拠点を${TERM.captureCore}すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。${TERM.signal}に${TERM.team}もある。`,
   },
 ];
 

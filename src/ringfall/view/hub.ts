@@ -74,7 +74,7 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
 
 /**
  * When a rival holds a contested hub that is not yet on the front: which front node to take first
- * (TKT-204 案 D — 「先に中継塔を取ると攻められる」).
+ * (TKT-204 案 D — 「前線に出すには先に{拠点}」. Not a sea-route gate).
  */
 export function rivalGateHint(p: Profile, from: { x: number; z: number } = CAMP.wake): string | null {
   if (rivalFrontPick(p, from)) return null;
@@ -1018,7 +1018,10 @@ export class Hub {
   attackTargets(): AttackScout[] {
     const p = this.profile;
     const at = this.startPoints().find((q) => q.on) ?? { x: CAMP.wake.x, z: CAMP.wake.z };
-    return attackScouts(p.poiState, p.day, neighboursFor(p), p.trophies ?? TROPHY.start, p.parcels ?? [], aiSalt(), at);
+    // 作り順⑥ / 2026-11-26: trophy band ±400; mark leader bounty (foe badge only).
+    return attackScouts(p.poiState, p.day, neighboursFor(p), p.trophies ?? TROPHY.start, p.parcels ?? [], aiSalt(), at, {
+      foe: p.teamBattle?.foe,
+    });
   }
 
   /**

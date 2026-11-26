@@ -3,6 +3,7 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
+import { realignStartingFootholds, withStartingFootholds } from "./ai-islands";
 import { advanceDay, contestedOwned, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
@@ -22,8 +23,10 @@ import {
   markSortie,
   parseTeamBattle,
   settleBattle,
+  tickTeamScore,
   type TeamBattle,
 } from "./team-battle";
+import { BOUNTY, bountyOwnersFrom, takeHomeSlots } from "./war-score";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -40,7 +43,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 47;
+  v: 48;
   cash: number;
   stash: Item[];
   raids: number;
@@ -134,9 +137,10 @@ export interface Profile {
    */
   team: Team;
   /**
-   * Active / last 部隊戦 on the field (作り順⑤). Null until first ensure.
+   * Active / last 部隊戦 on the field (作り順⑤+⑥). Null until first ensure.
    * v46 and older saves get a fresh battle on load via `ensureBattle`.
-   * Step 6 (war power / bounty / held-time) reads `teamBattle.hooks` without reshaping.
+   * Step 6: war power / bounty on `hooks`; team score on `TeamBattle.score` (match-only).
+   * Personal 得点 / warScore is gone (2026-11-26) — trophies stay the personal rank.
    */
   teamBattle: TeamBattle | null;
 }
@@ -204,9 +208,11 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   const s = seed & 0xffff;
-  const team = formTeam(seedSelf(s), s, 1, 0);
+  // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
+  const poiState = withStartingFootholds(newIsland(), s);
+  const team = formTeam(seedSelf(s), s, 1, contestedOwned({ poiState }).length);
   return {
-    v: 47,
+    v: 48,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -222,7 +228,7 @@ export function newProfile(seed = 1): Profile {
     seen: "",
     routes: [],
     day: 1,
-    poiState: newIsland(),
+    poiState,
     known: [...MOD_START],
     threat: 0,
     freedAt: {},
@@ -241,7 +247,7 @@ export function newProfile(seed = 1): Profile {
     outerGuard: emptyOuterGuard(),
     // 作り順④: auto-assign self + AI の仲間 (identity may replace self later via bindTeam).
     team,
-    // 作り順⑤: open the first 部隊戦 on day 1 (AI foe fill).
+    // 作り順⑤+⑥: open the first 部隊戦 on day 1 (AI foe fill; score starts at 0).
     teamBattle: ensureBattle(null, team, s, 1),
   };
 }
@@ -252,6 +258,15 @@ export function bindTeamBattle(p: Profile, salt: number): Profile {
   const teamBattle = ensureBattle(p.teamBattle, team, salt, p.day);
   if (teamBattle === p.teamBattle && team === p.team) return p;
   return { ...p, team, teamBattle };
+}
+
+/**
+ * Align day-1 AI foothold owners with the browser's neighbour salt (`aiSalt`).
+ * Call beside `bindTeam` on load so 「攻める」 names match the map's AI islands.
+ */
+export function bindStartingFootholds(p: Profile, salt: number): Profile {
+  const poiState = realignStartingFootholds(p.poiState, salt);
+  return poiState === p.poiState ? p : { ...p, poiState };
 }
 
 /**
@@ -767,13 +782,15 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
     for (const k of tools) home.push({ t: "tool", kind: k });
   } else {
-    const kept = pouchKeep(pl.haul, tools, pouchSlots(p.hideout));
+    // 作り順⑥: take-home is pouch slots only (war power never feeds this).
+    const kept = pouchKeep(pl.haul, tools, takeHomeSlots(p.hideout));
     for (const v of kept.haul) home.push({ t: "valuable", kind: v });
     for (const k of kept.tools) home.push({ t: "tool", kind: k });
   }
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
-  const seized = seizeRivalLoot(p, s);
+  // 作り順⑥: leader bounty adds extra materials when the owner is the strongest rival.
+  const seized = seizeRivalLoot(p, s, bountyOwners(p, s));
   if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
   for (const it of seized.items) home.push(it);
   // Each tool home opens the first of its routes still closed, and is spent on it.
@@ -856,7 +873,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       if (JSON.stringify(team) !== JSON.stringify(night.team)) Object.assign(night, { team });
     }
   }
-  // 作り順⑤: tick 部隊戦 — field captures, auto-defence, period settle, open next.
+  // 作り順⑤+⑥: tick 部隊戦 — field captures, war-power auto-defence, team score, period settle.
   let fieldBattle: Settlement["fieldBattle"];
   {
     let tb = night.teamBattle ?? p.teamBattle ?? null;
@@ -865,14 +882,16 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       if (!tb) tb = ensureBattle(null, ours, night.seed, p.day);
       if (fieldRaid) tb = markSortie(tb, p.day);
       if (fieldRaid) tb = applyFieldCaptures(tb, capturedIds(s));
-      // Overnight on the field: foe takes one hub if the player did not sortie that day.
-      tb = autoDefendField(tb, p.day);
+      // Overnight on the field: war power ≥ foe keeps; else foe takes one hub if no sortie.
+      tb = autoDefendField(tb, p.day, ours);
+      // Team score for this match only (hub-days of the day that just ended).
+      tb = tickTeamScore(tb);
       if (battleDue(tb, night.day)) {
         tb = settleBattle(tb);
         const n = hubCounts(tb.holds);
         fieldBattle = { result: tb.result!, ours: n.ours, theirs: n.theirs, name: FIELD_NAME };
       }
-      // Open the next match once the period is settled.
+      // Open the next match once the period is settled (score resets there).
       tb = ensureBattle(tb, ours, night.seed, night.day);
       Object.assign(night, { teamBattle: tb });
     }
@@ -956,14 +975,41 @@ export function keptSeized(
 }
 
 /**
+ * Owners who pay the leader bounty this raid (作り順⑥).
+ * Leader is the strongest rival among **all** contested holders at raid start — not among
+ * captured only — so taking a weak hub never pays the leader bounty by accident.
+ */
+function bountyOwners(p: Pick<Profile, "teamBattle">, s: Pick<State, "hold" | "stats">): Set<string> {
+  const hold = s.hold;
+  if (!hold) return new Set();
+  const captured: string[] = [];
+  for (const id of capturedIds(s)) {
+    const i = poiIndex(id);
+    if (i < 0) continue;
+    const who = rivalOf(hold[i] ?? "foe");
+    if (who) captured.push(who);
+  }
+  const heldBy = new Map<string, number>();
+  for (let i = 0; i < POIS.length; i++) {
+    if (!isContestedShore(POIS[i]!.id)) continue;
+    const who = rivalOf(hold[i] ?? "foe");
+    if (!who) continue;
+    heldBy.set(who, (heldBy.get(who) ?? 0) + 1);
+  }
+  return bountyOwnersFrom(heldBy, captured, p.teamBattle?.hooks?.bountyTarget);
+}
+
+/**
  * Raid loot from 核 · 制圧 of rival-held nodes (CoC resource loot, including AI):
  * 島の守り stock at that 中継ボックス → warehouse; empty stock still pays `SEIZE.emptyReserve`
  * commons; every 制圧 also adds `SEIZE.bonus` on top so the core capture feels like materials
  * even when trophies are the ownership change. Empty when no island / no rivals (sim gate).
+ * 作り順⑥: `bounty` owners get `BOUNTY.extraMaterials` more commons.
  */
 export function seizeRivalLoot(
   p: Pick<Profile, "parcels" | "seed">,
   s: Pick<State, "hold" | "stats" | "seed">,
+  bounty: ReadonlySet<string> = new Set(),
 ): { items: Item[]; ids: number[]; at: { poi: PoiId; kinds: ValuableKind[] }[] } {
   const items: Item[] = [];
   const ids: number[] = [];
@@ -975,7 +1021,8 @@ export function seizeRivalLoot(
   const seed = s.seed ?? p.seed;
   for (const id of capturedIds(s)) {
     const i = poiIndex(id);
-    if (i < 0 || rivalOf(hold[i] ?? "foe") === null) continue;
+    const who = i >= 0 ? rivalOf(hold[i] ?? "foe") : null;
+    if (i < 0 || who === null) continue;
     const kinds: ValuableKind[] = [];
     for (const q of stock) {
       if (q.poi !== id || taken.has(q.id)) continue;
@@ -993,7 +1040,11 @@ export function seizeRivalLoot(
       }
     }
     // Always a small bonus on top of parcels (CoC: breaking in yields resources).
-    for (let k = 0; k < SEIZE.bonus; k++) {
+    let bonus = SEIZE.bonus;
+    if (bounty.has(who) || (who.startsWith("ai-") && bounty.has(who.slice(3))) || bounty.has(`ai-${who}`)) {
+      bonus += BOUNTY.extraMaterials;
+    }
+    for (let k = 0; k < bonus; k++) {
       const kind = raidReserveKind(seed ^ 0x85ebca6b, id, k + SEIZE.emptyReserve);
       items.push({ t: "valuable", kind });
       kinds.push(kind);
@@ -1082,12 +1133,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v44 and older have no `outerGuard`; v45 adds anti-snowball (作り順③: island shield + loss cap).
  * v45 and older have no `team`; v46 adds 4-person teams with AI の仲間 fill (作り順④).
  * v46 and older have no `teamBattle`; v47 adds 部隊戦 on the field (作り順⑤).
+ * v47 and older may lack war-power hooks / team `score` on `teamBattle`; v48 fills them (作り順⑥).
+ * Personal `warScore` (7-day rolling) is dropped — team score lives on `TeamBattle.score` only (2026-11-26).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1158,6 +1211,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v45: 作り順③の島の盾・喪失上限（`outerGuard`）。
   // v46: 作り順④の 4 人チーム（`team`、空きは AI の仲間）。
   // v47: 作り順⑤の部隊戦（`teamBattle`、荒地の戦場）。
+  // v48: 作り順⑥の力・懸賞金・部隊戦チーム得点（`teamBattle.score`）。個人 `warScore` は捨てる。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
@@ -1172,7 +1226,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const savedBattle = typeof o.v === "number" && o.v >= 47 ? parseTeamBattle(o.teamBattle) : null;
   const teamBattle = ensureBattle(savedBattle, team, seedN, day);
   return {
-    v: 47,
+    v: 48,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1207,6 +1261,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     team,
     teamBattle,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
+    // Personal warScore (v48 early) is dropped — team score is on teamBattle.score.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
     freedAt,
