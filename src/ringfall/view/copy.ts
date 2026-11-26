@@ -558,12 +558,32 @@ export function fieldBattleLine(daysLeft: number, ours: number, total: number): 
 }
 
 /**
- * Field battle result line (作り順⑤).
- * 【元】（なし） 【案】部隊戦 · 勝ち · 戦場の拠点 3/5 【理由】勝敗は拠点数だけ（得点は⑥）
+ * Field battle result line (作り順⑤ + TKT-219 stars).
+ * 【元】部隊戦 · 勝ち · 戦場の拠点 3/5
+ * 【案】部隊戦 · 勝ち · ★★☆ · 戦場の拠点 3/5
+ * 【理由】クラン戦型の星を結果に出す（トロフィーは動かさない）
  */
-export function fieldResultLine(result: "win" | "loss" | "draw", ours: number, total: number): string {
+export function fieldResultLine(result: "win" | "loss" | "draw", ours: number, total: number, stars?: number): string {
   const say = result === "win" ? "勝ち" : result === "loss" ? "負け" : "引き分け";
-  return `${TERM.teamBattle} · ${say} · ${TERM.fieldHubs} ${ours}/${total}`;
+  const s = stars === undefined ? undefined : Math.max(0, Math.min(3, Math.round(stars)));
+  const starBit = s === undefined ? "" : ` · ${"★".repeat(s)}${"☆".repeat(3 - s)}`;
+  return `${TERM.teamBattle} · ${say}${starBit} · ${TERM.fieldHubs} ${ours}/${total}`;
+}
+
+/**
+ * League band change on results (TKT-219).
+ * 【元】（なし） 【案】リーグ · 銅 → 銀 【理由】昇格・降格が一目で分かる
+ */
+export function leagueChangeLine(from: string, to: string): string {
+  return `${TERM.league} · ${from} → ${to}`;
+}
+
+/**
+ * League win-bonus materials preview / results (TKT-219).
+ * 【元】（なし） 【案】物資 +3 【理由】勝ちボーナスをトロフィーと分けて見せる
+ */
+export function winBonusMark(n: number): string {
+  return `物資 +${n}`;
 }
 
 /**

@@ -9,7 +9,18 @@ import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
-import { clampTrophies, raidTrophyDelta, rivalTrophies, SEIZE, starsForRaid, TROPHY, trophyDelta } from "./trophies";
+import {
+  clampTrophies,
+  fieldStars,
+  leagueChanged,
+  raidTrophyDelta,
+  rivalTrophies,
+  SEIZE,
+  starsForRaid,
+  TROPHY,
+  trophyDelta,
+  winBonusMaterials,
+} from "./trophies";
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
 import { ensureTeam, formTeam, parseTeam, selfOuterCount, teamSalt, type Team, type TeamSelf } from "./team";
@@ -642,9 +653,16 @@ export interface Settlement {
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
   /**
    * 部隊戦 that just closed this settle (作り順⑤), when the period ended.
-   * View-only for the results card; the profile already holds the next / settled battle.
+   * `stars` = clan-war shaped hub stars (TKT-219); trophies do not move.
    */
-  fieldBattle?: { result: "win" | "loss" | "draw"; ours: number; theirs: number; name: string };
+  fieldBattle?: { result: "win" | "loss" | "draw"; ours: number; theirs: number; name: string; stars: number };
+  /** League band crossed this settle (TKT-219); left out when unchanged. */
+  league?: { from: string; to: string };
+  /**
+   * League win-bonus materials awarded this settle (TKT-219; 「攻める」stars only).
+   * Left out when none.
+   */
+  winBonus?: number;
 }
 
 /** Whether the profile still has items waiting for 倉庫の整理 (blocks departure from the gate). */
@@ -796,6 +814,22 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const seized = seizeRivalLoot(p, s, bountyOwners(p, s));
   if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
   for (const it of seized.items) home.push(it);
+  // Field sorties (作り順⑤): captures write field holds, not home-island poiState / depots / entries.
+  const fieldRaid = !!s.teamField;
+  // TKT-219: league win-bonus materials for 「攻める」stars (before store so they can fit stash).
+  // Robot hubs / field sorties never get this — only a gate-picked rival attack.
+  let tropStarsEarly: 0 | 1 | 2 | 3 | undefined;
+  let winBonusCount = 0;
+  if (!fieldRaid && s.attack) {
+    const a = s.attack;
+    const half = a.defenceMax > 0 && a.defenceDealt >= a.defenceMax * 0.5;
+    const captured = (s.stats.captured ?? []).includes(a.id);
+    tropStarsEarly = starsForRaid({ halfDefence: half, captured, extracted: s.outcome === "extracted" });
+    winBonusCount = winBonusMaterials(p.trophies ?? TROPHY.start, tropStarsEarly);
+    for (let k = 0; k < winBonusCount; k++) {
+      home.push({ t: "valuable", kind: raidReserveKind(s.seed ^ 0xc2b2ae35, a.id, k) });
+    }
+  }
   // Each tool home opens the first of its routes still closed, and is spent on it.
   const opened: RouteId[] = [];
   const spent = new Set<Item>();
@@ -806,8 +840,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     opened.push(r.id);
     spent.add(i);
   }
-  // Field sorties (作り順⑤): captures write field holds, not home-island poiState / depots / entries.
-  const fieldRaid = !!s.teamField;
   const day = fieldRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
   const change = dayChange(p, day);
@@ -852,20 +884,16 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const selfTrop = p.trophies ?? TROPHY.start;
   let tropGained = 0;
   let tropLost = 0;
-  let tropStars: number | undefined;
+  let tropStars: number | undefined = tropStarsEarly;
   const skip = new Set<NodeId>();
   const attackTaken: { id: NodeId; owner: string }[] = [];
-  if (!fieldRaid && s.attack) {
+  if (!fieldRaid && s.attack && tropStars !== undefined) {
     const a = s.attack;
-    const half = a.defenceMax > 0 && a.defenceDealt >= a.defenceMax * 0.5;
-    const captured = (s.stats.captured ?? []).includes(a.id);
-    const extracted = s.outcome === "extracted";
-    tropStars = starsForRaid({ halfDefence: half, captured, extracted });
     const d = raidTrophyDelta(a.N, a.M, tropStars);
     if (d > 0) tropGained += d;
     else tropLost += -d;
     skip.add(a.id);
-    if (captured) attackTaken.push({ id: a.id, owner: a.owner });
+    if ((s.stats.captured ?? []).includes(a.id)) attackTaken.push({ id: a.id, owner: a.owner });
   }
   const trop = fieldRaid
     ? { next: selfTrop, gained: 0, lost: 0, taken: [] as NodeId[], dropped: [] as NodeId[] }
@@ -915,7 +943,14 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       if (battleDue(tb, night.day)) {
         tb = settleBattle(tb);
         const n = hubCounts(tb.holds);
-        fieldBattle = { result: tb.result!, ours: n.ours, theirs: n.theirs, name: FIELD_NAME };
+        const total = n.ours + n.theirs;
+        fieldBattle = {
+          result: tb.result!,
+          ours: n.ours,
+          theirs: n.theirs,
+          name: FIELD_NAME,
+          stars: fieldStars(n.ours, total),
+        };
       }
       // Open the next match once the period is settled (score resets there).
       tb = ensureBattle(tb, ours, night.seed, night.day);
@@ -944,6 +979,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     }),
   ];
   const tropMoved = tropGained > 0 || tropLost > 0 || tropStars !== undefined;
+  // League from trophy before → after this settle (including overnight).
+  const league = tropMoved || tropNext !== selfTrop ? leagueChanged(selfTrop, tropNext) : null;
   return {
     profile: fresh,
     home,
@@ -973,6 +1010,9 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     ...(takenRival.length ? { takenRival } : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),
     ...(fieldBattle ? { fieldBattle } : {}),
+    ...(league ? { league } : {}),
+    // Show awarded count (requested); stash overflow still listed under 倉庫に入らなかった.
+    ...(winBonusCount > 0 ? { winBonus: winBonusCount } : {}),
   };
 }
 

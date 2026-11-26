@@ -23,7 +23,9 @@ RINGFALL では **他プレイヤーの拠点は前線の一種** とする（�
 | 盾・防衛で被害を抑える | **その日の守り**（取られた拠点はその日は取られない）／**島の盾・喪失上限**（作り順③: 取られたら残り外側も同日中守り・最大 1/日）／新規島の保護／工場と島の守り |
 | 戻って被害を見る | 島の知らせ「{誰}に{拠点}を取られた · 島の守りが{誰}の倉庫へ」 |
 
-数値の正本: `TROPHY` / `SEIZE` in `src/ringfall/meta/trophies.ts`。[design-direction.md](design-direction.md)「トロフィーと物資」。
+数値の正本: `TROPHY` / `SEIZE` / `WIN_BONUS` in `src/ringfall/meta/trophies.ts`。[design-direction.md](design-direction.md)「トロフィーは CoC 型」「トロフィーと物資」。
+
+リーグ勝ちボーナス（TKT-219）: 帯ごとに物資 +0..+6 ×★/3。「攻める」出撃のみ（ロボット拠点・部隊戦は対象外）。出撃前に「物資 +n」、リザルトにも。
 
 ---
 

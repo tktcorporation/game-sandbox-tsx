@@ -45,6 +45,8 @@ if (!attackScoutDef(water.factory, water.guard).includes("工場")) throw new Er
 if (!attackScoutTrop(water.win, water.lose).includes("トロフィー")) throw new Error("scout trop");
 if (!attackScoutTrop(water.win, water.lose).includes(`+${water.win}`)) throw new Error("scout trop +N");
 if (!attackScoutTrop(water.win, water.lose).includes(`−${water.lose}`)) throw new Error("scout trop −M");
+// TKT-219: winBonus is league ★★★ materials (銅 at start → 1).
+if (typeof water.winBonus !== "number" || water.winBonus < 0) throw new Error("winBonus");
 
 const ai = rows.find((r) => r.id === "robotworks");
 if (!ai) throw new Error("robotworks missing");

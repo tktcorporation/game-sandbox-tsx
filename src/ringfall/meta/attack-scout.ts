@@ -13,7 +13,7 @@ import { aiFactory } from "./ai-islands";
 import { contestedDefence } from "./contested-defence";
 import { islandHolds, type Island } from "./island";
 import { aiLabel, isContestedShore, neighbourNameByCode, type Neighbour } from "./neighbours";
-import { SEIZE, raidOdds, trophiesTable, rivalTrophies } from "./trophies";
+import { SEIZE, raidOdds, trophiesTable, rivalTrophies, winBonusBase } from "./trophies";
 import type { Parcel } from "./parcels";
 import type { IslandLogEntry } from "./expeditions";
 import type { Team } from "./team";
@@ -48,6 +48,8 @@ export interface AttackScout {
   lose: number;
   /** Materials expected from 核 · 制圧 (empty reserve + bonus + bounty). */
   loot: number;
+  /** League win-bonus materials at ★★★ for the attacker's band (TKT-219). 0 in 見習い. */
+  winBonus: number;
   onFront: boolean;
   /** When not on the front: the enemy node to take first so this hub faces the player. */
   gate: string | null;
@@ -123,6 +125,7 @@ export function attackScouts(
       win: N,
       lose: M,
       loot: SEIZE.emptyReserve + SEIZE.bonus,
+      winBonus: winBonusBase(selfTrop),
       onFront,
       gate,
       x: n.x,
