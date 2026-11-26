@@ -457,11 +457,27 @@ export function attackOwner(who: string): string {
 }
 
 /**
- * Map label under a contested hub still held by the enemy, facing a neighbour.
- * 【元】観測所 【案】ツバキと取り合う 【理由】誰と取り合うかを先に見せる（TKT-204 案 A）
+ * Map label under a robot-held contested hub facing a neighbour (2026-11-26).
+ * 【元】カゲウツ · AIと取り合う 【案】ロボット · トロフィーなし 【理由】ロボット拠点はトロフィーが動かないと分かる
  */
-export function contestOwner(who: string): string {
-  return `${who}と${TERM.contest}`;
+export function contestOwner(_who?: string): string {
+  return `ロボット · ${TERM.trophy}なし`;
+}
+
+/**
+ * Toast after seizing a robot-held outer hub (2026-11-26).
+ * 【元】制圧した · {拠点} 【案】制圧した · {拠点} · {誰}が攻めてくる 【理由】海路が開いてお隣が来る流れ
+ */
+export function robotHubSeized(hub: string, who: string): string {
+  return `制圧した · ${hub} · ${who}が攻めてくる`;
+}
+
+/**
+ * Results note when only robot hubs were taken this raid (2026-11-26).
+ * 【元】（トロフィー行のみ／無し） 【案】ロボットの拠点 · トロフィーは動かない 【理由】ライバル攻めと混ぜない
+ */
+export function robotHubTropNote(): string {
+  return `ロボットの拠点 · ${TERM.trophy}は動かない`;
 }
 
 /**
@@ -567,21 +583,22 @@ export function bountyMark(extraMaterials = 3): string {
 }
 
 /**
- * First-time multiplayer guide cards (TKT-204 案 C).
- * 【元】（なし） 【案】3 枚 【理由】お隣→前線の拠点→核·トロフィー
+ * First-time multiplayer guide cards (TKT-204 案 C / 2026-11-26).
+ * 【元】外側の拠点を海の向こうの島と取り合う／地図の攻める…／核を制圧するとトロフィー…
+ * 【案】下記3枚 【理由】ロボット拠点→トロフィーの攻める→核·やり返す。星は未実装なので出さない
  */
 export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   {
     title: TERM.seaIslands,
-    body: `外側の拠点を、${TERM.seaIslands}と${TERM.contest}。`,
+    body: `ロボットから外側の拠点を取ると、${TERM.seaIslands}が攻めてくる。`,
   },
   {
     title: `${TERM.front}の拠点`,
-    body: `地図の「${TERM.attack}」が付いた拠点へ、${TERM.gate}から${TERM.sortie}する。`,
+    body: `「${TERM.attack}」で相手の拠点を選んで${TERM.sortie}。勝てば増え、負ければ減る。`,
   },
   {
     title: TERM.captureCore,
-    body: `${TERM.core}を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
+    body: `相手の拠点を${TERM.captureCore}すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
   },
 ];
 

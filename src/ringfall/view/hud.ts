@@ -5,8 +5,9 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, trophyLine } from "./copy";
-import { neighbourNameByCode } from "../meta/neighbours";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, robotHubSeized, robotHubTropNote, trophyLine } from "./copy";
+import { isContestedShore, NEIGHBOUR_SLOTS, neighbourNameByCode } from "../meta/neighbours";
+import { capturedIds } from "../sim/front";
 import { itemColor, itemName, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -591,15 +592,21 @@ export class Hud {
         break;
       case "coreTaken": {
         // e.node is a NODES index; s.hold is per POI (who held it when the raid began).
-        const startHold = s.hold?.[poiIndex(NODES[e.node].id)] ?? "foe";
-        const whoHub = rivalWhoHub(startHold, NODES[e.node].name, this.rivalNames);
-        this.toast(
-          whoHub
-            ? `${coreIcon(SIDE.own)}${esc(attackSeized(whoHub))}<span class="toast-sub">倉庫へ届く</span>`
-            : `${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}`,
-          1,
-          5000,
-        );
+        const hub = NODES[e.node];
+        const startHold = s.hold?.[poiIndex(hub.id)] ?? "foe";
+        const whoHub = rivalWhoHub(startHold, hub.name, this.rivalNames);
+        if (whoHub) {
+          this.toast(`${coreIcon(SIDE.own)}${esc(attackSeized(whoHub))}<span class="toast-sub">倉庫へ届く</span>`, 1, 5000);
+          break;
+        }
+        // Robot-held outer hub: trophies do not move; neighbour can now raid in.
+        let robotToast = `制圧した · ${hub.name}`;
+        if (isContestedShore(hub.id) && startHold === "foe") {
+          const slot = NEIGHBOUR_SLOTS.findIndex((x) => x.shore === hub.id);
+          const n = slot >= 0 ? neighboursNowOnMap().find((x) => x.slot === slot) : undefined;
+          if (n) robotToast = robotHubSeized(hub.name, n.ai ? aiLabel(n.name) : n.name);
+        }
+        this.toast(`${coreIcon(SIDE.own)}${esc(robotToast)}`, 1, 5000);
         break;
       }
       case "counter":
@@ -1699,9 +1706,19 @@ export class Hud {
       : [];
     this.newsKeep = [...expNews, ...takeLines];
     const allNews = [...this.newsKeep, ...news];
-    const tropLine = settled?.trophies
-      ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
-      : "";
+    // 2026-11-26: only robot outer hubs taken → trophies did not move.
+    const robotOnly =
+      !!settled &&
+      !(settled.takenRival?.length) &&
+      capturedIds(s).some((id) => {
+        const i = poiIndex(id);
+        return isContestedShore(id) && (s.hold?.[i] ?? "foe") === "foe";
+      });
+    const tropLine = robotOnly
+      ? `<p class="trop-line">${esc(robotHubTropNote())}</p>`
+      : settled?.trophies
+        ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
+        : "";
     // 作り順⑤: 部隊戦 result when the period just closed.
     const fieldLine = settled?.fieldBattle
       ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs))}</p>`
