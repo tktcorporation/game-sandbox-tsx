@@ -5,7 +5,7 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, robotHubSeized, robotHubTropNote, trophyLine } from "./copy";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine } from "./copy";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { capturedIds } from "../sim/front";
 import { itemColor, itemName, nextHandFor } from "./hub";
@@ -241,7 +241,7 @@ export class Hud {
       else el.className = "tick";
       strip.appendChild(el);
     }
-    // CoC left stack: trophies always readable without opening the signal station.
+    // CoC left stack: trophies + league always readable without opening the signal station.
     const trop = $("hud-trophy");
     trop.querySelector("small")!.textContent = TERM.trophy;
     trop.setAttribute("aria-label", TERM.trophy);
@@ -255,7 +255,9 @@ export class Hud {
   /** Ranking count for the raid HUD's top-left (profile at raid start; unchanged until settle). */
   setTrophies(n: number) {
     const el = $("hud-trophy");
+    el.querySelector("small")!.textContent = trophyHead(n);
     el.querySelector("b")!.textContent = Math.max(0, Math.round(n)).toLocaleString("ja-JP");
+    el.setAttribute("aria-label", trophyHead(n));
     el.hidden = false;
   }
 

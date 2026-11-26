@@ -7,6 +7,7 @@
  * Lint: `npm run lint:ringfall-copy` — fails on banned synonyms and on raw
  * literals of TERM / PHRASE values outside this file and the allowlist.
  */
+import { leagueOf } from "../meta/trophies";
 
 /** Stable ids for player-facing place / action terms (one concept = one id). */
 export type TermId =
@@ -59,6 +60,7 @@ export type TermId =
   | "seaIslands"
   | "island"
   | "trophy"
+  | "league"
   | "organize"
   | "broughtHome"
   | "putInWarehouse"
@@ -197,6 +199,11 @@ export const TERM = {
   island: "島",
   /** Ranking T1 — signal station / results. */
   trophy: "トロフィー",
+  /**
+   * Trophy band label (CoC league; display from day 1).
+   * 【元】（なし） 【案】リーグ 【理由】帯の名前の見出し。数値帯は trophies.leagueOf
+   */
+  league: "リーグ",
   /**
    * Post-raid stash tidy (モンハンの報酬画面にあたる).
    * 【元】（なし） 【案】倉庫の整理 【理由】倉庫・倉庫の棚と同じ語でつなぐ
@@ -375,6 +382,14 @@ export function trophyLine(before: number, after: number, gained = 0, lost = 0, 
   if (lost > 0) parts.push(`取られた −${lost}`);
   const mid = parts.length ? `（${parts.join(" · ")}）` : "";
   return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;
+}
+
+/**
+ * Trophy header label with league band (day-1 surface).
+ * 【元】トロフィー 【案】トロフィー · 銅 【理由】リーグ帯を常時見せる（開始 1000＝銅）
+ */
+export function trophyHead(trophies: number): string {
+  return `${TERM.trophy} · ${leagueOf(trophies).name}`;
 }
 
 /** 島の知らせの控え: 新しい行を先頭に足し、最新 NEWS_KEEP 件だけ残す。 */
@@ -584,24 +599,27 @@ export function bountyMark(extraMaterials = 3): string {
 }
 
 /**
- * First-time multiplayer guide cards (TKT-204 案 C / 2026-11-26).
- * 【元】外側の拠点を海の向こうの島と取り合う／地図の攻める…／核を制圧するとトロフィー…
- * 【案】下記3枚 【理由】ロボット拠点→トロフィーの攻める→核·やり返す。星は未実装なので出さない
+ * First-time multiplayer guide cards (TKT-204 案 C / 2026-11-26 early-MP).
+ * Shown at first camp (not only at the gate).
  */
 export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   {
     title: TERM.seaIslands,
-    // 2026-11-26: neighbours raid from day 1; no robot-first sea-route gate.
-    body: `${TERM.seaIslands}は最初から外側の拠点を攻めてくる。`,
+    // 【元】お隣の島は最初から外側の拠点を攻めてくる。
+    // 【案】地図にも最初から出る、を足す 【理由】初日可視化：隣島の存在を地図で先に見せる
+    body: `${TERM.seaIslands}は地図に最初から出る。外側の拠点を攻めてくる。`,
   },
   {
-    title: `${TERM.front}の拠点`,
-    // 失敗した攻めでは減らない（trophyDelta）。減るのは自分の拠点を取られたとき。星ペナは後続。
-    body: `「${TERM.attack}」で相手の拠点を選んで${TERM.sortie}。取れば${TERM.trophy}が増え、取られると減る。`,
+    title: TERM.attack,
+    // 【元】「攻める」で相手の拠点を選んで出撃。…／前線の拠点
+    // 【案】門の一覧を先に言う 【理由】攻めるリストが初日の入口だと分かる
+    body: `門の「${TERM.attack}」に相手の拠点が一覧で出る。取れば${TERM.trophy}が増え、取られると減る。`,
   },
   {
     title: TERM.captureCore,
-    body: `相手の拠点を${TERM.captureCore}すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
+    // 【元】核·制圧するとトロフィー…やり返す。
+    // 【案】信号所のチームも一言 【理由】チーム／部隊戦の存在を初日に出す
+    body: `相手の拠点を${TERM.captureCore}すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。${TERM.signal}に${TERM.team}もある。`,
   },
 ];
 

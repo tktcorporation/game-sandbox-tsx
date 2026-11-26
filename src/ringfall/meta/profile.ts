@@ -3,6 +3,7 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
+import { withStartingFootholds } from "./ai-islands";
 import { advanceDay, contestedOwned, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
@@ -207,7 +208,9 @@ export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   const s = seed & 0xffff;
-  const team = formTeam(seedSelf(s), s, 1, 0);
+  // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
+  const poiState = withStartingFootholds(newIsland(), s);
+  const team = formTeam(seedSelf(s), s, 1, contestedOwned({ poiState }).length);
   return {
     v: 48,
     cash: META.start.cash,
@@ -225,7 +228,7 @@ export function newProfile(seed = 1): Profile {
     seen: "",
     routes: [],
     day: 1,
-    poiState: newIsland(),
+    poiState,
     known: [...MOD_START],
     threat: 0,
     freedAt: {},

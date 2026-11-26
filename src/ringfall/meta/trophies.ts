@@ -34,6 +34,32 @@ export const TROPHY = {
 } as const;
 
 /**
+ * League bands from design-direction (CoC-shaped). Display-only for now —
+ * win-bonus materials and star math stay for a later stack.
+ * Inclusive min; the next band's min is exclusive upper for this one.
+ */
+export const LEAGUE: readonly { name: string; min: number }[] = [
+  { name: "見習い", min: 0 },
+  { name: "銅", min: 800 },
+  { name: "銀", min: 1200 },
+  { name: "金", min: 1600 },
+  { name: "水晶", min: 2000 },
+  { name: "王者", min: 2600 },
+  { name: "伝説", min: 3400 },
+];
+
+/** League name for a trophy count (start 1000 → 銅). */
+export function leagueOf(trophies: number): { name: string; min: number } {
+  const n = Math.max(0, Math.round(trophies));
+  let hit = LEAGUE[0]!;
+  for (const band of LEAGUE) {
+    if (n >= band.min) hit = band;
+    else break;
+  }
+  return hit;
+}
+
+/**
  * Materials from 核 · 制圧 of a rival-held hub (including AI). Separate from trophies:
  * trophies move when ownership of a contested hub changes; these feed 倉庫へ届いた.
  *

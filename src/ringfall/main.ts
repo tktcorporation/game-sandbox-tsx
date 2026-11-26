@@ -758,9 +758,13 @@ function openCamp() {
     void deliverAwayNews(beforeSnap);
   }
   // Reload with pending: open 整理 over the camp (not the title). Leave the pointer free so the buttons work.
+  // Early-MP: show the three howto cards at first camp, before free roam (depart keeps a fallback).
   if (needsOrganize(hub.profile)) {
     if (document.pointerLockElement) document.exitPointerLock();
     organize.ensure(hub.profile);
+  } else if (shouldShowMpHowto(hub.profile.poiState) && !mpHowto.open) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    mpHowto.show(() => lock());
   } else lock();
 }
 

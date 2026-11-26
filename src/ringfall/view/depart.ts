@@ -150,20 +150,20 @@ export class DepartPicker {
 
   /**
    * CoC-style 攻める list: rival contested hubs with defence / trophy scout lines.
-   * Hidden when none are held by a neighbour.
+   * Kept visible even when empty (early-MP) so the attack entry is always on the gate.
    */
   private renderAttack() {
     const targets = this.hub.attackTargets();
     const box = $("depart-attack");
     const list = $("depart-attack-list");
     const title = $("depart-attack-title");
-    if (!targets.length) {
-      box.hidden = true;
-      list.innerHTML = "";
-      return;
-    }
     box.hidden = false;
     title.textContent = TERM.attack;
+    if (!targets.length) {
+      // 【元】（非表示） 【案】空のときも見出しを残す 【理由】攻める入口を初日に見せる
+      list.innerHTML = `<p class="attack-empty lock-note">${esc(`相手の${TERM.outerHubs}はまだない`)}</p>`;
+      return;
+    }
     const on = this.hub.attackPick();
     list.innerHTML = targets
       .map((t) => {

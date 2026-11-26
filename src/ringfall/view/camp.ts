@@ -1,7 +1,7 @@
 import { CAMP, type CampSpot, type StationId } from "../sim/map";
 import type { State } from "../sim/state";
 import { tipIsDefence } from "./hub";
-import { TERM } from "./copy";
+import { TERM, trophyHead } from "./copy";
 import type { World } from "./world";
 
 /*
@@ -31,7 +31,7 @@ export class CampView {
       root.appendChild(el);
       this.labels.set(c.id, el);
     }
-    // CoC-style: trophies sit with credits in the camp head (always visible in the yard).
+    // CoC-style: trophies + league sit with credits in the camp head from day 1.
     $("camp-head").querySelector(".camp-trop small")!.textContent = TERM.trophy;
   }
 
@@ -105,6 +105,8 @@ export class CampView {
     }
     $("camp-cash").textContent = o.cash;
     $("camp-trop").textContent = Math.max(0, Math.round(o.trophies)).toLocaleString("ja-JP");
+    // League band beside the trophy label (開始 1000 → 銅).
+    $("camp-head").querySelector(".camp-trop small")!.textContent = trophyHead(o.trophies);
     $("camp-hint").textContent = o.today.head;
     const row = $("camp-row");
     if (row.dataset.html !== o.today.row) {

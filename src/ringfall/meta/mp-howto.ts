@@ -1,6 +1,8 @@
 /*
- * First-time multiplayer how-to (TKT-204 案 C): three cards when the player first
- * holds a contested coastal hub. Seen flag is local only (no Profile.v bump).
+ * First-time multiplayer how-to (TKT-204 案 C / 2026-11-26 early-MP): three cards
+ * on the first camp session (and again before depart if still unseen). New profiles
+ * hold sea-route shores from day 1, so the gate is open immediately. Seen flag is
+ * local only (no Profile.v bump).
  */
 import { CONTESTED_SHORES } from "./neighbours";
 import type { Island } from "./island";
@@ -29,7 +31,10 @@ export function markMpHowtoSeen(): void {
   }
 }
 
-/** Show once: holds a contested hub and has not seen the cards. */
+/**
+ * Show once: holds a contested hub (new profiles: from day 1) and has not seen the cards.
+ * Callers show this at camp open first; depart keeps a fallback.
+ */
 export function shouldShowMpHowto(poiState: Island): boolean {
   return holdsContested(poiState) && !mpHowtoSeen();
 }

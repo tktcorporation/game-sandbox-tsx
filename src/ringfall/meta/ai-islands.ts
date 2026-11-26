@@ -12,7 +12,7 @@
  * (island-net.ts), so the factory's panel works the same for them.
  */
 import { FACTORY, FACTORY_TOP, type EnemyKind, type ValuableKind } from "../sim/config";
-import { aiOwner, isAiOwner, rivalOf, type PoiHold } from "../sim/holds";
+import { aiOwner, isAiOwner, rivalHold, rivalOf, type PoiHold } from "../sim/holds";
 import { DEPOTS, FRONT_LINKS, NODES, TIER, nodeIndex, type NodeId, type PoiId } from "../sim/map";
 import { CODE_ALPHABET, CODE_LENGTH } from "./island-code";
 import { lentRivals, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Outgoing } from "./expeditions";
@@ -35,8 +35,11 @@ export const AI = {
    * Was 4 when shores had to be captured first; with starting shores the delay only postponed first contact.
    */
   start: 1,
-  /** The chance a day that an island whose sea route is open sends one, and the more while the player's expedition is on it (仕返し). */
-  attack: 0.22,
+  /**
+   * Chance a day that an open-route island sends an expedition (2026-11-26 early-MP: was 0.22).
+   * Slightly higher so day-1 contact is more often felt after the scout.
+   */
+  attack: 0.3,
   answer: 0.5,
   /** The minutes an expedition of the player's is on its way, then fights at its node. */
   coming: 20,
@@ -94,6 +97,26 @@ export function aiIsland(salt: number, k: number): AiIsland {
 /** The game's islands in the slots `taken` leaves free. */
 export const aiIslands = (salt: number, taken: readonly number[] = []): AiIsland[] =>
   NEIGHBOUR_SLOTS.map((_, k) => k).filter((k) => !taken.includes(k)).slice(0, NEIGHBOUR_MAX).map((k) => aiIsland(salt, k));
+
+/**
+ * Contested outer hubs seeded as AI footholds on a new profile (2026-11-26 early-MP).
+ * Each is on the front when the four `ROUTE_SHORES` are own, so 「攻める」lists them from day 1.
+ * powerplant faces robotworks (slot 2); fuel faces station (slot 0).
+ */
+export const START_FOOTHOLDS: readonly { id: NodeId; slot: number }[] = [
+  { id: "powerplant", slot: 2 },
+  { id: "fuel", slot: 0 },
+];
+
+/** Apply day-1 rival footholds for `salt` (new profiles only — never rewrite a loaded save). */
+export function withStartingFootholds(island: Island, salt: number): Island {
+  const out: Island = { ...island };
+  for (const f of START_FOOTHOLDS) {
+    const a = aiIsland(salt, f.slot);
+    out[f.id] = { state: rivalHold(aiOwner(a.code)) };
+  }
+  return out;
+}
 
 /** The game's island of code `code` among those `taken` leaves free, or null. */
 export const aiByCode = (salt: number, code: string, taken: readonly number[] = []): AiIsland | null => aiIslands(salt, taken).find((a) => a.code === code) ?? null;

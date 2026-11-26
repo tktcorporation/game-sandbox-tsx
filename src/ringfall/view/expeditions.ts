@@ -12,7 +12,7 @@ import { errorText } from "../meta/island-errors";
 import { bindTeam, bindTeamBattle, type Profile } from "../meta/profile";
 import { loadIdentity } from "../meta/identity";
 import { NODES, nodeIndex } from "../sim/map";
-import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM, warPowerLine, warScoreLine } from "./copy";
+import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM, trophyHead, warPowerLine, warScoreLine } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 import { outerCap, TEAM, type Team } from "../meta/team";
@@ -224,7 +224,8 @@ export class ExpeditionPanel {
     const c = this.conn;
     // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
     // Trophy is the signal station's primary ranking readout (map table removed): large number first.
-    const trop = `<div class="exp-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>`;
+    const tropN = p.trophies ?? 0;
+    const trop = `<div class="exp-trophy"><small>${trophyHead(tropN)}</small><b>${tropN}</b></div>`;
     // 作り順③: island shield / loss cap under the trophy (protected state + remaining time).
     const now = Date.now();
     const remain = shieldRemainingMs(p.outerGuard, now);
