@@ -881,7 +881,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const takenIds = new Set(s.takenParcels ?? []);
   let parcels = (p.parcels ?? []).filter((q) => !takenIds.has(q.id));
   const nextParcelId = () => 1 + parcels.reduce((n, q) => Math.max(n, q.id), 0);
-  for (const left of s.leftParcels ?? []) {
+  // A sortie's depot is the neighbour's: what was left there is no 島の守り of the player's island.
+  for (const left of sortieRaid ? [] : (s.leftParcels ?? [])) {
     parcels = [
       ...parcels.filter((q) => q.poi !== left.poi || q.kind !== left.kind),
       { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
