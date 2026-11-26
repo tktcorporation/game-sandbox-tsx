@@ -385,7 +385,8 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   const raid = {
     lent: lentResults(raidLent, settled.battle),
     // Defence stock from deposits this raid (silent; no separate "aid" verb).
-    parcels: who.code ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
+    // A sortie's depot is the neighbour's: nothing left there becomes this island's stock.
+    parcels: who.code && !settled.sortie ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
     contestedFailed: contestedFailed(settled),
   };
