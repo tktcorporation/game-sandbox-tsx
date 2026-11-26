@@ -819,7 +819,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
   // 作り順⑥: leader bounty adds extra materials when the owner is the strongest rival.
-  const seized = seizeRivalLoot(p, s, bountyOwners(p, s));
+  // A sortie's holding is on the neighbour's island: the player's own 島の守り there is never its stock.
+  const seized = seizeRivalLoot(s.sortie ? { ...p, parcels: [] } : p, s, bountyOwners(p, s));
   if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
   for (const it of seized.items) home.push(it);
   // Field sorties (作り順⑤): captures write field holds, not home-island poiState / depots / entries.

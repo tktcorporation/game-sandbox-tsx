@@ -113,6 +113,13 @@ function parts(): { name: string; err: string | null; line: string }[] {
     const err2 = !round || round.v !== 49 || round.raided.length !== p1.raided.length ? "raided lost on a round trip" : !old || old.v !== 49 || old.raided.length ? "a v48 save does not load clean" : null;
     out.push({ name: "saves", err: err2, line: `v${round?.v}, raided ${round?.raided.length}` });
   }
+  // home: the player's own 島の守り at the same POI stays home when the neighbour's holding is taken.
+  {
+    const home = { ...p0, parcels: [{ id: 901, poi: t.id, kind: "board" as const, from: { code: "", name: "" }, at: 0 }] };
+    const r = settle(home, play(t, true));
+    const kept = r.profile.parcels.some((q) => q.id === 901);
+    out.push({ name: "home", err: kept ? null : "the player's own 島の守り at that POI was seized", line: `home parcel at ${t.id} ${kept ? "kept" : "gone"}` });
+  }
   {
     const s = play(t, false, true);
     const r = settle(p0, s);
