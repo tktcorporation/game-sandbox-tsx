@@ -12,7 +12,7 @@ import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./si
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, bindStartingFootholds, bindTeam, bindTeamBattle, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
-import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
+import { leagueChanged, rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
@@ -316,18 +316,23 @@ function onEvent(e: GameEvent, s: State) {
         const def = wipes.length ? hub.awardDefence(wipes) : null;
         if (def && settlement) {
           const t = settlement.trophies;
+          const beforeTrop = t?.before ?? def.before;
+          const afterTrop = def.after;
+          // Recompute league from the totals shown on results (Codex P2 / TKT-219).
+          const league = leagueChanged(beforeTrop, afterTrop);
           settlement = {
             ...settlement,
             profile: hub.profile,
             trophies: {
-              before: t?.before ?? def.before,
-              after: def.after,
+              before: beforeTrop,
+              after: afterTrop,
               gained: t?.gained ?? 0,
               lost: t?.lost ?? 0,
               defended: (t?.defended ?? 0) + def.defended,
-              // Keep 「攻める」star count so the results' star line still draws (Codex P2).
+              // Keep 「攻める」star count so the results' star line still draws.
               ...(t?.stars !== undefined ? { stars: t.stars } : {}),
             },
+            ...(league ? { league } : { league: undefined }),
           };
         }
         aiNews = shown.map(logLine);
