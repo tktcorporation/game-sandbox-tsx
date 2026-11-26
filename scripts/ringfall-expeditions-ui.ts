@@ -440,8 +440,11 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 45, team: undefined })))?.team.members.length === 4, "saves: v45 did not gain a 4-person team");
   check(current?.teamBattle && current.teamBattle.days === 3 && current.teamBattle.foe.members.length === 4, "saves: teamBattle missing on current");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 46, teamBattle: undefined })))?.teamBattle?.days === 3, "saves: v46 did not gain a teamBattle");
-  check(current?.warScore && current.warScore.total === 0 && Array.isArray(current.warScore.outerByDay), "saves: warScore missing on current");
-  check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 47, warScore: undefined })))?.warScore?.total === 0, "saves: v47 did not gain empty warScore");
+  check(current?.teamBattle && typeof current.teamBattle.score === "number" && current.teamBattle.score === 0, "saves: teamBattle.score missing on current");
+  {
+    const fromV47 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 47, warScore: { total: 9, outerByDay: [] } })));
+    check(!!fromV47?.teamBattle && !("warScore" in fromV47), "saves: v47 personal warScore was kept");
+  }
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");

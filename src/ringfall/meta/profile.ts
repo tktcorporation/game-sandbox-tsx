@@ -22,18 +22,10 @@ import {
   markSortie,
   parseTeamBattle,
   settleBattle,
+  tickTeamScore,
   type TeamBattle,
 } from "./team-battle";
-import {
-  addBattleScore,
-  BOUNTY,
-  bountyOwnersFrom,
-  emptyWarScore,
-  parseWarScore,
-  recordOuterDay,
-  takeHomeSlots,
-  type WarScore,
-} from "./war-score";
+import { BOUNTY, bountyOwnersFrom, takeHomeSlots } from "./war-score";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -144,16 +136,12 @@ export interface Profile {
    */
   team: Team;
   /**
-   * Active / last 部隊戦 on the field (作り順⑤). Null until first ensure.
+   * Active / last 部隊戦 on the field (作り順⑤+⑥). Null until first ensure.
    * v46 and older saves get a fresh battle on load via `ensureBattle`.
-   * Step 6 (war power / bounty) also writes `teamBattle.hooks`.
+   * Step 6: war power / bounty on `hooks`; team score on `TeamBattle.score` (match-only).
+   * Personal 得点 / warScore is gone (2026-11-26) — trophies stay the personal rank.
    */
   teamBattle: TeamBattle | null;
-  /**
-   * Rolling war score (作り順⑥): recent outer-hold window + settled 部隊戦 points.
-   * v47 and older saves start empty; no season reset.
-   */
-  warScore: WarScore;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -256,10 +244,8 @@ export function newProfile(seed = 1): Profile {
     outerGuard: emptyOuterGuard(),
     // 作り順④: auto-assign self + AI の仲間 (identity may replace self later via bindTeam).
     team,
-    // 作り順⑤: open the first 部隊戦 on day 1 (AI foe fill).
+    // 作り順⑤+⑥: open the first 部隊戦 on day 1 (AI foe fill; score starts at 0).
     teamBattle: ensureBattle(null, team, s, 1),
-    // 作り順⑥: rolling hold-time + battle score (empty until the first settle).
-    warScore: emptyWarScore(),
   };
 }
 
@@ -875,9 +861,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       if (JSON.stringify(team) !== JSON.stringify(night.team)) Object.assign(night, { team });
     }
   }
-  // 作り順⑤+⑥: tick 部隊戦 — field captures, war-power auto-defence, period settle, open next.
+  // 作り順⑤+⑥: tick 部隊戦 — field captures, war-power auto-defence, team score, period settle.
   let fieldBattle: Settlement["fieldBattle"];
-  let warScore = night.warScore ?? p.warScore ?? emptyWarScore();
   {
     let tb = night.teamBattle ?? p.teamBattle ?? null;
     const ours = night.team ?? p.team;
@@ -887,21 +872,18 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       if (fieldRaid) tb = applyFieldCaptures(tb, capturedIds(s));
       // Overnight on the field: war power ≥ foe keeps; else foe takes one hub if no sortie.
       tb = autoDefendField(tb, p.day, ours);
+      // Team score for this match only (hub-days of the day that just ended).
+      tb = tickTeamScore(tb);
       if (battleDue(tb, night.day)) {
         tb = settleBattle(tb);
         const n = hubCounts(tb.holds);
         fieldBattle = { result: tb.result!, ours: n.ours, theirs: n.theirs, name: FIELD_NAME };
-        // 作り順⑥: fold battle points into the rolling score at period end.
-        warScore = addBattleScore(warScore, tb.result!);
       }
-      // Open the next match once the period is settled.
+      // Open the next match once the period is settled (score resets there).
       tb = ensureBattle(tb, ours, night.seed, night.day);
       Object.assign(night, { teamBattle: tb });
     }
   }
-  // 作り順⑥: record today's outer-hub count into the hold-time window (the day that just ended).
-  warScore = recordOuterDay(warScore, p.day, selfOuterCount(night));
-  Object.assign(night, { warScore });
   // The nodes the player holds once the night is over pay their day's credits.
   const homePay = heldIncome(night);
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
@@ -1139,7 +1121,8 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v44 and older have no `outerGuard`; v45 adds anti-snowball (作り順③: island shield + loss cap).
  * v45 and older have no `team`; v46 adds 4-person teams with AI の仲間 fill (作り順④).
  * v46 and older have no `teamBattle`; v47 adds 部隊戦 on the field (作り順⑤).
- * v47 and older have no `warScore`; v48 adds war power scoring (作り順⑥).
+ * v47 and older may lack war-power hooks / team `score` on `teamBattle`; v48 fills them (作り順⑥).
+ * Personal `warScore` (7-day rolling) is dropped — team score lives on `TeamBattle.score` only (2026-11-26).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
@@ -1216,7 +1199,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v45: 作り順③の島の盾・喪失上限（`outerGuard`）。
   // v46: 作り順④の 4 人チーム（`team`、空きは AI の仲間）。
   // v47: 作り順⑤の部隊戦（`teamBattle`、荒地の戦場）。
-  // v48: 作り順⑥の力・懸賞金・持ち時間得点（`warScore`）。
+  // v48: 作り順⑥の力・懸賞金・部隊戦チーム得点（`teamBattle.score`）。個人 `warScore` は捨てる。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
@@ -1230,8 +1213,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     formTeam(seedSelf(seedN), seedN, day, contestedOwned({ poiState }).length);
   const savedBattle = typeof o.v === "number" && o.v >= 47 ? parseTeamBattle(o.teamBattle) : null;
   const teamBattle = ensureBattle(savedBattle, team, seedN, day);
-  const warScore =
-    typeof o.v === "number" && o.v >= 48 ? parseWarScore(o.warScore) : emptyWarScore();
   return {
     v: 48,
     cash: Math.max(0, Math.floor(o.cash)),
@@ -1267,8 +1248,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     outerGuard,
     team,
     teamBattle,
-    warScore,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
+    // Personal warScore (v48 early) is dropped — team score is on teamBattle.score.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
     freedAt,

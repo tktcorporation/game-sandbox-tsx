@@ -1,9 +1,10 @@
 /*
- * 作り順⑥ / design-direction.md「島は終わりなく育てる」:
- * war power (outer hubs → field thickness), raid targeting, leader bounty,
- * held-time + team-battle scoring. No season reset.
+ * 作り順⑥ / design-direction.md「島は終わりなく育てる」+ 2026-11-26 CoC 型トロフィー:
+ * war power (outer hubs → field thickness), raid targeting by trophy band,
+ * leader bounty (materials), team score on the current 部隊戦 only.
  *
- * Tunables live here so 攻め先 / 懸賞金 / 得点 can change later without reshaping Profile.
+ * トロフィー = personal permanent rank (meta/trophies.ts). 得点 = team score inside
+ * one 荒地の戦場 match (`TeamBattle.score`) — never a personal Profile field.
  */
 import type { Hideout } from "./hideout";
 import { pouchSlots } from "./hideout";
@@ -15,42 +16,35 @@ import { TROPHY } from "./trophies";
  * Thickness applies on the 部隊戦 field only — never on home-island sorties.
  */
 export const WAR_POWER = {
-  /**
-   * How many of our outer hubs equal one "step" of overnight field defence.
-   * Judgment: with ~10 outer hubs max, 1 hub = 1 power keeps the scale readable;
-   * defence compares raw sums (see `autoDefendField`).
-   */
+  /** Outer hubs that equal one step of overnight field defence. */
   perOuter: 1,
   /**
    * Minimum power gap (ours − foe) that holds the field overnight without a hub loss.
-   * Judgment: 0 = equal or better keeps; weaker side loses one hub (⑤'s rule).
+   * 0 = equal or better keeps; weaker side loses one hub.
    */
   defendGap: 0,
 } as const;
 
 /**
- * Who may appear on the 攻める list (作り順⑥ #6 — provisional).
- * Prefer the current 相手チーム; anyone within the trophy band is also eligible.
+ * Who may appear on the 攻める list (2026-11-26: CoC trophy band).
+ * Order by trophy closeness; no opponent-team preference.
  */
 export const RAID_TARGET = {
-  /** Prefer owners whose island code matches a foe-team seat. */
-  preferFoeTeam: true as const,
   /**
-   * Trophy gap (|self − rival|) at or below this still allows a raid even off the foe team.
-   * Judgment: reuse TROPHY.band (400) so matching feels like the ranking band.
+   * Trophy gap (|self − rival|) at or below this allows a raid.
+   * Judgment: TROPHY.band (400) — CoC-style matching band.
    */
   trophyBand: TROPHY.band,
   /**
-   * When true, drop owners who are neither on the foe team nor within trophyBand.
-   * Judgment: provisional default **false** — sort prefers foe team / near trophies, but
-   * every neighbour-held outer hub stays attackable (empty 攻める list would break やり返す).
-   * Flip on later to harden matching.
+   * When true, drop owners outside trophyBand from the 攻める list.
+   * 2026-11-26: enabled (trophy closeness is the gate).
    */
-  requireNearOrFoe: false as const,
+  requireBand: true as const,
 } as const;
 
 /**
- * Leader bounty (作り順⑥ #9): extra materials when taking an outer hub from the strongest foe.
+ * Leader bounty (作り順⑥): extra materials when taking an outer hub from the strongest foe.
+ * Not trophies — materials only.
  */
 export const BOUNTY = {
   /** Extra common materials on 核 · 制圧 of the leader's hub (on top of SEIZE). */
@@ -60,32 +54,15 @@ export const BOUNTY = {
 } as const;
 
 /**
- * Rolling score (作り順⑥ #10): recent outer-hold window + team-battle period settle.
- * No season end; ownership is never mass-reset.
+ * Team score for one 部隊戦 match only (2026-11-26).
+ * Lives on `TeamBattle.score`; resets when a new battle starts. Never personal / never trophies.
  */
-export const WAR_SCORE = {
-  /** Profile days of outer-hold history that still count. */
-  windowDays: 7,
-  /** Points per outer hub held for one profile day inside the window. */
-  perOuterDay: 1,
-  /** Points added when a 部隊戦 period settles (by result). */
+export const TEAM_SCORE = {
+  /** Points per battlefield hub held for one profile day of the open match. */
+  perHubDay: 1,
+  /** Points added when the period settles (by hub-count result). */
   battle: { win: 30, draw: 10, loss: 0 } as const,
 } as const;
-
-/** One day's outer-hub snapshot for the scoring window. */
-export type OuterDay = { day: number; outer: number };
-
-/** Profile blob for rolling war score (v48). */
-export type WarScore = {
-  /** Sum of hold-time points in the window + settled battle points (trimmed each day). */
-  total: number;
-  /** Recent outer counts by profile day (oldest → newest, trimmed to windowDays). */
-  outerByDay: OuterDay[];
-  /** Points from the last settled 部隊戦 (0 if none yet). */
-  lastBattle: number;
-};
-
-export const emptyWarScore = (): WarScore => ({ total: 0, outerByDay: [], lastBattle: 0 });
 
 /** War power of a team = sum of members' outer hubs × perOuter. */
 export function warPowerOf(team: Pick<Team, "members"> | null | undefined): number {
@@ -118,7 +95,7 @@ export function pickLeader(
   return ranked[0]?.id ?? null;
 }
 
-/** Foe-team seat ids / island codes for raid-target matching. */
+/** Foe-team seat ids / island codes (optional badge; not used for raid gating). */
 export function foeOwnerKeys(foe: Pick<Team, "members"> | null | undefined): Set<string> {
   const out = new Set<string>();
   if (!foe?.members) return out;
@@ -140,109 +117,34 @@ export const isFoeTeamOwner = (owner: string, foeKeys: ReadonlySet<string>): boo
 export const trophiesNear = (self: number, rival: number, band = RAID_TARGET.trophyBand): boolean =>
   Math.abs(self - rival) <= band;
 
-/**
- * May this owner appear on the 攻める list?
- * Provisional: foe-team seat OR within trophy band (see RAID_TARGET.requireNearOrFoe).
- */
-export function canRaidOwner(
-  owner: string,
-  selfTrop: number,
-  rivalTrop: number,
-  foeKeys: ReadonlySet<string>,
-): boolean {
-  if (!RAID_TARGET.requireNearOrFoe) return true;
-  if (RAID_TARGET.preferFoeTeam && isFoeTeamOwner(owner, foeKeys)) return true;
+/** May this owner appear on the 攻める list? (trophy band when requireBand). */
+export function canRaidOwner(_owner: string, selfTrop: number, rivalTrop: number): boolean {
+  if (!RAID_TARGET.requireBand) return true;
   return trophiesNear(selfTrop, rivalTrop);
 }
 
 /**
- * Sort key for 攻める rows: foe team first, then closer trophies, then nearer ground.
- * Lower is better.
+ * Sort key for 攻める rows: closer trophies first, then nearer ground.
+ * Lower is better. No opponent-team priority (2026-11-26).
  */
-export function raidTargetRank(
-  owner: string,
-  selfTrop: number,
-  rivalTrop: number,
-  foeKeys: ReadonlySet<string>,
-  dist2: number,
-): number {
-  const foe = RAID_TARGET.preferFoeTeam && isFoeTeamOwner(owner, foeKeys) ? 0 : 1;
+export function raidTargetRank(selfTrop: number, rivalTrop: number, dist2: number): number {
   const gap = Math.abs(selfTrop - rivalTrop);
-  return foe * 1e12 + gap * 1e6 + dist2;
+  return gap * 1e6 + dist2;
 }
 
-/** Hold-time points for one day's outer count. */
-export const holdPointsFor = (outer: number): number => Math.max(0, Math.floor(outer)) * WAR_SCORE.perOuterDay;
+/** Points for holding `hubs` battlefield hubs for one day of the open match. */
+export const hubDayPoints = (hubs: number): number => Math.max(0, Math.floor(hubs)) * TEAM_SCORE.perHubDay;
 
-/** Battle settle points. */
-export const battlePointsFor = (result: "win" | "loss" | "draw"): number => WAR_SCORE.battle[result];
-
-/** Hold-time points currently in the window (no battle points). */
-export const holdPointsOf = (score: WarScore | null | undefined): number => {
-  if (!score) return 0;
-  return score.outerByDay.reduce((n, x) => n + holdPointsFor(x.outer), 0);
-};
-
-/** Battle points already in `total` (total − current hold window). */
-const battlePointsOf = (cur: WarScore): number => Math.max(0, cur.total - holdPointsOf(cur));
-
-/**
- * Record today's outer count, trim the window, recompute hold-time into total.
- * Prior battle points stay. Call once per profile day advance (settle).
- */
-export function recordOuterDay(score: WarScore | null | undefined, day: number, outer: number): WarScore {
-  const cur = score ?? emptyWarScore();
-  const battles = battlePointsOf(cur);
-  const d = Math.max(1, Math.floor(day));
-  const o = Math.max(0, Math.floor(outer));
-  const without = cur.outerByDay.filter((x) => x.day !== d);
-  const outerByDay = [...without, { day: d, outer: o }]
-    .sort((a, b) => a.day - b.day)
-    .filter((x) => x.day > d - WAR_SCORE.windowDays);
-  const hold = outerByDay.reduce((n, x) => n + holdPointsFor(x.outer), 0);
-  return { total: hold + battles, outerByDay, lastBattle: cur.lastBattle };
-}
-
-/** Fold a settled 部隊戦 into the score. */
-export function addBattleScore(score: WarScore | null | undefined, result: "win" | "loss" | "draw"): WarScore {
-  const cur = score ?? emptyWarScore();
-  const pts = battlePointsFor(result);
-  return { ...cur, total: cur.total + pts, lastBattle: pts };
-}
-
-/**
- * Hold-time score over the recent window (team-battle hook name `scoreHeldMs`).
- * Units are score points from outer-day holdings, not wall-clock ms.
- */
-export const scoreHeldPoints = (score: WarScore | null | undefined): number => holdPointsOf(score);
+/** Battle settle points for the team score. */
+export const battlePointsFor = (result: "win" | "loss" | "draw"): number => TEAM_SCORE.battle[result];
 
 /**
  * Take-home slots: pouch module only (作り順⑥ #7).
- * War power must never feed this — keep the hook so a later outer→pouch link is obvious and rejected.
+ * War power must never feed this.
  */
 export function takeHomeSlots(h: Hideout, _warPower = 0): number {
   void _warPower;
   return pouchSlots(h);
-}
-
-/** Saved war-score blob, or empty when missing / unreadable (v47 and older). */
-export function parseWarScore(raw: unknown): WarScore {
-  if (!raw || typeof raw !== "object") return emptyWarScore();
-  const o = raw as Record<string, unknown>;
-  const total = typeof o.total === "number" && Number.isFinite(o.total) ? Math.max(0, Math.floor(o.total)) : 0;
-  const lastBattle =
-    typeof o.lastBattle === "number" && Number.isFinite(o.lastBattle) ? Math.max(0, Math.floor(o.lastBattle)) : 0;
-  const outerByDay: OuterDay[] = [];
-  if (Array.isArray(o.outerByDay)) {
-    for (const x of o.outerByDay) {
-      if (!x || typeof x !== "object") continue;
-      const r = x as Record<string, unknown>;
-      if (typeof r.day !== "number" || !Number.isFinite(r.day)) continue;
-      if (typeof r.outer !== "number" || !Number.isFinite(r.outer)) continue;
-      outerByDay.push({ day: Math.max(1, Math.floor(r.day)), outer: Math.max(0, Math.floor(r.outer)) });
-    }
-  }
-  return { total, outerByDay, lastBattle };
 }
 
 /** Bounty target id from a foe team (max outer). */
@@ -258,8 +160,8 @@ export function ownerMatches(owner: string, target: string): boolean {
 }
 
 /**
- * Owners who pay the leader bounty for a raid (作り順⑥).
- * `heldBy` = rival id → contested hubs they hold at raid start (same population as 攻める).
+ * Owners who pay the leader bounty for a raid.
+ * `heldBy` = rival id → contested hubs they hold at raid start.
  * Pays only when that leader is among `captured` owners.
  */
 export function bountyOwnersFrom(

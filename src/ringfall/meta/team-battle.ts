@@ -7,8 +7,8 @@
  * overnight auto-defence reuse island mechanics on field holds. End of period → simple win /
  * loss / draw by hubs held; the next battle can start. No seasons.
  *
- * 作り順⑥ fills war power / bounty target on `hooks`, and weights overnight defence by power
- * (meta/war-score.ts). Held-time scoring lives on Profile.warScore, not field hub ms.
+ * 作り順⑥ fills war power / bounty target on `hooks`, weights overnight defence by power,
+ * and keeps a team score on this match only (`TeamBattle.score` — reset each new battle).
  */
 import { TEAM, aiMateIsland, aiMateOuter, formTeam, teamIdFor, type Team, type TeamMember, type TeamSelf } from "./team";
 import {
@@ -21,7 +21,7 @@ import {
 } from "../sim/team-field";
 import type { NodeId } from "../sim/map";
 import type { PoiHold } from "../sim/holds";
-import { bountyTargetOf, fieldHoldsOvernight, warPowerOf as powerOf } from "./war-score";
+import { battlePointsFor, bountyTargetOf, fieldHoldsOvernight, hubDayPoints, warPowerOf as powerOf } from "./war-score";
 
 export { TEAM_BATTLE, FIELD_NAME, FIELD_HUBS, fieldHubByNode, fieldHubOf };
 export type { FieldHubId };
@@ -30,16 +30,14 @@ export type { FieldHubId };
 export type FieldHold = "ours" | "theirs";
 
 /**
- * Step-6 hooks on the battle (shape stable since ⑤).
- * War power / bounty target are set at match start; held-time score is on Profile.warScore.
+ * Step-6 hooks on the battle.
+ * War power / bounty target are set at match start.
  */
 export type TeamBattleHooks = {
   /** Our team's war power at match start (sum of outer hubs). */
   warPower?: number;
   /** Foe team's war power at match start. */
   foeWarPower?: number;
-  /** Legacy field-hub held ms — unused; outer-hold scoring is Profile.warScore. */
-  heldMs?: Partial<Record<FieldHubId, number>>;
   /** Leader bounty target (foe member id with most outer hubs). */
   bountyTarget?: string;
 };
@@ -63,7 +61,12 @@ export type TeamBattle = {
    * After settle the profile keeps this until `ensureBattle` opens the next match.
    */
   result: "win" | "loss" | "draw" | null;
-  /** Step-6 plugs — never required in step 5. */
+  /**
+   * Team score for this match only (2026-11-26). Resets on `startBattle`.
+   * Hub-days during the window + settle bonus. Never personal trophies.
+   */
+  score: number;
+  /** Step-6 plugs. */
   hooks: TeamBattleHooks;
 };
 
@@ -143,6 +146,7 @@ export function startBattle(ours: Team, salt: number, day: number): TeamBattle {
     holds: openingHolds(),
     sortied: [],
     result: null,
+    score: 0,
     hooks: { warPower, foeWarPower, ...(bountyTarget ? { bountyTarget } : {}) },
   };
 }
@@ -228,10 +232,21 @@ export function autoDefendField(
   return { ...b, hooks, holds: { ...b.holds, [hub.id]: "theirs" } };
 }
 
-/** Close the battle with a simple hub-count result. */
+/**
+ * Add one day's hub-hold points to the team score (call once per profile day while open).
+ * Does not change win/loss — that stays hub-count at period end.
+ */
+export function tickTeamScore(b: TeamBattle): TeamBattle {
+  if (b.result) return b;
+  const add = hubDayPoints(hubCounts(b.holds).ours);
+  return add ? { ...b, score: b.score + add } : b;
+}
+
+/** Close the battle with a hub-count result and fold settle bonus into the team score. */
 export function settleBattle(b: TeamBattle): TeamBattle {
   if (b.result) return b;
-  return { ...b, result: outcomeOf(b.holds) };
+  const result = outcomeOf(b.holds);
+  return { ...b, result, score: b.score + battlePointsFor(result) };
 }
 
 /**
@@ -291,12 +306,6 @@ export function mergeFieldHolds(
 export const warPowerOf = (ours: Team | null | undefined, hooks?: TeamBattleHooks): number =>
   ours?.members?.length ? powerOf(ours) : (hooks?.warPower ?? 0);
 
-/**
- * @deprecated Held-time score lives on Profile.warScore (`scoreHeldPoints` in war-score.ts).
- * Kept so older imports keep compiling; always 0 from battle hooks.
- */
-export const scoreHeldMs = (_hooks?: TeamBattleHooks): number => 0;
-
 /** Saved battle blob, or null when missing / unreadable (v46 and older). */
 export function parseTeamBattle(raw: unknown): TeamBattle | null {
   if (!raw || typeof raw !== "object") return null;
@@ -317,6 +326,8 @@ export function parseTeamBattle(raw: unknown): TeamBattle | null {
     ? o.sortied.filter((d): d is number => typeof d === "number" && Number.isFinite(d)).map((d) => Math.floor(d))
     : [];
   const result = o.result === "win" || o.result === "loss" || o.result === "draw" ? o.result : null;
+  const score =
+    typeof o.score === "number" && Number.isFinite(o.score) ? Math.max(0, Math.floor(o.score)) : 0;
   const rawHooks = o.hooks && typeof o.hooks === "object" ? (o.hooks as Record<string, unknown>) : {};
   const hooks: TeamBattleHooks = {
     ...(typeof rawHooks.warPower === "number" && Number.isFinite(rawHooks.warPower)
@@ -347,6 +358,7 @@ export function parseTeamBattle(raw: unknown): TeamBattle | null {
     holds,
     sortied,
     result,
+    score,
     hooks,
   };
 }

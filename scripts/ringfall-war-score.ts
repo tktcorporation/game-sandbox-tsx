@@ -1,37 +1,37 @@
 /*
- * War power / raid targeting / bounty / scoring (作り順⑥ / meta/war-score.ts):
+ * War power / raid targeting / bounty / team score (作り順⑥ / meta/war-score.ts):
  *   npx tsx scripts/ringfall-war-score.ts
  *
- * Proves WAR_POWER → field overnight defence, RAID_TARGET sort, BOUNTY materials,
- * WAR_SCORE window + battle points, Profile v48 migrate, pouch take-home unchanged by power.
+ * Proves WAR_POWER → field overnight defence, RAID_TARGET trophy band + sort,
+ * BOUNTY materials, TEAM_SCORE on TeamBattle.score, Profile v48 migrate (no personal warScore),
+ * pouch take-home unchanged by power.
  */
 import assert from "node:assert/strict";
 import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
 import {
   BOUNTY,
   RAID_TARGET,
+  TEAM_SCORE,
   WAR_POWER,
-  WAR_SCORE,
-  addBattleScore,
+  battlePointsFor,
   bountyOwnersFrom,
   canRaidOwner,
-  emptyWarScore,
   fieldHoldsOvernight,
-  foeOwnerKeys,
-  holdPointsOf,
+  hubDayPoints,
   pickLeader,
   raidTargetRank,
-  recordOuterDay,
   takeHomeSlots,
   warPowerOf,
 } from "../src/ringfall/meta/war-score";
 import { rivalOf } from "../src/ringfall/sim/holds";
 import {
   autoDefendField,
+  settleBattle,
   startBattle,
+  tickTeamScore,
   warPowerOf as battleWarPower,
 } from "../src/ringfall/meta/team-battle";
-import { formTeam, TEAM } from "../src/ringfall/meta/team";
+import { formTeam } from "../src/ringfall/meta/team";
 import { emptyHideout } from "../src/ringfall/meta/hideout";
 import { SEIZE } from "../src/ringfall/meta/trophies";
 import { attackScouts } from "../src/ringfall/meta/attack-scout";
@@ -49,12 +49,12 @@ const SALT = 42;
   assert.equal(WAR_POWER.perOuter, 1);
   assert.equal(WAR_POWER.defendGap, 0);
   assert.equal(RAID_TARGET.trophyBand, 400);
-  assert.equal(RAID_TARGET.requireNearOrFoe, false);
+  assert.equal(RAID_TARGET.requireBand, true);
   assert.equal(BOUNTY.extraMaterials, 3);
-  assert.equal(WAR_SCORE.windowDays, 7);
-  assert.equal(WAR_SCORE.battle.win, 30);
+  assert.equal(TEAM_SCORE.perHubDay, 1);
+  assert.equal(TEAM_SCORE.battle.win, 30);
   console.log(
-    `tunables: power/outer=${WAR_POWER.perOuter} · band=${RAID_TARGET.trophyBand} · bounty+${BOUNTY.extraMaterials} · window=${WAR_SCORE.windowDays}d`,
+    `tunables: power/outer=${WAR_POWER.perOuter} · band=${RAID_TARGET.trophyBand} · requireBand · bounty+${BOUNTY.extraMaterials} · teamScore hubDay=${TEAM_SCORE.perHubDay}`,
   );
 }
 
@@ -72,6 +72,7 @@ const SALT = 42;
 {
   const ours = formTeam(SELF, SALT, 1, 8);
   let b = startBattle(ours, SALT, 1);
+  assert.equal(b.score, 0, "new battle starts at team score 0");
   assert.ok((b.hooks.warPower ?? 0) >= 8);
   assert.ok((b.hooks.foeWarPower ?? 0) >= 0);
   assert.ok(b.hooks.bountyTarget);
@@ -90,28 +91,22 @@ const SALT = 42;
   console.log("field: war-power overnight defence ok");
 }
 
-// --- Raid targeting prefer / rank ---
+// --- Raid targeting: trophy band + closeness (no foe-team priority) ---
 {
-  const foe = startBattle(formTeam(SELF, SALT, 1, 0), SALT, 1).foe;
-  const keys = foeOwnerKeys(foe);
-  assert.ok(keys.size >= TEAM.size);
-  const m0 = foe.members[0]!;
-  assert.equal(canRaidOwner(`ai-${m0.code}`, 1000, 1000, keys), true);
-  assert.equal(canRaidOwner("zzzzzz", 1000, 1000, keys), true, "requireNearOrFoe off → anyone");
-  const near = raidTargetRank("other", 1000, 1010, keys, 10);
-  const far = raidTargetRank("other", 1000, 1800, keys, 10);
-  assert.ok(near < far, "closer trophies rank first");
-  const foeRank = raidTargetRank(`ai-${m0.code}`, 1000, 1800, keys, 100);
-  const otherRank = raidTargetRank("other", 1000, 1000, keys, 1);
-  assert.ok(foeRank < otherRank, "foe team beats trophy-near stranger");
-  console.log("raid target: prefer foe team + trophy proximity");
+  assert.equal(canRaidOwner("anyone", 1000, 1000), true);
+  assert.equal(canRaidOwner("far", 1000, 1500), false, "outside ±400 dropped");
+  assert.equal(canRaidOwner("edge", 1000, 1400), true);
+  const near = raidTargetRank(1000, 1010, 100);
+  const far = raidTargetRank(1000, 1300, 10);
+  assert.ok(near < far, "closer trophies rank first even if farther on ground");
+  const rows = attackScouts(newIsland(), 1, [], 1000, [], 0, { x: 0, z: 0 }, { foe: null });
+  assert.ok(Array.isArray(rows));
+  console.log("raid target: trophy band ±400 · closeness first");
 }
 
 // --- Leader bounty ---
 {
   assert.equal(pickLeader([{ id: "a", outer: 2 }, { id: "b", outer: 5 }, { id: "c", outer: 5, trophies: 10 }]), "c");
-  const rows = attackScouts(newIsland(), 1, [], 1000, [], 0, { x: 0, z: 0 }, { foe: null });
-  assert.ok(Array.isArray(rows));
 
   // Rank among ALL holders at raid start — capturing only the weak rival pays no bounty.
   const weak = "ai-WEAK01";
@@ -149,40 +144,46 @@ const SALT = 42;
   console.log(`bounty: leader +${BOUNTY.extraMaterials} materials · weak=${base} strong=${base + BOUNTY.extraMaterials}`);
 }
 
-// --- Score window + battle points ---
+// --- Team score on the battle (match-only; resets on new battle) ---
 {
-  let s = emptyWarScore();
-  s = recordOuterDay(s, 1, 3);
-  s = recordOuterDay(s, 2, 4);
-  assert.equal(holdPointsOf(s), 3 + 4);
-  s = addBattleScore(s, "win");
-  assert.equal(s.lastBattle, WAR_SCORE.battle.win);
-  assert.equal(s.total, 3 + 4 + WAR_SCORE.battle.win);
-  // Window trims days older than windowDays.
-  s = recordOuterDay(s, 1 + WAR_SCORE.windowDays, 1);
-  assert.ok(!s.outerByDay.some((x) => x.day === 1), "day 1 dropped from window");
-  assert.ok(s.total >= WAR_SCORE.battle.win, "battle points survive window trim");
-  console.log(`score: hold ${holdPointsOf(s)} + battles · total ${s.total}`);
+  const ours = formTeam(SELF, SALT, 1, 2);
+  let b = startBattle(ours, SALT, 1);
+  assert.equal(b.score, 0);
+  const hubs = Object.values(b.holds).filter((h) => h === "ours").length;
+  b = tickTeamScore(b);
+  assert.equal(b.score, hubDayPoints(hubs));
+  b = tickTeamScore(b);
+  assert.equal(b.score, hubDayPoints(hubs) * 2);
+  const beforeSettle = b.score;
+  b = settleBattle(b);
+  assert.ok(b.result);
+  assert.equal(b.score, beforeSettle + battlePointsFor(b.result!));
+  const next = startBattle(ours, SALT, 10);
+  assert.equal(next.score, 0, "new battle resets team score");
+  console.log(`team score: hub-days + settle ${b.result}=${battlePointsFor(b.result!)} · next=0`);
 }
 
-// --- Profile v48 + migrate from v47 ---
+// --- Profile v48: no personal warScore; teamBattle.score present ---
 {
   const p = newProfile(9);
   assert.equal(p.v, 48);
-  assert.ok(p.warScore);
-  assert.equal(p.warScore.total, 0);
+  assert.equal("warScore" in p, false, "personal warScore must be gone");
+  assert.ok(p.teamBattle);
+  assert.equal(p.teamBattle!.score, 0);
   assert.ok(p.teamBattle?.hooks.warPower !== undefined);
   assert.equal(battleWarPower(p.team, p.teamBattle!.hooks), warPowerOf(p.team));
 
   const raw = JSON.parse(JSON.stringify(p)) as Record<string, unknown>;
   raw.v = 47;
-  delete raw.warScore;
+  raw.warScore = { total: 99, outerByDay: [{ day: 1, outer: 3 }], lastBattle: 30 };
+  delete (raw.teamBattle as Record<string, unknown>).score;
   const migrated = parseProfile(raw, 9);
   assert.ok(migrated);
   assert.equal(migrated!.v, 48);
-  assert.ok(migrated!.warScore);
-  assert.equal(migrated!.warScore.total, 0);
-  console.log("profile: v48 new + v47→v48 migrate");
+  assert.equal("warScore" in migrated!, false);
+  assert.ok(migrated!.teamBattle);
+  assert.equal(typeof migrated!.teamBattle!.score, "number");
+  console.log("profile: v48 teamBattle.score · v47 warScore dropped");
 }
 
 console.log("ringfall-war-score: ok");

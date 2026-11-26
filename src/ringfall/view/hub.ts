@@ -1018,7 +1018,7 @@ export class Hub {
   attackTargets(): AttackScout[] {
     const p = this.profile;
     const at = this.startPoints().find((q) => q.on) ?? { x: CAMP.wake.x, z: CAMP.wake.z };
-    // 作り順⑥: prefer 相手チーム / near trophies; mark leader bounty.
+    // 作り順⑥ / 2026-11-26: trophy band ±400; mark leader bounty (foe badge only).
     return attackScouts(p.poiState, p.day, neighboursFor(p), p.trophies ?? TROPHY.start, p.parcels ?? [], aiSalt(), at, {
       foe: p.teamBattle?.foe,
     });

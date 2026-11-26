@@ -2,8 +2,8 @@
  * CoC-style attack scouting for the departure screen (TKT-204 案 B):
  * list contested coastal hubs a neighbour holds, with defence + trophy preview.
  *
- * 作り順⑥: prefer 相手チーム seats, allow anyone within RAID_TARGET.trophyBand,
- * mark the leader (懸賞金) among eligible owners.
+ * 作り順⑥ / 2026-11-26: order by trophy closeness within ±RAID_TARGET.trophyBand;
+ * mark the leader (懸賞金) among eligible owners. No opponent-team preference.
  */
 import { DEFENCE_AID } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
@@ -46,23 +46,22 @@ export interface AttackScout {
   gate: string | null;
   x: number;
   z: number;
-  /** 作り順⑥: owner is on the current 相手チーム. */
+  /** Owner is on the current 相手チーム (badge only; not a sort key). */
   foeTeam?: boolean;
-  /** 作り順⑥: taking this hub pays the leader bounty. */
+  /** Taking this hub pays the leader bounty. */
   bounty?: boolean;
 }
 
-/** Optional 作り順⑥ context for raid targeting / bounty. */
+/** Optional 作り順⑥ context for bounty / foe badge. */
 export type AttackScoutOpts = {
-  /** Current 部隊戦 foe team (prefer their seats on the list). */
+  /** Current 部隊戦 foe team (bounty / badge only — not raid gating). */
   foe?: Pick<Team, "members"> | null;
-  /** Override self trophies already passed — kept for call-site clarity. */
 };
 
 /**
  * Contested coastal hubs held by a neighbour, for the 攻める list.
- * 作り順⑥: filter/sort by foe team + trophy band (RAID_TARGET); mark leader bounty.
- * Front ones still float above shut rows; within a band, foe team then trophy gap then distance.
+ * Filter by trophy band (RAID_TARGET.requireBand); sort by trophy closeness then distance.
+ * Front ones still float above shut rows.
  */
 export function attackScouts(
   poiState: Island,
@@ -88,7 +87,7 @@ export function attackScouts(
     const who = rivalOf(holds[i]);
     if (!who) continue;
     const rivalTrop = rivalTrophies(who, selfTrop, table);
-    if (!canRaidOwner(who, selfTrop, rivalTrop, foeKeys)) continue;
+    if (!canRaidOwner(who, selfTrop, rivalTrop)) continue;
     const hit = neighbours.find((x) => x.code === who || (isAiOwner(who) && x.code === who.slice(3)));
     const bare = hit?.name ?? neighbourNameByCode(who, neighbours) ?? "他のプレイヤー";
     const ownerName = hit?.ai || isAiOwner(who) ? aiLabel(bare) : bare;
@@ -144,20 +143,8 @@ export function attackScouts(
 
   return rows.sort((a, b) => {
     if (a.onFront !== b.onFront) return Number(b.onFront) - Number(a.onFront);
-    const ra = raidTargetRank(
-      a.owner,
-      selfTrop,
-      rivalTrophies(a.owner, selfTrop, table),
-      foeKeys,
-      Math.hypot(a.x - from.x, a.z - from.z),
-    );
-    const rb = raidTargetRank(
-      b.owner,
-      selfTrop,
-      rivalTrophies(b.owner, selfTrop, table),
-      foeKeys,
-      Math.hypot(b.x - from.x, b.z - from.z),
-    );
+    const ra = raidTargetRank(selfTrop, rivalTrophies(a.owner, selfTrop, table), Math.hypot(a.x - from.x, a.z - from.z));
+    const rb = raidTargetRank(selfTrop, rivalTrophies(b.owner, selfTrop, table), Math.hypot(b.x - from.x, b.z - from.z));
     return ra - rb;
   });
 }

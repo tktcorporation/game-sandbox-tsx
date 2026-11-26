@@ -107,7 +107,6 @@ const SALT = 42;
   const raw = JSON.parse(JSON.stringify(p)) as Record<string, unknown>;
   raw.v = 46;
   delete raw.teamBattle;
-  delete raw.warScore;
   const migrated = parseProfile(raw, 9);
   assert.ok(migrated);
   assert.equal(migrated!.v, 48);

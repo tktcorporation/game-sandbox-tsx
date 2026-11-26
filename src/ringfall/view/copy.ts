@@ -163,18 +163,18 @@ export const TERM = {
    */
   fieldHubs: "戦場の拠点",
   /**
-   * War power from outer hubs on the field (作り順⑥).
-   * 【元】（なし） 【案】力 【理由】design-direction の語。部隊の厚さの名前
+   * War power from outer hubs on the field (作り順⑥ / 2026-11-26).
+   * 【元】力 【案】部隊戦の力 【理由】部隊戦ボード専用だと分かる。トロフィーと並べない
    */
-  warPower: "力",
+  warPower: "部隊戦の力",
   /**
    * Leader bounty on the strongest rival (作り順⑥).
-   * 【元】（なし） 【案】懸賞金 【理由】design-direction の語。先頭への上乗せ
+   * 【元】（なし） 【案】懸賞金 【理由】design-direction の語。先頭への上乗せ（物資。トロフィーではない）
    */
   bounty: "懸賞金",
   /**
-   * Rolling hold-time + team-battle score (作り順⑥).
-   * 【元】（なし） 【案】得点 【理由】design-direction の語。シーズン無しの競争層
+   * Team score inside one 部隊戦 match only (作り順⑥ / 2026-11-26).
+   * 【元】得点（個人の通算） 【案】得点＝チームの得点 【理由】トロフィーと分離。ボードにだけ出す
    */
   warScore: "得点",
   /**
@@ -543,27 +543,27 @@ export function attackScoutTrop(trop: number): string {
 }
 
 /**
- * War power line on the field board (作り順⑥).
- * 【元】（なし） 【案】力 12 【理由】外側の拠点が部隊戦の厚さになると分かる
+ * War power line on the field board only (作り順⑥ / 2026-11-26).
+ * 【元】力 12 【案】部隊戦の力 12 【理由】部隊戦ボード専用
  */
 export function warPowerLine(power: number): string {
   return `${TERM.warPower} ${power}`;
 }
 
 /**
- * Rolling score line on the signal station (作り順⑥).
- * 【元】（なし） 【案】得点 42 【理由】持ち時間＋部隊戦の合計
+ * Team score on the field board only (作り順⑥ / 2026-11-26).
+ * 【元】得点 42 【案】チームの得点 42 【理由】個人トロフィーと並べず、今の部隊戦だけ
  */
 export function warScoreLine(total: number): string {
-  return `${TERM.warScore} ${total}`;
+  return `チームの${TERM.warScore} ${total}`;
 }
 
 /**
- * Bounty mark under an 攻める row (作り順⑥).
- * 【元】（なし） 【案】懸賞金 【理由】先頭を取ると上乗せがあると分かる
+ * Bounty mark under an 攻める row (作り順⑥ / 2026-11-26).
+ * 【元】懸賞金 【案】懸賞金 · 物資 +3 【理由】トロフィーではなく物資の上乗せだと分かる
  */
-export function bountyMark(): string {
-  return TERM.bounty;
+export function bountyMark(extraMaterials = 3): string {
+  return `${TERM.bounty} · 物資 +${extraMaterials}`;
 }
 
 /**

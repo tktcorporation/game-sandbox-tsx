@@ -2,6 +2,7 @@ import { sfx } from "./sfx";
 import { neighboursOnMap } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type NodeId, type RegionId } from "../sim/map";
+import { BOUNTY } from "../meta/war-score";
 import { PHRASE, TERM, attackScoutDef, attackScoutTrop, bountyMark } from "./copy";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
@@ -169,7 +170,7 @@ export class DepartPicker {
         const shut = !t.onFront;
         const cls = ["attack-row", on?.id === t.id ? "on" : "", shut ? "shut" : ""].filter(Boolean).join(" ");
         // Shut row: short gate name only (full contestGateHint stays on #depart-warn; wordy ≤18).
-        const bounty = !shut && t.bounty ? `<small class="scout-bounty">${esc(bountyMark())}</small>` : "";
+        const bounty = !shut && t.bounty ? `<small class="scout-bounty">${esc(bountyMark(BOUNTY.extraMaterials))}</small>` : "";
         const scout = shut
           ? `<small class="scout-gate">${esc(t.gate ? `先に${t.gate}` : TERM.front)}</small>`
           : `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.trop))}</small>${bounty}`;

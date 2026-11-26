@@ -299,9 +299,9 @@ export class ExpeditionPanel {
       .slice(0, TEAM.size)
       .map((m) => `<span class="field-foe">${esc(memberLabel(m))}</span>`)
       .join("");
-    // 作り順⑥: live team power (outer hubs) and rolling score.
+    // 作り順⑥ / 2026-11-26: 部隊戦の力 + この試合のチーム得点（個人トロフィーとは別）。
     const power = warPowerOf(p.team, battle.hooks);
-    const score = p.warScore?.total ?? 0;
+    const score = battle.score ?? 0;
     const meta = `<p class="field-meta"><small>${esc(warPowerLine(power))}</small><small>${esc(warScoreLine(score))}</small></p>`;
     const go = open
       ? `<button type="button" data-act="field-sortie">${esc(TERM.teamBattle)}へ${esc(TERM.sortie)}</button>`
