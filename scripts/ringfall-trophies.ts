@@ -1,32 +1,69 @@
 /**
- * Trophy ranking numbers + swap (docs/ringfall/design-direction.md 「トロフィーと物資」).
+ * Trophy ranking + star scoring (docs/ringfall/design-direction.md 「トロフィーは CoC 型」/ TKT-218).
  *   npx tsx scripts/ringfall-trophies.ts
  */
 import assert from "node:assert/strict";
 import { applySync } from "../src/ringfall/meta/expeditions";
 import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
-import { SEIZE, TROPHY, clampTrophies, rivalTrophies, trophyDelta, trophySwap, trophiesTable } from "../src/ringfall/meta/trophies";
+import {
+  AI_RAID_STARS,
+  SEIZE,
+  TROPHY,
+  clampTrophies,
+  defenceWin,
+  gapBonus,
+  raidOdds,
+  raidTrophyDelta,
+  rivalTrophies,
+  starGain,
+  starsForRaid,
+  trophyDelta,
+  trophySwap,
+  trophiesTable,
+} from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { NODES, POIS, nodeIndex, poiIndex } from "../src/ringfall/sim/map";
 
 assert.equal(clampTrophies(-10), 0);
 assert.equal(clampTrophies(99999), TROPHY.max);
-assert.equal(TROPHY.defend, 10);
-assert.ok(TROPHY.defend < TROPHY.base);
+assert.equal(TROPHY.base, 30);
+assert.equal(TROPHY.maxBonus, 20);
+assert.equal(TROPHY.failMin, 5);
 assert.equal(SEIZE.emptyReserve, 3);
 assert.equal(SEIZE.bonus, 2);
+assert.equal(AI_RAID_STARS.win, 2);
 
 {
-  const even = trophySwap(1000, 1000);
-  assert.equal(even.gain, TROPHY.base);
-  const up = trophySwap(1000, 1400);
-  assert.ok(up.gain > TROPHY.base);
-  const down = trophySwap(1400, 1000);
-  assert.ok(down.gain < TROPHY.base);
-  // TKT-201: ~200 above → about +40; ~200 below → about +20 (base 30 ± gap).
-  assert.equal(trophySwap(1000, 1200).gain, 40);
-  assert.equal(trophySwap(1000, 800).gain, 20);
+  const even = raidOdds(1000, 1000);
+  assert.equal(even.N, TROPHY.base);
+  assert.equal(even.M, TROPHY.base);
+  // ~200 above → N 40 / M 20; ~200 below → N 20 / M 40.
+  assert.equal(raidOdds(1000, 1200).N, 40);
+  assert.equal(raidOdds(1000, 1200).M, 20);
+  assert.equal(raidOdds(1000, 800).N, 20);
+  assert.equal(raidOdds(1000, 800).M, 40);
+  assert.equal(gapBonus(1000, 1400), TROPHY.maxBonus);
+  assert.equal(trophySwap(1000, 1000).gain, TROPHY.base);
+  assert.equal(trophySwap(1000, 1000).fail, TROPHY.base);
+}
+
+{
+  assert.equal(starGain(30, 3), 30);
+  assert.equal(starGain(30, 2), 20);
+  assert.equal(starGain(30, 1), 10);
+  assert.equal(starGain(30, 0), 0);
+  assert.equal(raidTrophyDelta(30, 30, 3), 30);
+  assert.equal(raidTrophyDelta(30, 30, 2), 20);
+  assert.equal(raidTrophyDelta(30, 30, 1), 10);
+  assert.equal(raidTrophyDelta(30, 30, 0), -30);
+  assert.equal(raidTrophyDelta(40, 5, 0), -5);
+  assert.equal(starsForRaid({ halfDefence: true, captured: false, extracted: false }), 1);
+  assert.equal(starsForRaid({ halfDefence: true, captured: true, extracted: false }), 2);
+  assert.equal(starsForRaid({ halfDefence: false, captured: true, extracted: true }), 3);
+  assert.equal(starsForRaid({ halfDefence: false, captured: false, extracted: false }), 0);
+  assert.equal(defenceWin(1000, 1000), 30);
+  assert.equal(defenceWin(1000, 1200), 20); // attacker 1000 vs defender 1200 → M of that raidOdds
 }
 
 const shore = ROUTE_SHORES[0]!; // station
@@ -37,19 +74,17 @@ const shoreI = nodeIndex(shore);
   const after = [...before];
   before[shoreI] = rivalHold("AAAAAA");
   after[shoreI] = "own";
-  // Unknown rival → even (always +30).
+  // Remote / AI take = ★★ of N (even → 20).
   const d = trophyDelta(1000, before, after);
-  assert.equal(d.gained, TROPHY.base);
+  assert.equal(d.gained, starGain(TROPHY.base, AI_RAID_STARS.win));
   assert.equal(d.taken.length, 1);
   assert.equal(d.taken[0], shore);
   assert.equal(d.next, 1000 + d.gained);
-  // Real trophies: rival 200 above → +40.
   const table = trophiesTable([{ code: "AAAAAA", trophies: 1200 }]);
   const gap = trophyDelta(1000, before, after, (o) => rivalTrophies(o, 1000, table));
-  assert.equal(gap.gained, 40);
-  // Rival 200 below → +20.
+  assert.equal(gap.gained, starGain(40, AI_RAID_STARS.win));
   const weak = trophyDelta(1000, before, after, (o) => rivalTrophies(o, 1000, trophiesTable([{ code: "AAAAAA", trophies: 800 }])));
-  assert.equal(weak.gained, 20);
+  assert.equal(weak.gained, starGain(20, AI_RAID_STARS.win));
 }
 
 {
@@ -78,14 +113,12 @@ const shoreI = nodeIndex(shore);
 
 {
   const p = newProfile(1);
-  assert.equal(p.v, 44);
   assert.equal(p.trophies, TROPHY.start);
   const raw = JSON.parse(JSON.stringify(p));
   raw.v = 31;
   delete raw.trophies;
   const old = parseProfile(raw, 1);
   assert.ok(old);
-  assert.equal(old.v, 44);
   assert.equal(old.trophies, TROPHY.start);
 }
 
@@ -97,13 +130,12 @@ const shoreI = nodeIndex(shore);
   const { profile, notes } = applySync(p, { holds: [{ id: shore, hold: rivalHold("ZZZZZZ") }] });
   assert.ok(profile.trophies! < before);
   assert.ok(notes.length === 1 && notes[0].includes("トロフィー"));
-  // A second sync with the same hold does not deduct again.
   const again = applySync(profile, { holds: [{ id: shore, hold: rivalHold("ZZZZZZ") }] });
   assert.equal(again.profile.trophies, profile.trophies);
   assert.equal(again.notes.length, 0);
 }
 
-// Sync with a wiped log entry awards defence trophies with the trophy note (知らせとセット).
+// Sync with a wiped log entry awards defence M (even → +30).
 {
   const p = newProfile(7);
   const before = p.trophies;
@@ -114,8 +146,9 @@ const shoreI = nodeIndex(shore);
     },
   });
   assert.equal(news.length, 1);
-  assert.equal(profile.trophies, before + TROPHY.defend);
-  assert.ok(notes.length === 1 && notes[0].includes("守りきった +10"));
+  const m = defenceWin(before, before); // unknown rival → even
+  assert.equal(profile.trophies, before + m);
+  assert.ok(notes.length === 1 && notes[0].includes(`守りきった +${m}`));
 }
 
 // 核 · 制圧 loot: empty stock pays emptyReserve + bonus (AI / rival alike).

@@ -9,7 +9,7 @@ import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
-import { rivalTrophies, SEIZE, TROPHY, trophyDelta } from "./trophies";
+import { clampTrophies, raidTrophyDelta, rivalTrophies, SEIZE, starsForRaid, TROPHY, trophyDelta } from "./trophies";
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
 import { ensureTeam, formTeam, parseTeam, selfOuterCount, teamSalt, type Team, type TeamSelf } from "./team";
@@ -625,8 +625,11 @@ export interface Settlement {
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
-  /** Trophy change this settle (`gained` / `lost` / `defended`); left out when none moved. */
-  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number };
+  /**
+   * Trophy change this settle (`gained` / `lost` / `defended` / `stars`); left out when none moved.
+   * `stars` is set for a 「攻める」raid (0–3), even when the net delta is 0.
+   */
+  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number; stars?: number };
   /**
    * Rival / contested hubs taken this settle (home raid): owner id at raid start, for 島の知らせ
    * 「{誰}の{拠点}を制圧した · トロフィー +n · 倉庫へ届く」. Left out when none.
@@ -842,12 +845,35 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), parcels, incursionTaken: [] };
   // Apply the same overnight pass once the raid's haul is on today's island.
   const { profile: night } = advanceDay(settled, day);
-  // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
+  // Trophy (TKT-218): 「攻める」star score, then overnight / other contested moves (★★ remote).
+  // Field sorties never move trophies (部隊戦 uses team score only).
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
   const selfTrop = p.trophies ?? TROPHY.start;
-  const trop = trophyDelta(selfTrop, beforeHolds, afterHolds, rivalTrop ?? ((o) => rivalTrophies(o, selfTrop)));
-  if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
+  let tropGained = 0;
+  let tropLost = 0;
+  let tropStars: number | undefined;
+  const skip = new Set<NodeId>();
+  const attackTaken: { id: NodeId; owner: string }[] = [];
+  if (!fieldRaid && s.attack) {
+    const a = s.attack;
+    const half = a.defenceMax > 0 && a.defenceDealt >= a.defenceMax * 0.5;
+    const captured = (s.stats.captured ?? []).includes(a.id);
+    const extracted = s.outcome === "extracted";
+    tropStars = starsForRaid({ halfDefence: half, captured, extracted });
+    const d = raidTrophyDelta(a.N, a.M, tropStars);
+    if (d > 0) tropGained += d;
+    else tropLost += -d;
+    skip.add(a.id);
+    if (captured) attackTaken.push({ id: a.id, owner: a.owner });
+  }
+  const trop = fieldRaid
+    ? { next: selfTrop, gained: 0, lost: 0, taken: [] as NodeId[], dropped: [] as NodeId[] }
+    : trophyDelta(selfTrop + tropGained - tropLost, beforeHolds, afterHolds, rivalTrop ?? ((o) => rivalTrophies(o, selfTrop)), skip);
+  tropGained += trop.gained;
+  tropLost += trop.lost;
+  const tropNext = fieldRaid ? selfTrop : clampTrophies(selfTrop + tropGained - tropLost);
+  if (tropNext !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: tropNext });
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).
   let nightParcels = night.parcels ?? parcels;
@@ -910,10 +936,14 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   // Manual 目標 lasts one sortie: clear on return so camp no longer shows 目標にしている.
   const fresh = { ...next, stash: withStarters(next.stash), goal: null };
   fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
-  const takenRival = trop.taken.flatMap((id) => {
-    const owner = rivalOf(beforeHolds[nodeIndex(id)] ?? "foe");
-    return owner ? [{ id, owner }] : [];
-  });
+  const takenRival = [
+    ...attackTaken,
+    ...trop.taken.flatMap((id) => {
+      const owner = rivalOf(beforeHolds[nodeIndex(id)] ?? "foe");
+      return owner ? [{ id, owner }] : [];
+    }),
+  ];
+  const tropMoved = tropGained > 0 || tropLost > 0 || tropStars !== undefined;
   return {
     profile: fresh,
     home,
@@ -929,8 +959,16 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     ...(spoils > 0 && { spoils }),
     threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
-    ...(trop.gained || trop.lost
-      ? { trophies: { before: p.trophies ?? TROPHY.start, after: trop.next, gained: trop.gained, lost: trop.lost } }
+    ...(tropMoved
+      ? {
+          trophies: {
+            before: p.trophies ?? TROPHY.start,
+            after: tropNext,
+            gained: tropGained,
+            lost: tropLost,
+            ...(tropStars !== undefined ? { stars: tropStars } : {}),
+          },
+        }
       : {}),
     ...(takenRival.length ? { takenRival } : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),

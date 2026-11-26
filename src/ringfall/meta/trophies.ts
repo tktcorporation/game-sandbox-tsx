@@ -1,8 +1,7 @@
 /*
- * Trophy ranking (docs/ringfall/design-direction.md, CoC 型):
- * take a contested rival hub → gain; defend (守りきった) → small gain; lose a hub → lose.
- * Width of the attack swap follows the trophy gap (Boom Beach / classic CoC).
- * Materials from 核 · 制圧 are separate (`SEIZE`); trophies are not paid for capturing a core alone.
+ * Trophy ranking (docs/ringfall/design-direction.md, CoC 型 / TKT-218):
+ * 「攻める」raid scores ★0–3; win +N×★/3, 0★ −M. Defender loses what the attacker gained;
+ * 守りきった → +M. Materials from 核 · 制圧 stay separate (`SEIZE`).
  */
 import { rivalOf, type PoiHold } from "../sim/holds";
 import type { NodeId } from "../sim/map";
@@ -10,32 +9,31 @@ import { ISLAND_TABLE } from "./island-table";
 import { isContestedShore } from "./neighbours";
 
 /**
- * Numbers for the ranking layer. Soft season reset is left to a later pass.
- *
- * Rationale (CoC-shaped, RINGFALL scale — see design-direction 「トロフィーと物資」):
- * - Attack win ≈ CoC ~30 at even trophies → `base` 30 ± `maxBonus` 20 from the gap.
- * - Defence win is smaller than attack (CoC defence ≈ half or less) → `defend` 10 (~1/3 of base).
- * - Failed attack does **not** deduct trophies: RINGFALL's attack is a normal raid's 核 · 制圧,
- *   not a short dedicated raid; "no take → no gain" is the loss. Defender still gets `defend`.
+ * Numbers for the ranking layer (CoC-shaped — design-direction 「トロフィーは CoC 型」).
+ * N = base + gapBonus (±maxBonus); M = base − gapBonus (min failMin).
  */
 export const TROPHY = {
   /** New / migrated profiles. */
   start: 1000,
-  /** Base swap per contested hub taken or lost. */
+  /** Base for N / M at even trophies. */
   base: 30,
   /** Extra (or less) from the gap, capped. */
   maxBonus: 20,
   /** Gap (defender − attacker) at which the bonus saturates. */
   band: 400,
-  /** Per successful defence (守りきった), smaller than an attack win. */
+  /** Floor for M (失敗ペナルティ). */
+  failMin: 5,
+  /**
+   * @deprecated Prefer `raidOdds` / `defenceWin` (TKT-218). Kept as alias of failMin-era flat
+   * only for older comments; defence awards now use the attacker's M.
+   */
   defend: 10,
   min: 0,
   max: 5000,
 } as const;
 
 /**
- * League bands from design-direction (CoC-shaped). Display-only for now —
- * win-bonus materials and star math stay for a later stack.
+ * League bands from design-direction (CoC-shaped). Display-only for win-bonus materials later.
  * Inclusive min; the next band's min is exclusive upper for this one.
  */
 export const LEAGUE: readonly { name: string; min: number }[] = [
@@ -60,12 +58,7 @@ export function leagueOf(trophies: number): { name: string; min: number } {
 }
 
 /**
- * Materials from 核 · 制圧 of a rival-held hub (including AI). Separate from trophies:
- * trophies move when ownership of a contested hub changes; these feed 倉庫へ届いた.
- *
- * Rationale: was 1 common on an empty 中継ボックス — too thin next to a +30 trophy line.
- * Empty stock → `emptyReserve` commons; every 制圧 also adds `bonus` on top of parcels so
- * the core capture feels like CoC resource loot even when the defender spent their stock.
+ * Materials from 核 · 制圧 of a rival-held hub (including AI). Separate from trophies.
  */
 export const SEIZE = {
   /** Common materials when that hub's 島の守り stock is empty (was 1). */
@@ -74,28 +67,87 @@ export const SEIZE = {
   bonus: 2,
 } as const;
 
+/** AI / remote expedition star counts (design-direction: 制圧=★★、失敗=0★). */
+export const AI_RAID_STARS = { win: 2, lose: 0 } as const;
+
 /** Clamp to the live range. */
 export const clampTrophies = (n: number): number => Math.max(TROPHY.min, Math.min(TROPHY.max, Math.round(n)));
 
-/** Trophies for `wipes` successful defences (守りきった), each `TROPHY.defend`. */
+/**
+ * Gap bonus in −maxBonus…+maxBonus from (defender − attacker) over `band`.
+ * Higher defender → positive (attacker gains more / risks more).
+ */
+export function gapBonus(attacker: number, defender: number): number {
+  const diff = defender - attacker;
+  return Math.round((Math.max(-TROPHY.band, Math.min(TROPHY.band, diff)) / TROPHY.band) * TROPHY.maxBonus);
+}
+
+/**
+ * Pre-raid odds (出撃前の +N / −M).
+ * N = 30 + 差補正(±20); M = 30 − 差補正(最低 5).
+ */
+export function raidOdds(attacker: number, defender: number): { N: number; M: number } {
+  const bonus = gapBonus(attacker, defender);
+  const N = Math.max(1, TROPHY.base + bonus);
+  const M = Math.max(TROPHY.failMin, TROPHY.base - bonus);
+  return { N, M };
+}
+
+/**
+ * How many trophies move on a full take (legacy / overnight ★★ default).
+ * `gain` = N; `loss` (what the loser drops) = same N for a full ★★★; `fail` = M.
+ */
+export function trophySwap(attacker: number, defender: number): { gain: number; loss: number; fail: number } {
+  const { N, M } = raidOdds(attacker, defender);
+  return { gain: N, loss: N, fail: M };
+}
+
+/** ★1–3 → floor of N×★/3 (at least 1). ★0 → 0. */
+export function starGain(N: number, stars: number): number {
+  const s = Math.max(0, Math.min(3, Math.round(stars)));
+  if (s <= 0) return 0;
+  return Math.max(1, Math.round((N * s) / 3));
+}
+
+/**
+ * Net trophy change for one 「攻める」raid outcome.
+ * ★1–3 → +N×★/3; ★0 → −M.
+ */
+export function raidTrophyDelta(N: number, M: number, stars: number): number {
+  const s = Math.max(0, Math.min(3, Math.round(stars)));
+  if (s <= 0) return -Math.max(TROPHY.failMin, Math.round(M));
+  return starGain(N, s);
+}
+
+/**
+ * Star count from raid facts (TKT-218).
+ * ★1 守備の半分 / ★2 核 · 制圧 / ★3 制圧して生還.
+ */
+export function starsForRaid(o: { halfDefence: boolean; captured: boolean; extracted: boolean }): 0 | 1 | 2 | 3 {
+  if (o.captured && o.extracted) return 3;
+  if (o.captured) return 2;
+  if (o.halfDefence) return 1;
+  return 0;
+}
+
+/**
+ * Defender gain when the attack is wiped (守りきった): the attacker's M.
+ * `attacker` / `defender` are trophy standings from the defender's view of the foe / self.
+ */
+export function defenceWin(attackerTrop: number, defenderTrop: number): number {
+  return raidOdds(attackerTrop, defenderTrop).M;
+}
+
+/**
+ * @deprecated Use `defenceWin` (TKT-218). Flat `TROPHY.defend` × wipes kept for one release of
+ * scripts that still call it; prefer M per wipe.
+ */
 export function defendGain(wipes: number): number {
   return Math.max(0, Math.round(wipes)) * TROPHY.defend;
 }
 
 /**
- * How many trophies move when `attacker` takes a node from `defender` (or the reverse for loss).
- * Higher defender → more gain for the attacker; lower → less. Zero-sum locally.
- */
-export function trophySwap(attacker: number, defender: number): { gain: number; loss: number } {
-  const diff = defender - attacker;
-  const bonus = Math.round((Math.max(-TROPHY.band, Math.min(TROPHY.band, diff)) / TROPHY.band) * TROPHY.maxBonus);
-  const gain = Math.max(1, TROPHY.base + bonus);
-  return { gain, loss: gain };
-}
-
-/**
- * A rival's trophies from a known table (お隣 / AI). Unknown → treat as even with `self`
- * (band mid), so a missing read does not invent a gap.
+ * A rival's trophies from a known table (お隣 / AI). Unknown → treat as even with `self`.
  */
 export function rivalTrophies(owner: string, self: number, table?: ReadonlyMap<string, number>): number {
   if (!table?.size) return self;
@@ -108,9 +160,7 @@ export function rivalTrophies(owner: string, self: number, table?: ReadonlyMap<s
   return self;
 }
 
-/**
- * Build a code → trophies map from the neighbours list (server + AI). Used by settle / sync.
- */
+/** Build a code → trophies map from the neighbours list (server + AI). */
 export function trophiesTable(
   neighbours: readonly { code: string; trophies?: number; ai?: true }[],
 ): Map<string, number> {
@@ -130,39 +180,42 @@ export const rivalTrophiesLookup =
     rivalTrophies(owner, self, table);
 
 /**
- * Net trophy change for one settle: contested coastal hubs taken from rivals / lost to rivals.
- * Non-contested rival nodes (legacy) do not move trophies — ownership change of 取り合う拠点 only
- * (design-direction 「トロフィーと物資」). `rivalTrophiesOf` supplies the other side's standing
- * (TKT-201: real neighbour / AI trophies from the map list; unknown → even with self).
+ * Overnight / sync ownership changes of 取り合う拠点 (no star meter on this island).
+ * Takes: award ★★ worth (AI_RAID_STARS.win) of N — remote / AI default.
+ * Losses: drop the same amount the attacker would have gained at ★★.
+ * Raid-local star scoring is `raidTrophyDelta` in settle, not here.
  */
 export function trophyDelta(
   self: number,
   before: readonly PoiHold[],
   after: readonly PoiHold[],
   rivalTrophiesOf: (owner: string) => number = (o) => rivalTrophies(o, self),
+  /** Hubs already scored by raid star math (`raidTrophyDelta`) — skip here. */
+  skip: ReadonlySet<NodeId> = new Set(),
 ): { next: number; gained: number; lost: number; taken: NodeId[]; dropped: NodeId[] } {
   let gained = 0;
   let lost = 0;
   const taken: NodeId[] = [];
   const dropped: NodeId[] = [];
-  // ISLAND_TABLE.nodes is NODES order (server-safe; importing map.ts would build the world in the Worker).
+  const remoteStars = AI_RAID_STARS.win;
   for (let i = 0; i < ISLAND_TABLE.nodes.length; i++) {
     const id = ISLAND_TABLE.nodes[i].id as NodeId;
-    if (!isContestedShore(id)) continue;
+    if (!isContestedShore(id) || skip.has(id)) continue;
     const was = before[i] ?? "foe";
     const now = after[i] ?? "foe";
     const wasRival = rivalOf(was);
     const nowRival = rivalOf(now);
-    // Took a contested rival hub.
+    // Took a contested rival hub (sync / overnight / remote ★★).
     if (wasRival !== null && now === "own") {
-      const { gain } = trophySwap(self + gained - lost, rivalTrophiesOf(wasRival));
-      gained += gain;
+      const { N } = raidOdds(self + gained - lost, rivalTrophiesOf(wasRival));
+      gained += starGain(N, remoteStars);
       taken.push(id);
     }
-    // Lost a contested hub to a rival.
+    // Lost a contested hub to a rival (their ★★ take).
     if (was === "own" && nowRival !== null) {
-      const { loss } = trophySwap(rivalTrophiesOf(nowRival), self + gained - lost);
-      lost += loss;
+      const foe = rivalTrophiesOf(nowRival);
+      const { N } = raidOdds(foe, self + gained - lost);
+      lost += starGain(N, remoteStars);
       dropped.push(id);
     }
   }

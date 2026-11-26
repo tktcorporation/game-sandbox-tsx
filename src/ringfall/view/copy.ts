@@ -567,11 +567,22 @@ export function fieldResultLine(result: "win" | "loss" | "draw", ours: number, t
 }
 
 /**
- * Scout loot line under an 攻める row (TKT-204 案 B).
- * 【元】（なし） 【案】トロフィー +32 【理由】取ればいくつ増えるかを先に見せる
+ * Scout odds under an 攻める row (TKT-218).
+ * 【元】トロフィー +32 【案】トロフィー +N / −M 【理由】取れば +N・失敗で −M を攻める前に見せる
  */
-export function attackScoutTrop(trop: number): string {
-  return `${TERM.trophy} +${trop}`;
+export function attackScoutTrop(win: number, lose: number): string {
+  return `${TERM.trophy} +${win} / −${lose}`;
+}
+
+/**
+ * Raid star + trophy delta on results (TKT-218).
+ * 【元】（なし） 【案】★★☆ · トロフィー +20 【理由】星と増減をリザルトに出す
+ */
+export function raidStarsLine(stars: number, delta: number): string {
+  const s = Math.max(0, Math.min(3, Math.round(stars)));
+  const marks = `${"★".repeat(s)}${"☆".repeat(3 - s)}`;
+  const signed = delta > 0 ? `+${delta}` : delta < 0 ? `−${-delta}` : "+0";
+  return `${marks} · ${TERM.trophy} ${signed}`;
 }
 
 /**
@@ -617,9 +628,9 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   },
   {
     title: TERM.captureCore,
-    // 【元】核·制圧するとトロフィー…やり返す。
-    // 【案】信号所のチームも一言 【理由】チーム／部隊戦の存在を初日に出す
-    body: `相手の拠点を${TERM.captureCore}すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。${TERM.signal}に${TERM.team}もある。`,
+    // 【元】相手の拠点を核 · 制圧すると…
+    // 【案】相手の拠点の核を制圧すると… 【理由】ユーザー承認済み（TKT-218）
+    body: `相手の拠点の核を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。${TERM.signal}に${TERM.team}もある。`,
   },
 ];
 

@@ -51,8 +51,10 @@ const attacker = { code: "ATK001", name: "ツバキ" };
   const synced = applySync(p, {
     log: { next: entry.seq, entries: [entry] },
   });
-  assert.equal(synced.profile.trophies, before + TROPHY.defend);
-  assert.ok(synced.notes.some((n) => n.includes("守りきった +10")));
+  // TKT-218: 守りきった → +M (even trophies → base 30).
+  const m = 30;
+  assert.equal(synced.profile.trophies, before + m);
+  assert.ok(synced.notes.some((n) => n.includes(`守りきった +${m}`)));
   // Same lines feed the startup card.
   const sheet = awaySheetParts([], [line, ...synced.notes]);
   assert.ok(sheet);

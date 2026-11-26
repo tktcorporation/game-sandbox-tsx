@@ -6,7 +6,7 @@ import { placeParties } from "./world";
 import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
-import { DEFENCE_AID, isContestedPoi, type PoiHold } from "./island";
+import { DEFENCE_AID, defencePool, isContestedPoi, type PoiHold } from "./island";
 import { rivalOf } from "./holds";
 import { enemyNodes, nodeHolds, ownNodes, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
@@ -654,6 +654,20 @@ export interface State {
   defence: Record<string, number>;
   /** Extra 島の守り grunts at contested POI indices (from `Start.parcels` counts, capped at DEFENCE_AID). */
   defenceAid: Record<number, number>;
+  /**
+   * 「攻める」raid (TKT-218): N/M odds, defence HP pool, damage dealt toward ★1.
+   * Null when the gate did not pick a rival hub (field / sim gate).
+   */
+  attack: {
+    id: NodeId;
+    owner: string;
+    N: number;
+    M: number;
+    /** Total HP+shield of that hub's defence at raid start. */
+    defenceMax: number;
+    /** Damage the player / teammate dealt to that defence. */
+    defenceDealt: number;
+  } | null;
   /** Seconds until the next reinforcement squad beams in, and how many have come. */
   reinforceT: number;
   reinforceN: number;
@@ -942,6 +956,11 @@ export interface Start {
    * Left out, a normal own-island raid.
    */
   teamField?: boolean;
+  /**
+   * 「攻める」target chosen at the gate (TKT-218): star scoring +N/−M for this hub only.
+   * Left out, no star raid (overnight / sync still move trophies).
+   */
+  attack?: { id: NodeId; owner: string; N: number; M: number };
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1110,6 +1129,24 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     hold,
     defence,
     defenceAid,
+    attack: (() => {
+      const a = start.attack;
+      if (!a || start.teamField) return null;
+      const poi = poiIndex(a.id);
+      if (poi < 0 || !isContestedPoi(poi)) return null;
+      const who = rivalOf(hold[poi] ?? "foe");
+      if (!who || who !== a.owner) return null;
+      const factory = defence[who] ?? 0;
+      const aid = defenceAid[poi] ?? 0;
+      return {
+        id: a.id,
+        owner: a.owner,
+        N: Math.max(1, Math.round(a.N)),
+        M: Math.max(1, Math.round(a.M)),
+        defenceMax: defencePool(factory, aid),
+        defenceDealt: 0,
+      };
+    })(),
     reinforceT: clock.first,
     reinforceN: 0,
     raiderT: clock.raiders,

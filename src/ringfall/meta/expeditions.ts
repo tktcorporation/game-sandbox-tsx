@@ -15,7 +15,7 @@ import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
-import { clampTrophies, defendGain, rivalTrophies, trophyDelta } from "./trophies";
+import { clampTrophies, defenceWin, rivalTrophies, trophyDelta } from "./trophies";
 import { emptyOuterGuard, guardOn, mergeOuterGuard, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
 
@@ -265,8 +265,12 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       lost = d.lost;
       next = d.next;
     }
-    const wipes = news.filter((e) => e.t === "wiped").length;
-    const defended = defendGain(wipes);
+    // 守りきった → +M of each attacker (TKT-218). AI / remote takes already ★★ via trophyDelta.
+    let defended = 0;
+    for (const e of news.filter((n) => n.t === "wiped")) {
+      const foe = rivalTrop ? rivalTrop(e.by.code) : rivalTrophies(e.by.code, p.trophies!);
+      defended += defenceWin(foe, p.trophies!);
+    }
     if (defended) next = clampTrophies(next + defended);
     if (next !== p.trophies) {
       trophies = next;

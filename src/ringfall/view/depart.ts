@@ -173,7 +173,7 @@ export class DepartPicker {
         const bounty = !shut && t.bounty ? `<small class="scout-bounty">${esc(bountyMark(BOUNTY.extraMaterials))}</small>` : "";
         const scout = shut
           ? `<small class="scout-gate">${esc(t.gate ? `先に${t.gate}` : TERM.front)}</small>`
-          : `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.trop))}</small>${bounty}`;
+          : `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.win, t.lose))}</small>${bounty}`;
         const lock = shut ? `<span class="pick-lock">${lockIcon()}</span>` : "";
         // Split owner / hub so wordy counts each ≤18 (AI names stay short alone).
         return `<button type="button" class="${cls}" data-attack="${t.id}" aria-label="${esc(t.title)}">${flagIcon(SIDE.rival)}${lock}<span class="attack-body"><span class="attack-title"><b>${esc(t.ownerName)}</b><b>の${esc(t.hubName)}</b></span>${scout}</span></button>`;
