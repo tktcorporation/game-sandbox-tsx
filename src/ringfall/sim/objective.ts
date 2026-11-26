@@ -1,8 +1,8 @@
 import { CONQUEST, FRONT, type ValuableKind } from "./config";
 import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, poiRegion, regionHere, type PoiId } from "./map";
-import { frontNodes } from "./front";
+import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, depotIndex, nodeIndex, poiIndex, poiRegion, regionHere, type PoiId } from "./map";
+import { capturable, frontNodes } from "./front";
 import { rivalOf } from "./holds";
 import { sources, type Source } from "../meta/hideout";
 import type { State } from "./state";
@@ -92,7 +92,7 @@ function captureSteps(s: State, i: number, title: string): Objective {
   const owned = s.nodes[i] === "own";
   const under = s.capture?.node === i;
   const c = under ? s.capture : null;
-  const front = frontNodes(s.nodes)[i];
+  const front = capturable(s, i);
   return buildObjective(title, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: owned || under || dist2d(s.player.pos, core) < ARRIVE },
     { kind: "start", label: "核 · 制圧を始める", until: front || owned ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: owned || under, near: "核 · 制圧を始める" },
@@ -107,6 +107,24 @@ function captureSteps(s: State, i: number, title: string): Objective {
     },
     extractStep(s),
   ]);
+}
+
+/**
+ * A sortie's steps (docs/ringfall/holdings-raid.md): take the holding's core, then leave by its
+ * depot. Time running out ends it as it stands, so the last step is the depot, not a way off.
+ */
+function sortieSteps(s: State): Objective {
+  const q = s.sortie!;
+  const o = captureSteps(s, q.node, `${NODES[q.node].name}を攻める`);
+  const d = DEPOTS[depotIndex(NODES[q.node].id)];
+  o.steps[o.steps.length - 1] = {
+    kind: "extract",
+    label: "中継ボックスで帰る",
+    until: "中継ボックスで切り上げる（時間切れでもそのまま帰る）",
+    at: s.phase === "play" ? ground(d.x, d.z, d.y) : null,
+    done: s.outcome === "extracted",
+  };
+  return buildObjective(o.title, o.steps);
 }
 
 /** The steps of holding node `i`, the player's, against the squads coming to take it (sim/battle.ts). */
@@ -140,6 +158,7 @@ function defendSteps(s: State, i: number): Objective {
  * or else to explore and get off.
  */
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
+  if (s.sortie) return sortieSteps(s);
   if (s.capture && s.nodes[s.capture.node] !== "own") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
   if (task) return captureSteps(s, task.node, `${NODES[task.node].name}を攻める`);
   const focus = s.phase === "play" ? battleFocus(s) : null;

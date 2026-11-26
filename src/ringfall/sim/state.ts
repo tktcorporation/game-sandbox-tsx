@@ -1,5 +1,5 @@
-import { ALLY, BOOST, DEPOT, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, regionOf, UNLOCKS, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId, type NodeId } from "./map";
+import { ALLY, BOOST, DEPOT, SORTIE, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, nodeIndex, poiIndex, poiRegion, regionOf, UNLOCKS, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
 import { placeParties } from "./world";
@@ -7,7 +7,7 @@ import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
 import { DEFENCE_AID, defencePool, isContestedPoi, type PoiHold } from "./island";
-import { rivalOf } from "./holds";
+import { rivalHold, rivalOf } from "./holds";
 import { enemyNodes, nodeHolds, ownNodes, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
 
@@ -529,6 +529,10 @@ export type GameEvent =
   /** The enemy's counter-attack on a node the player took a while ago set off (`COUNTER`). */
   | { t: "counter"; node: number }
   | { t: "timeUp" }
+  /** A sortie's time ran out (`stepSortie()`): it ends alive with the stars as they stand. */
+  | { t: "sortieUp" }
+  /** The player walked off a sortie's holding (`stepSortie()`): it ends alive. */
+  | { t: "sortieLeft" }
   | { t: "done" };
 
 export interface Stats {
@@ -719,6 +723,12 @@ export interface State {
    * 部隊戦 field sortie (作り順⑤): captures update field holds in settle, not home poiState.
    */
   teamField: boolean;
+  /**
+   * A sortie to a neighbour's holding (`Start.sortie`, docs/ringfall/holdings-raid.md): the node
+   * and POI attacked, its owner, when time runs out and how far from the core the player may walk
+   * before the sortie ends. Null for a raid of the player's own island.
+   */
+  sortie: { node: number; poi: number; owner: string; end: number; leave: number } | null;
   /**
    * Defence stock queued this raid when the player deposits at a depot (`leftParcels` only;
    * not world pickups). The sim gate never deposits, so the bench hash is unchanged.
@@ -961,6 +971,14 @@ export interface Start {
    * Left out, no star raid (overnight / sync still move trophies).
    */
   attack?: { id: NodeId; owner: string; N: number; M: number };
+  /**
+   * A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): the raid is played at that
+   * node alone, starting at its depot, with only the owner's defence (their factory's kinds and up
+   * to `DEFENCE_AID` grunts of 島の守り) standing; no other robot, bin or timer of the island.
+   * `N` / `M` are the stars' trophy odds (`raidOdds()`), scored as `attack` is. Overrides `island`,
+   * `from`, `entry`, `battle`, `defence`, `parcels` and `attack`.
+   */
+  sortie?: { id: NodeId; owner: string; factory: number; aid?: number; N: number; M: number };
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1008,6 +1026,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   // The hunters' fields kept from an earlier raid would steer this one's hunters near the
   // same spots: a raid starts with none, so it plays the same whatever was played before it.
   forgetFields();
+  const sortie = start.sortie && nodeIndex(start.sortie.id) >= 0 && start.sortie.owner ? start.sortie : null;
+  if (sortie) start = sortieStart(start, sortie);
   const hold = POIS.map((p): PoiHold => (p.boss ? "foe" : (start.island?.[p.id] ?? "foe")));
   const nodes = nodeHolds((id) => hold[poiIndex(id)]);
   // A raid whose start names no island is the one the balance tables are played on.
@@ -1016,8 +1036,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   const clock = raidClock(strength, threat);
   const owned = (poi: PoiId) => hold[poiIndex(poi)] === "own";
   // An owned POI's depot is on, so a raid may start from it too.
-  const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || owned(d.poi));
-  const from = start.from && (start.depots?.includes(start.from) || owned(start.from)) ? DEPOTS[depotIndex(start.from)] : null;
+  const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || owned(d.poi) || sortie?.id === d.poi);
+  const from = start.from && (start.depots?.includes(start.from) || owned(start.from) || sortie?.id === start.from) ? DEPOTS[depotIndex(start.from)] : null;
   if (from) region = poiRegion(from.poi).id;
   const ways = regionOf(region).entries;
   const entry = entryOf(start.entry && ways.includes(start.entry) ? start.entry : ways[0]);
@@ -1036,11 +1056,13 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     }),
   );
   const defence: Record<string, number> = {};
+  if (sortie) defence[sortie.owner] = sortie.factory;
   for (const d of start.defence ?? []) {
     if (typeof d.owner === "string" && d.owner && Number.isFinite(d.factory)) defence[d.owner] = d.factory;
   }
   // 島の守り stock at contested hubs another player holds → up to DEFENCE_AID grunts in that garrison.
   const defenceAid: Record<number, number> = {};
+  if (sortie) defenceAid[poiIndex(sortie.id)] = Math.max(0, Math.min(DEFENCE_AID, Math.floor(sortie.aid ?? 0)));
   for (const q of start.parcels ?? []) {
     const i = poiIndex(q.poi);
     if (i < 0 || !isContestedPoi(i)) continue;
@@ -1123,17 +1145,17 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     cleared: hold.map((h, i) => {
       if (h === "foe") return false;
       const who = rivalOf(h);
-      if (who && isContestedPoi(i) && defence[who] !== undefined) return false;
+      if (who && (isContestedPoi(i) || POIS[i].id === sortie?.id) && defence[who] !== undefined) return false;
       return true;
     }),
     hold,
     defence,
     defenceAid,
     attack: (() => {
-      const a = start.attack;
+      const a = sortie ? { id: sortie.id, owner: sortie.owner, N: sortie.N, M: sortie.M } : start.attack;
       if (!a || start.teamField) return null;
       const poi = poiIndex(a.id);
-      if (poi < 0 || !isContestedPoi(poi)) return null;
+      if (poi < 0 || (!sortie && !isContestedPoi(poi))) return null;
       const who = rivalOf(hold[poi] ?? "foe");
       if (!who || who !== a.owner) return null;
       const factory = defence[who] ?? 0;
@@ -1147,9 +1169,9 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
         defenceDealt: 0,
       };
     })(),
-    reinforceT: clock.first,
+    reinforceT: sortie ? Infinity : clock.first,
     reinforceN: 0,
-    raiderT: clock.raiders,
+    raiderT: sortie ? Infinity : clock.raiders,
     strength,
     threat,
     known: [...(start.known ?? MOD_START)],
@@ -1171,6 +1193,14 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     goalHave: start.goalHave ?? 0,
     goalNeed: start.goalNeed ?? 0,
     teamField: !!start.teamField,
+    sortie: sortie
+      ? (() => {
+          const node = nodeIndex(sortie.id);
+          const core = NODES[node].core;
+          const d = DEPOTS[depotIndex(sortie.id)];
+          return { node, poi: poiIndex(sortie.id), owner: sortie.owner, end: SORTIE.time, leave: Math.hypot(d.x - core.x, d.z - core.z) + SORTIE.leave };
+        })()
+      : null,
     // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
     parcels: [],
     leftParcels: [],
@@ -1179,7 +1209,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     leftAt: null,
     away: 0,
     home: false,
-    found: from ? [] : [entry.id],
+    found: from || sortie ? [] : [entry.id],
     nodes,
     capture: null,
     contacts: [],
@@ -1204,6 +1234,13 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     p.pos = { x, y: groundAt(x, z, PLAYER.radius, from.y + 0.3), z };
     p.yaw = from.yaw;
   }
+  if (s.sortie) {
+    // A sortie is played at the holding alone: only its own bins and floor loot are there.
+    const at = s.sortie.poi;
+    const there = POIS[at];
+    s.bins = s.bins.filter((b) => b.poi === at && !b.outside);
+    s.loot = s.loot.filter((l) => Math.hypot(l.pos.x - there.x, l.pos.z - there.z) < there.trigger);
+  }
   useZones(s);
   // What the nodes held give a raid at its start (`UNLOCKS`): the leap's charge, and one mod part the profile knows, picked from the seed.
   NODES.forEach((n, i) => {
@@ -1216,8 +1253,17 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   populate(s);
   // The battle's walks are traced now, and the fields that traced them forgotten, before anything else builds one.
   if (start.battle) s.battle = initBattle(s, start.battle);
-  placeParties(s);
+  if (!s.sortie) placeParties(s);
   return s;
+}
+
+/**
+ * The start of a sortie (`Start.sortie`): the holding is the owner's and every other POI the
+ * enemy's (whose robots `populate()` leaves out), at the holding's depot, with no battle.
+ */
+function sortieStart(start: Start, sortie: NonNullable<Start["sortie"]>): Start {
+  const { battle: _b, defence: _d, parcels: _p, attack: _a, entry: _e, island: _i, depots: _dp, ...rest } = start;
+  return { ...rest, island: { [sortie.id]: rivalHold(sortie.owner) }, from: sortie.id };
 }
 
 /**

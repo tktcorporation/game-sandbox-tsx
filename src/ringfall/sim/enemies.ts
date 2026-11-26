@@ -17,7 +17,7 @@ import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
-import { activePacks, garrison, netPlated, poiTier, tierPlated } from "./island";
+import { activePacks, garrison, netPlated, poiTier, rivalDefenceSquad, tierPlated } from "./island";
 import { rivalOf } from "./holds";
 import { modScale } from "./mods";
 import { mix, rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
@@ -154,6 +154,13 @@ export function populate(s: State) {
   // A POI stands with the garrison its standing on the island gives it (`garrison()`); the squads
   // of it that walk a beat (`MOBILES`) are out on it, no longer the POI's. Contested hubs another
   // player holds stand that owner's 工場の部隊 + 島の守り when `State.defence` names them.
+  if (s.sortie) {
+    // A sortie stands the holding's defence alone, round its core: no beat, walk, pack or roamer.
+    const i = s.sortie.poi;
+    const factory = s.defence[s.sortie.owner] ?? 0;
+    add(rivalDefenceSquad(i, factory, s.defenceAid[i] ?? 0), i, false, s.sortie.owner);
+    return;
+  }
   const beats: { m: Mobile; kinds: EnemyKind[]; tier: number }[] = [];
   POIS.forEach((p, i) => {
     const who = rivalOf(s.hold[i]);

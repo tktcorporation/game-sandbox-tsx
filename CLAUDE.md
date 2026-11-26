@@ -228,6 +228,18 @@ its best gun pierces, `Skill.capture` a raid (`Skill.battle` in a battle), and t
 no POI two tiers past its best gun, and its paths go round the nearest such garrison of its
 region (or the titan's sight, where the titan is). The objective card points at the front
 (`objectiveSteps()`).
+A sortie (`Start.sortie`, `State.sortie`, `SORTIE` in `config.ts`; docs/ringfall/holdings-raid.md)
+is a raid to a neighbour's holding, a node its owner holds on their own island: `newRun(..., { sortie })`
+holds that node as theirs and every other POI as the enemy's, starts at its depot (on), and stands
+only the owner's defence round its core (`rivalDefenceSquad()`: their factory's kinds and up to
+`DEFENCE_AID` grunts of 島の守り), with no beat, walk, pack, roamer, party, reinforcement, raider or
+battle, and only the node's own bins and floor loot. Its core is capturable though it is not on the
+player's front (`capturable()`), no siege comes to it, and its stars are scored as a rival hub's
+(`State.attack`). It ends alive when `SORTIE.time` runs out (`sortieUp`) or the player walks
+`SORTIE.leave` metres past the depot's distance from the core (`sortieLeft`, `stepSortie()` in
+`world.ts`), or by the depot; a tick runs only the sortie's systems (`SORTIE_AFTER` in `step.ts`), and
+the objective is the core, then the depot (`sortieSteps()`). `npx tsx scripts/ringfall-sortie.ts`
+checks it (`checkSortie()` in the sim gate); a raid without `sortie` plays as before.
 A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
 `newRun(..., { battle: { factory } })` (`State.battle`); a raid without it, as the sim gate's tables
 play, has none. It lasts `CONQUEST.time` seconds, the raid's time limit (`timeUp`: still out is a

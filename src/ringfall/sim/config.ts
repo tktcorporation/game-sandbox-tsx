@@ -435,6 +435,13 @@ export const DEPOT = {
 export const HOME = { away: 10 };
 
 /**
+ * A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): the raid starts at the
+ * holding's depot with only the owner's defence standing, and ends alive when `time` runs out or
+ * the player walks `leave` metres further from the core than the depot stands.
+ */
+export const SORTIE = { time: 300, leave: 120 };
+
+/**
  * The front (docs/ringfall/island-v2.md): the freeable POIs are the island's nodes (`NODES`,
  * `FRONT_LINKS` in map.ts), and only a node next to the player's ground (the camp and the nodes
  * the player holds) can be taken, by its core (`core`): a pillar `height` metres tall near the

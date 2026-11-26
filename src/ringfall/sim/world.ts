@@ -890,6 +890,26 @@ export function stepDepots(s: State) {
 }
 
 /**
+ * A sortie's end (`State.sortie`): when its time runs out, or once the player has walked further
+ * from the holding's core than its `leave`, it ends alive with what they carry (the stars stand as
+ * they are, docs/ringfall/holdings-raid.md).
+ */
+export function stepSortie(s: State) {
+  const q = s.sortie;
+  if (!q || s.phase !== "play") return;
+  const core = NODES[q.node].core;
+  const away = dist2d(s.player.pos, core) > q.leave && s.player.downed <= 0;
+  if (s.time < q.end && !away) return;
+  s.orbs = [];
+  s.waves = [];
+  s.leaving = null;
+  s.leftAt = POIS[q.poi].id;
+  s.phase = "done";
+  s.outcome = "extracted";
+  s.events.push({ t: away ? "sortieLeft" : "sortieUp" }, { t: "done" });
+}
+
+/**
  * The camp's yard (`HOME`): back in it after time away, with no robot fighting the player near,
  * the raid ends alive with what the player carries.
  */

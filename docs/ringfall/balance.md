@@ -1223,3 +1223,5 @@ TS ホットパスを、結果を変えずにさらに軽くした後（この 4
 AI の島を 30 日に入れた変更（`scripts/ringfall-campaign.ts` と `meta/ai-islands.ts`。シミュレーションのゲームの部分は変えていない）では、計測は CPU 107.0 秒で、ハッシュは同じ（83b7a1d3bcf8）。計測の決まった 10 レイドは AI の島を通らない。変更後の 30 周のゲートは 809 秒、CPU 時間 3119 秒（ユーザー 3120 秒）で、変わったのは 30 日の表だけ。
 
 使用キーの対象選定（向き・優先・ヒステリシス・T 切替、`USE` / `useCandidates` / `State.useFocus`。ボットは `cycleUse` を押さない）では、計測は CPU 59.5 秒（`RINGFALL_SIM_JOBS=1`）、ハッシュは同じ（83b7a1d3bcf8）。
+
+陣地への攻めの出撃（`Start.sortie`、docs/ringfall/holdings-raid.md）を足した変更では、出撃を指定しないレイドは何も変わらない。続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 75.4 秒、変更後が 76.1 秒（2 コアの機械。読み込み 7.3 秒は同じ）で、ハッシュは同じ（1d211a2c8e31）。出撃そのものの確認は `scripts/ringfall-sortie.ts`（ゲートの `checkSortie()`）。
