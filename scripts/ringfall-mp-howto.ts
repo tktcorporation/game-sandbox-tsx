@@ -3,12 +3,16 @@
  * Run: `npx tsx scripts/ringfall-mp-howto.ts`
  */
 import { holdsContested, shouldShowMpHowto } from "../src/ringfall/meta/mp-howto";
-import { newIsland } from "../src/ringfall/meta/island";
+import { blankIsland, newIsland } from "../src/ringfall/meta/island";
 import { MP_HOWTO_CARDS, TERM } from "../src/ringfall/view/copy";
 
-const empty = newIsland();
+const empty = blankIsland();
 if (holdsContested(empty)) throw new Error("foe island should not hold contested");
 if (shouldShowMpHowto(empty)) throw new Error("should not show without contested own");
+
+// New profiles start with sea-route shores → howto can show from day 1.
+if (!holdsContested(newIsland())) throw new Error("newIsland should hold starting shores");
+if (!shouldShowMpHowto(newIsland())) throw new Error("should show howto on new island");
 
 const own = { ...empty, station: { state: "own" as const } };
 if (!holdsContested(own)) throw new Error("station own is contested hold");

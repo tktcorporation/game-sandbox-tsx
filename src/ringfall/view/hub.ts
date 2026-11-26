@@ -74,7 +74,7 @@ export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP
 
 /**
  * When a rival holds a contested hub that is not yet on the front: which front node to take first
- * (TKT-204 案 D — 「先に中継塔を取ると攻められる」).
+ * (TKT-204 案 D — 「前線に出すには先に{拠点}」. Not a sea-route gate).
  */
 export function rivalGateHint(p: Profile, from: { x: number; z: number } = CAMP.wake): string | null {
   if (rivalFrontPick(p, from)) return null;

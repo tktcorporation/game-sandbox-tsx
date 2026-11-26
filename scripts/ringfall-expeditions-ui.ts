@@ -37,7 +37,7 @@ import { NODES } from "../src/ringfall/sim/map";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
-import { holds } from "../src/ringfall/meta/island";
+import { blankIsland, holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
 import { expeditionsOut, answerRecall, incomingLine, incomingOf, LANDING, lentResults, lentRivals, parseLease, recallAll, numbered, answerSend, dropStale, factoryAhead, sendingEntry, SENDING_MS, applySync, retakenNodes, awayIncome, factorySquads, squadsRemaining, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
@@ -56,10 +56,10 @@ const B = "Z3P9TR";
 const ID_A = "7c9e6679-7425-40de-944b-e07fc1f0d3c4";
 const ID_B = "1b4e28ba-2fa1-41d2-883f-0016d3cca427";
 
-/** A new profile with `freed` the player's and `rival` held by island `B`. */
+/** A new profile with `freed` the player's and `rival` held by island `B` (blank base — no starting shores). */
 function island(freed: string[], rival: string[] = []): Profile {
   const p = newProfile(3);
-  const poiState = { ...p.poiState };
+  const poiState = { ...blankIsland() };
   for (const id of freed) poiState[id as keyof typeof poiState] = { state: "own" };
   for (const id of rival) poiState[id as keyof typeof poiState] = { state: rivalHold(B) };
   return { ...p, poiState };

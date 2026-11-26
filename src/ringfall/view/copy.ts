@@ -466,10 +466,11 @@ export function contestOwner(_who?: string): string {
 
 /**
  * Toast after seizing a robot-held outer hub (2026-11-26).
- * 【元】制圧した · {拠点} 【案】制圧した · {拠点} · {誰}が攻めてくる 【理由】海路が開いてお隣が来る流れ
+ * 【元】制圧した · {拠点} · {誰}が攻めてくる 【案】制圧した · {拠点} · トロフィーなし
+ * 【理由】お隣は最初から来る。ロボット拠点を取っても海路ゲートではない
  */
-export function robotHubSeized(hub: string, who: string): string {
-  return `制圧した · ${hub} · ${who}が攻めてくる`;
+export function robotHubSeized(hub: string, _who?: string): string {
+  return `制圧した · ${hub} · ${TERM.trophy}なし`;
 }
 
 /**
@@ -489,11 +490,11 @@ export function attackGoal(whoHub: string): string {
 }
 
 /**
- * Depart hint when a rival hub is held but not yet on the front.
- * 【元】（なし） 【案】先に中継塔を取ると攻められる 【理由】前線に無い相手持ちの理由
+ * Depart hint when a rival hub is held but not yet on the front (not a sea-route gate).
+ * 【元】先に{拠点}を取ると攻められる 【案】前線に出すには先に{拠点} 【理由】海路開放と混同しない。前線の隣接だけ
  */
 export function contestGateHint(gate: string): string {
-  return `先に${gate}を取ると攻められる`;
+  return `前線に出すには先に${gate}`;
 }
 
 /**
@@ -590,7 +591,8 @@ export function bountyMark(extraMaterials = 3): string {
 export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   {
     title: TERM.seaIslands,
-    body: `ロボットから外側の拠点を取ると、${TERM.seaIslands}が攻めてくる。`,
+    // 2026-11-26: neighbours raid from day 1; no robot-first sea-route gate.
+    body: `${TERM.seaIslands}は最初から外側の拠点を攻めてくる。`,
   },
   {
     title: `${TERM.front}の拠点`,

@@ -6,7 +6,7 @@ import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
 import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, robotHubSeized, robotHubTropNote, trophyLine } from "./copy";
-import { isContestedShore, NEIGHBOUR_SLOTS, neighbourNameByCode } from "../meta/neighbours";
+import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { capturedIds } from "../sim/front";
 import { itemColor, itemName, nextHandFor } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
@@ -599,13 +599,9 @@ export class Hud {
           this.toast(`${coreIcon(SIDE.own)}${esc(attackSeized(whoHub))}<span class="toast-sub">倉庫へ届く</span>`, 1, 5000);
           break;
         }
-        // Robot-held outer hub: trophies do not move; neighbour can now raid in.
-        let robotToast = `制圧した · ${hub.name}`;
-        if (isContestedShore(hub.id) && startHold === "foe") {
-          const slot = NEIGHBOUR_SLOTS.findIndex((x) => x.shore === hub.id);
-          const n = slot >= 0 ? neighboursNowOnMap().find((x) => x.slot === slot) : undefined;
-          if (n) robotToast = robotHubSeized(hub.name, n.ai ? aiLabel(n.name) : n.name);
-        }
+        // Robot-held outer hub: trophies do not move (neighbours already raid from day 1).
+        const robotToast =
+          isContestedShore(hub.id) && startHold === "foe" ? robotHubSeized(hub.name) : `制圧した · ${hub.name}`;
         this.toast(`${coreIcon(SIDE.own)}${esc(robotToast)}`, 1, 5000);
         break;
       }

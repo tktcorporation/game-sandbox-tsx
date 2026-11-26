@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { CONTESTED_OUTER_IDS } from "../src/ringfall/meta/contested-outer-table";
 import type { NodeId } from "../src/ringfall/sim/map";
-import { newIsland } from "../src/ringfall/meta/island";
+import { blankIsland, newIsland } from "../src/ringfall/meta/island";
 import { bindTeam, newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { starterKit, newRun } from "../src/ringfall/sim/state";
 import {
@@ -92,7 +92,7 @@ const SELF = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "テスト", co
   const p = newProfile(7);
   assert.ok(p.v >= 46);
   assert.equal(p.team.members.length, TEAM.size);
-  assert.equal(selfOuterCount(p), 0);
+  assert.equal(selfOuterCount(p), 4, "new profile starts with 4 sea-route shores");
 
   const raw = JSON.parse(JSON.stringify(p)) as Record<string, unknown>;
   raw.v = 45;
@@ -113,8 +113,8 @@ const SELF = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "テスト", co
   assert.equal(bound.team.members[0]!.id, SELF.id);
   assert.equal(bound.team.members[0]!.name, SELF.name);
   assert.equal(bound.team.members.filter((m) => m.ai).length, TEAM.size - 1);
-  // Holding outer hubs updates self count.
-  const poiState = { ...bound.poiState };
+  // Holding outer hubs updates self count (start from blank so the count is exact).
+  const poiState = { ...blankIsland() };
   for (const id of CONTESTED_OUTER_IDS.slice(0, 2) as NodeId[]) poiState[id] = { state: "own" };
   const held: Profile = { ...bound, poiState };
   const refreshed = bindTeam(held, SELF, SALT);
@@ -143,7 +143,7 @@ const SELF = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "テスト", co
 
 // --- Contested island empty still yields a team ---
 {
-  const island = newIsland();
-  assert.equal(selfOuterCount({ poiState: island }), 0);
+  assert.equal(selfOuterCount({ poiState: blankIsland() }), 0);
+  assert.equal(selfOuterCount({ poiState: newIsland() }), 4, "new island starts with 4 sea-route shores");
   console.log("ok");
 }

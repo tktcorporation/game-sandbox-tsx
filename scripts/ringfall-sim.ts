@@ -50,6 +50,7 @@ import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashC
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
 import { heldIncome, islandHolds, advanceDay, holds, newIsland, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { kill } from "../src/ringfall/sim/combat";
 import { META } from "../src/ringfall/sim/config";
@@ -2023,7 +2024,13 @@ function checkIsland(): string | null {
     return s;
   };
   let p = newProfile();
-  if (p.day !== 1 || POIS.some((o) => p.poiState[o.id].state !== "foe")) return `island scenario: a new profile is on day ${p.day} with ${JSON.stringify(p.poiState)}`;
+  // 2026-11-26: sea-route shores start own; every other POI is foe.
+  const startOwn = new Set(ROUTE_SHORES as readonly string[]);
+  if (
+    p.day !== 1 ||
+    POIS.some((o) => (startOwn.has(o.id) ? p.poiState[o.id].state !== "own" : p.poiState[o.id].state !== "foe"))
+  )
+    return `island scenario: a new profile is on day ${p.day} with ${JSON.stringify(p.poiState)}`;
   // A wipe after capturing is a day too, and the node it took stays the player's.
   const wiped = settle(p, raid(11, { alive: false, cleared: [SUPPLY], visited: [SUPPLY] }));
   if (wiped.profile.day !== 2 || wiped.day !== 1 || wiped.gained.join() !== "supply" || wiped.front.gained.join() !== "supply" || wiped.profile.poiState.supply.state !== "own") return `island scenario: a wipe after capturing the supply depot left ${JSON.stringify({ day: wiped.profile.day, gained: wiped.gained, supply: wiped.profile.poiState.supply })}`;
@@ -2075,7 +2082,13 @@ function checkIsland(): string | null {
   // Saves: a v12 one is on the day after its raids with every POI the enemy's; one before v22 moves its
   // POIs own and thin to the player and the rest to the enemy, the pad the enemy's, and drops the network and the outposts.
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
-  if (!v12 || v12.v !== 46 || v12.day !== 7 || POIS.some((o) => v12.poiState[o.id].state !== "foe")) return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
+  if (
+    !v12 ||
+    v12.v !== 48 ||
+    v12.day !== 7 ||
+    POIS.some((o) => (startOwn.has(o.id) ? v12.poiState[o.id].state !== "own" : v12.poiState[o.id].state !== "foe"))
+  )
+    return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
   // Legacy v21 strings: "freed" → own, "held" → foe, "thin" → own; pad forced foe.
   const v21 = { ...p, v: 21, network: 4, pressure: 1.2, outposts: { pumps: "rogue", substation: "freed" }, scores: [{ day: 1, score: [1, 2, 0], won: false }], poiState: { ...newIsland(), supply: { state: "freed", lastVisit: 1, since: 0 }, quarry: { state: "thin", lastVisit: 1, since: 2 }, relay: { state: "held", lastVisit: 0, since: 0 }, pad: { state: "freed", lastVisit: 2, since: 0 } } };
   const back = parseProfile(JSON.parse(JSON.stringify(v21)));

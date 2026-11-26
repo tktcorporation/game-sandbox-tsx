@@ -5,7 +5,7 @@ import { DEPOTS, NODES, POIS, poiIndex, UNLOCKS, type NodeId, type NodeUnlock, t
 import { capturedIds, nodeHolds, type NodeHold } from "../sim/front";
 import { type Battle } from "../sim/battle";
 import { type State } from "../sim/state";
-import { CONTESTED_SHORES } from "./neighbours";
+import { CONTESTED_SHORES, ROUTE_SHORES } from "./neighbours";
 
 /*
  * The island between raids (docs/ringfall/island-v2.md): one raid is one day, and each node is the
@@ -24,8 +24,18 @@ export type Island = Record<PoiId, PoiStanding>;
 /** The POI the titan holds: it is never the player's, and killing the titan does not change it. */
 export const unfreeable = (id: PoiId) => !!POIS[poiIndex(id)].boss;
 
-/** The island before the first raid: every POI the enemy's. */
-export const newIsland = (): Island => Object.fromEntries(POIS.map((p) => [p.id, { state: "foe" }])) as Island;
+/**
+ * The island before the first raid (2026-11-26):
+ * the four sea-route shore hubs start as the player's (CoC: the village is raidable from day 1);
+ * every other POI is the enemy's. Opens all neighbour routes without a robot-first capture.
+ */
+export const newIsland = (): Island =>
+  Object.fromEntries(
+    POIS.map((p) => [p.id, { state: (ROUTE_SHORES as readonly string[]).includes(p.id) ? ("own" as const) : ("foe" as const) }]),
+  ) as Island;
+
+/** All-foe island (tests / scenarios that need closed sea routes). */
+export const blankIsland = (): Island => Object.fromEntries(POIS.map((p) => [p.id, { state: "foe" as const }])) as Island;
 
 /**
  * What one raid did to the island: whether the player got off alive, the POIs cleared of robots,

@@ -27,11 +27,14 @@ import { canLoseOuter, OUTER_GUARD, type OuterGuard } from "./outer-guard";
 export const AI = {
   /** Seconds into the raid's battle the day's expedition comes down by its node: time to read the warning and get there. */
   landAt: 240,
-  /** The first day of the player's on which the first island the player's ground faces sends its scout, and the scout's squad. */
-  scoutDay: 2,
+  /** The first day the facing island may send its scout (2026-11-26: day 1 — shores start held). */
+  scoutDay: 1,
   scout: ["grunt", "grunt"] as EnemyKind[],
-  /** The first day of the player's on which one may send an expedition. */
-  start: 4,
+  /**
+   * The first day a facing island may send a regular expedition (2026-11-26: day 1).
+   * Was 4 when shores had to be captured first; with starting shores the delay only postponed first contact.
+   */
+  start: 1,
   /** The chance a day that an island whose sea route is open sends one, and the more while the player's expedition is on it (仕返し). */
   attack: 0.22,
   answer: 0.5,
@@ -290,16 +293,16 @@ type Seen = { day: number; poiState: Island; expeditions: readonly Outgoing[] };
 
 /**
  * The game's island sending an expedition at the player for the raid of day `p.day`, or none: of the
- * islands whose sea route the player has opened (holding the node facing it), the first a hash of
- * the day lets go, the more often while the player's expedition is on its island. It is sent at that
- * facing node. At most one a day, none before `AI.start`; but while the player has not `scouted` (the
- * browser keeps it), the first island the player's ground faces sends its scout (`AI.scout`) at once.
+ * islands whose sea route is open (player holds the facing shore — new profiles start with all four),
+ * the first a hash of the day lets go, the more often while the player's expedition is on its island.
+ * At most one a day, none before `AI.start` (1); while the player has not `scouted`, the first facing
+ * island sends its scout (`AI.scout`) at once from `AI.scoutDay`.
  */
 export function aiAttack(p: Seen & { outerGuard?: OuterGuard }, salt: number, taken: readonly number[], scouted = true): { island: AiIsland; node: NodeId; scout?: true } | null {
   // 作り順③: island shield / loss cap — no further AI takes while protected.
   if (!canLoseOuter(p.outerGuard, Date.now())) return null;
   const holds = (id: NodeId) => p.poiState[id]?.state === "own";
-  // The first time the player's ground reaches the sea facing one of them, that island sends a scout at once (from day 2 on).
+  // First scout once a facing route is open (from scoutDay; new profiles have all four open).
   if (!scouted && p.day >= AI.scoutDay) {
     const a = aiIslands(salt, taken).find((x) => routeOpen(x.slot, holds));
     if (a) return { island: a, node: NEIGHBOUR_SLOTS[a.slot].shore, scout: true };
