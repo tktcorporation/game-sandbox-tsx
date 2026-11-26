@@ -13,7 +13,7 @@ import { aiFactory } from "./ai-islands";
 import { contestedDefence } from "./contested-defence";
 import { islandHolds, type Island } from "./island";
 import { aiLabel, isContestedShore, neighbourNameByCode, type Neighbour } from "./neighbours";
-import { SEIZE, trophySwap, trophiesTable, rivalTrophies } from "./trophies";
+import { SEIZE, raidOdds, trophiesTable, rivalTrophies } from "./trophies";
 import type { Parcel } from "./parcels";
 import type { IslandLogEntry } from "./expeditions";
 import type { Team } from "./team";
@@ -37,8 +37,15 @@ export interface AttackScout {
   factory: number;
   /** 島の守り grunts expected at the hub (capped). */
   guard: number;
-  /** Trophy gain if taken (from real rival trophies). */
+  /**
+   * Full ★★★ trophy gain N (raidOdds). Preview shows +N / −M.
+   * @deprecated Prefer `win` — kept equal to win for older callers.
+   */
   trop: number;
+  /** 勝てば +N（★★★）. */
+  win: number;
+  /** 負ければ −M（0★）. */
+  lose: number;
   /** Materials expected from 核 · 制圧 (empty reserve + bonus + bounty). */
   loot: number;
   onFront: boolean;
@@ -103,6 +110,7 @@ export function attackScouts(
       if (k !== undefined) gate = NODES[k].name;
     }
     const foeTeam = isFoeTeamOwner(who, foeKeys);
+    const { N, M } = raidOdds(selfTrop, rivalTrop);
     rows.push({
       id: n.id,
       title: `${ownerName}の${n.name}`,
@@ -111,7 +119,9 @@ export function attackScouts(
       hubName: n.name,
       factory: Math.max(0, Math.round(factory)),
       guard: guardAt(n.id),
-      trop: trophySwap(selfTrop, rivalTrop).gain,
+      trop: N,
+      win: N,
+      lose: M,
       loot: SEIZE.emptyReserve + SEIZE.bonus,
       onFront,
       gate,

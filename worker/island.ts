@@ -840,7 +840,7 @@ function assault(s: IslandState, from: string, id: number, won: boolean, now: nu
  */
 /**
  * Defender notice for a failed contested attack (TKT-201): appends `wiped` so the owner's sync
- * shows 「{誰}が{拠点}を攻めた · 守りきった」 and awards `TROPHY.defend`. Holds unchanged.
+ * shows 「{誰}が{拠点}を攻めた · 守りきった」 and awards the attacker's M (`defenceWin`). Holds unchanged.
  */
 function contestedDefend(s: IslandState, shore: string, from: Attacker, at: number): { status: number; body: unknown } {
   const i = NODE_IDS.indexOf(shore);

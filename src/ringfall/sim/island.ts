@@ -1,5 +1,5 @@
 import { CONTESTED_OUTER_IDS } from "../meta/contested-outer-table";
-import { FACTORY, FACTORY_TOP, PLATE, STRENGTH, THREAT, type EnemyKind } from "./config";
+import { ENEMIES, FACTORY, FACTORY_TOP, PLATE, STRENGTH, THREAT, type EnemyKind } from "./config";
 import { rivalOf, type PoiHold } from "./holds";
 import { NODES, PACKS, POIS, REGIONS, regionHere, TIER, nodeIndex, type Member, type NodeId, type Squad } from "./map";
 import { mix } from "./state";
@@ -56,6 +56,18 @@ export function defenceMembers(poi: number, factory: number, aid = 0): Member[] 
 /** One squad defending a contested hub from the owner's 工場 + 島の守り. */
 export function rivalDefenceSquad(poi: number, factory: number, aid = 0): Squad {
   return { name: `守備·${POIS[poi]?.id ?? poi}`, members: defenceMembers(poi, factory, aid) };
+}
+
+/**
+ * Total HP+shield pool of a contested defence (★1 = half of this dealt).
+ * Kinds only — positions unused.
+ */
+export function defencePool(factory: number, aid = 0): number {
+  const kinds: EnemyKind[] = [...defenceKinds(factory), ...Array(Math.max(0, Math.min(DEFENCE_AID, Math.floor(aid)))).fill("grunt" as EnemyKind)];
+  return kinds.reduce((sum, kind) => {
+    const k = ENEMIES[kind];
+    return sum + k.hp + k.shield;
+  }, 0);
 }
 
 /**

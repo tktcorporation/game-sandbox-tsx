@@ -42,7 +42,9 @@ if (water.factory !== 3) throw new Error(`factory ${water.factory}`);
 if (water.trop < 1) throw new Error(`trop ${water.trop}`);
 if (attackGoal(water.title) !== "ツバキの浄水場を攻める") throw new Error("attackGoal");
 if (!attackScoutDef(water.factory, water.guard).includes("工場")) throw new Error("scout def");
-if (!attackScoutTrop(water.trop).includes("トロフィー")) throw new Error("scout trop");
+if (!attackScoutTrop(water.win, water.lose).includes("トロフィー")) throw new Error("scout trop");
+if (!attackScoutTrop(water.win, water.lose).includes(`+${water.win}`)) throw new Error("scout trop +N");
+if (!attackScoutTrop(water.win, water.lose).includes(`−${water.lose}`)) throw new Error("scout trop −M");
 
 const ai = rows.find((r) => r.id === "robotworks");
 if (!ai) throw new Error("robotworks missing");

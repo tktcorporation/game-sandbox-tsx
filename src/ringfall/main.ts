@@ -312,8 +312,8 @@ function onEvent(e: GameEvent, s: State) {
         const shown = news.filter(newsVisible);
         hub.takeNews(news);
         // 守りきった → トロフィー少し増（知らせとセット。applySync 経路とは別）。
-        const wipes = shown.filter((e) => e.t === "wiped").length;
-        const def = wipes ? hub.awardDefence(wipes) : null;
+        const wipes = shown.filter((e) => e.t === "wiped");
+        const def = wipes.length ? hub.awardDefence(wipes) : null;
         if (def && settlement) {
           const t = settlement.trophies;
           settlement = {
@@ -325,6 +325,8 @@ function onEvent(e: GameEvent, s: State) {
               gained: t?.gained ?? 0,
               lost: t?.lost ?? 0,
               defended: (t?.defended ?? 0) + def.defended,
+              // Keep 「攻める」star count so the results' star line still draws (Codex P2).
+              ...(t?.stars !== undefined ? { stars: t.stars } : {}),
             },
           };
         }
@@ -1023,6 +1025,7 @@ function start(go: Launch, from?: State) {
           // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
           ...(defence.length ? { defence } : {}),
           ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
+          ...(go.attack ? { attack: go.attack } : {}),
         }),
   });
   hud.setContract();

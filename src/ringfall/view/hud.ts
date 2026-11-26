@@ -5,7 +5,8 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine } from "./copy";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, PHRASE, TERM, moduleRaiseReady, newsIncursion, raidStarsLine, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine } from "./copy";
+import { raidTrophyDelta } from "../meta/trophies";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { capturedIds } from "../sim/front";
 import { itemColor, itemName, nextHandFor } from "./hub";
@@ -1716,12 +1717,18 @@ export class Hud {
     const trop = settled?.trophies;
     const tropMoved =
       !!trop &&
-      (trop.before !== trop.after || trop.gained > 0 || trop.lost > 0 || (trop.defended ?? 0) > 0);
+      (trop.before !== trop.after || trop.gained > 0 || trop.lost > 0 || (trop.defended ?? 0) > 0 || trop.stars !== undefined);
+    const starDelta =
+      s.attack && trop?.stars !== undefined ? raidTrophyDelta(s.attack.N, s.attack.M, trop.stars) : trop ? trop.gained - trop.lost : 0;
+    const starLine =
+      trop?.stars !== undefined
+        ? `<p class="trop-line">${esc(raidStarsLine(trop.stars, starDelta))}</p>`
+        : "";
     const tropBreakdown = tropMoved
       ? `<p class="trop-line">${trophyLine(trop!.before, trop!.after, trop!.gained, trop!.lost, trop!.defended ?? 0)}</p>`
       : "";
     const robotNote = tookRobotHub ? `<p class="trop-line">${esc(robotHubTropNote())}</p>` : "";
-    const tropLine = `${tropBreakdown}${robotNote}`;
+    const tropLine = `${starLine}${tropBreakdown}${robotNote}`;
     // 作り順⑤: 部隊戦 result when the period just closed.
     const fieldLine = settled?.fieldBattle
       ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs))}</p>`

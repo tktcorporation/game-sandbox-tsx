@@ -242,6 +242,10 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
     e.lastHit = 0;
     s.stats.damage += dealt;
   }
+  // TKT-218 ★1: damage to the 「攻める」hub's defence counts toward half of defenceMax.
+  if (s.attack && e.poi >= 0 && POIS[e.poi]?.id === s.attack.id && e.rival) {
+    s.attack.defenceDealt += dealt;
+  }
   s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally", blocked });
   const broke = hadShield && e.shield <= 0;
   if (broke) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });

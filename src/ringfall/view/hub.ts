@@ -21,7 +21,7 @@ import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
 import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, fieldBattleLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
-import { TROPHY, clampTrophies, defendGain } from "../meta/trophies";
+import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -420,6 +420,8 @@ export interface Launch {
   entry: EntryId;
   /** 部隊戦 field sortie (作り順⑤): start on the field map, not the home island. */
   teamField?: boolean;
+  /** 「攻める」hub chosen at the gate (TKT-218 star scoring). */
+  attack?: { id: NodeId; owner: string; N: number; M: number };
 }
 
 /**
@@ -621,13 +623,20 @@ export class Hub {
 
   /**
    * Defence trophies for wiped entries already listed in 島の知らせ (AI raid path).
-   * Sync path awards the same in `applySync` with the trophy note — do not call both for one wipe.
+   * Each wipe awards the attacker's M (`defenceWin`). Sync path awards the same in `applySync`
+   * — do not call both for one wipe.
    * Returns the delta for the results' trop-line, or null when nothing moved.
    */
-  awardDefence(wipes: number): { before: number; after: number; defended: number } | null {
-    const defended = defendGain(wipes);
-    if (!defended) return null;
+  awardDefence(wipes: readonly { by: { code: string } }[]): { before: number; after: number; defended: number } | null {
+    if (!wipes.length) return null;
     const before = this.profile.trophies ?? TROPHY.start;
+    const table = trophiesTable(neighboursFor(this.profile));
+    let defended = 0;
+    for (const w of wipes) {
+      const foe = rivalTrophies(w.by.code, before, table);
+      defended += defenceWin(foe, before);
+    }
+    if (!defended) return null;
     const after = clampTrophies(before + defended);
     if (after === before) return null;
     this.profile = { ...this.profile, trophies: after };
@@ -1083,6 +1092,11 @@ export class Hub {
     else this.set(profile);
     this.load = emptyLoadout();
     this.fieldSortie = false;
+    const attack = !field ? this.attackPick() : null;
+    const attackGo =
+      attack && attack.onFront && !attack.gate
+        ? { id: attack.id, owner: attack.owner, N: attack.win, M: attack.lose }
+        : undefined;
     return {
       kit,
       region,
@@ -1090,6 +1104,7 @@ export class Hub {
       from: from ?? undefined,
       entry,
       ...(field ? { teamField: true } : {}),
+      ...(attackGo ? { attack: attackGo } : {}),
     };
   }
 
