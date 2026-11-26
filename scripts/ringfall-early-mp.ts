@@ -5,14 +5,14 @@
 import assert from "node:assert/strict";
 import { AI, START_FOOTHOLDS, aiIsland, withStartingFootholds } from "../src/ringfall/meta/ai-islands";
 import { attackScouts } from "../src/ringfall/meta/attack-scout";
-import { islandHolds, newIsland } from "../src/ringfall/meta/island";
+import { islandHolds, newIsland, parseIsland } from "../src/ringfall/meta/island";
 import { aiOwner } from "../src/ringfall/sim/holds";
-import { bindStartingFootholds, newProfile } from "../src/ringfall/meta/profile";
+import { bindStartingFootholds, newProfile, parseProfile } from "../src/ringfall/meta/profile";
 import { leagueOf, LEAGUE, TROPHY } from "../src/ringfall/meta/trophies";
 import { frontNodes } from "../src/ringfall/sim/front";
 import { NODES, nodeIndex } from "../src/ringfall/sim/map";
 import { MP_HOWTO_CARDS, TERM, trophyHead } from "../src/ringfall/view/copy";
-import type { Neighbour } from "../src/ringfall/meta/neighbours";
+import { ROUTE_SHORES, type Neighbour } from "../src/ringfall/meta/neighbours";
 
 assert.equal(AI.attack, 0.3, "AI.attack early-MP");
 assert.equal(START_FOOTHOLDS.length, 2);
@@ -54,6 +54,22 @@ assert.equal(p.poiState.powerplant?.state?.startsWith("rival:"), true);
 assert.equal(p.poiState.fuel?.state?.startsWith("rival:"), true);
 assert.equal(p.team?.members.length, 4, "team from day 1");
 assert.ok(p.teamBattle, "team battle from day 1");
+
+// Starter ownership belongs only to newly created profiles, not to missing save data.
+const firstShore = ROUTE_SHORES[0]!;
+const secondShore = ROUTE_SHORES[1]!;
+assert.ok(ROUTE_SHORES.every((id) => p.poiState[id].state === "own"), "new profile still owns all four shores");
+const legacy = parseProfile({ ...p, v: 12, poiState: undefined });
+assert.ok(legacy);
+assert.ok(ROUTE_SHORES.every((id) => legacy.poiState[id].state === "foe"), "pre-island saves gain no shores");
+const noIsland = parseIsland(undefined);
+assert.ok(ROUTE_SHORES.every((id) => noIsland[id].state === "foe"), "missing entire island gains no shores");
+const partial = parseProfile({ ...p, poiState: { [firstShore]: { state: "own" }, [secondShore]: { state: "foe" } } });
+assert.ok(partial);
+assert.equal(partial.poiState[firstShore].state, "own", "explicit ownership survives");
+assert.ok(ROUTE_SHORES.filter((id) => id !== firstShore).every((id) => partial.poiState[id].state === "foe"),
+  "explicit enemy and omitted starter shores both stay enemy");
+assert.deepEqual(parseProfile(JSON.parse(JSON.stringify(p)))?.poiState, p.poiState, "full current save unchanged");
 
 // Codex P2: profile seed ≠ browser aiSalt — bind realigns foothold owners.
 const browserSalt = 0;
