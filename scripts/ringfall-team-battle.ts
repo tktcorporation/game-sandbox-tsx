@@ -26,6 +26,7 @@ import {
   startBattle,
 } from "../src/ringfall/meta/team-battle";
 import { FIELD_HUBS, FIELD_NODES } from "../src/ringfall/sim/team-field";
+import { advanceDay, raidDay } from "../src/ringfall/meta/island";
 import { formTeam, TEAM } from "../src/ringfall/meta/team";
 import { newRun, starterKit } from "../src/ringfall/sim/state";
 import { POIS } from "../src/ringfall/sim/map";
@@ -146,12 +147,15 @@ const SALT = 42;
   // Force extract without captures.
   s.outcome = "extracted";
   s.player.haul = [];
-  const depotsBefore = [...p0.depots];
+  // The ordinary overnight pass lights home boxes at owned shores even
+  // when the sortie did not use any home boxes.
+  const homeDepotsAfterNight = advanceDay(p0, { ...raidDay(s), captured: [], battle: undefined }).profile.depots;
+  assert.ok(homeDepotsAfterNight.length > 0, "owned home shores light their own boxes");
   const depotSentBefore = JSON.stringify(p0.depotSent);
   const entriesBefore = [...p0.entries];
   const settled = settle(p0, s);
   assert.equal(JSON.stringify(settled.profile.poiState), homeBefore, "home island unchanged by field raid");
-  assert.deepEqual(settled.profile.depots, depotsBefore, "field depots stay off the home profile");
+  assert.deepEqual(settled.profile.depots, homeDepotsAfterNight, "field depots stay off the home profile");
   assert.equal(JSON.stringify(settled.profile.depotSent), depotSentBefore, "field sends do not level home depots");
   assert.deepEqual(settled.profile.entries, entriesBefore, "battlefield entry is not learned as a home way in");
   assert.ok(settled.profile.teamBattle);

@@ -254,7 +254,7 @@ export const holdsOf = (poiState: Island): PoiHold[] => NODES.map((n) => poiStat
 
 /** A saved island; anything unreadable is the enemy's. A POI saved thin is the player's (the enemy held it only thinly); the titan's pad is always the enemy's. Another player's standing is kept as saved where `rivals` (a save that can hold one), else it is the enemy's. */
 export function parseIsland(raw: unknown, rivals = true): Island {
-  const out = newIsland();
+  const out = blankIsland();
   if (!raw || typeof raw !== "object") return out;
   const o = raw as Record<string, unknown>;
   for (const { id } of POIS) {
