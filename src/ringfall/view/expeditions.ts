@@ -9,7 +9,7 @@ import { playerNodes } from "../meta/island";
 import { expeditionsOut, numbered, dropStale, recallAll, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
-import { bindTeam, bindTeamBattle, type Profile } from "../meta/profile";
+import { bindStartingFootholds, bindTeam, bindTeamBattle, type Profile } from "../meta/profile";
 import { loadIdentity } from "../meta/identity";
 import { NODES, nodeIndex } from "../sim/map";
 import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM, trophyHead, warPowerLine, warScoreLine } from "./copy";
@@ -89,8 +89,10 @@ export class ExpeditionPanel {
     const retired = recallAll(dropStale(p0.expeditions, Date.now()).filter((e) => e.state !== "sending" && e.id > 0));
     // 作り順④/⑤: refresh team seats and ensure an open 部隊戦.
     const who = loadIdentity();
-    const teamBound = bindTeam({ ...p0, expeditions: retired }, { id: who.id, name: who.name, code: who.code }, aiSalt());
-    const battleBound = bindTeamBattle(teamBound, aiSalt());
+    const salt = aiSalt();
+    const footholds = bindStartingFootholds({ ...p0, expeditions: retired }, salt);
+    const teamBound = bindTeam(footholds, { id: who.id, name: who.name, code: who.code }, salt);
+    const battleBound = bindTeamBattle(teamBound, salt);
     if (battleBound !== this.get()) this.put(battleBound);
     // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
     this.neighbours = neighboursFor(this.get());

@@ -3,7 +3,7 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { withStartingFootholds } from "./ai-islands";
+import { realignStartingFootholds, withStartingFootholds } from "./ai-islands";
 import { advanceDay, contestedOwned, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
@@ -258,6 +258,15 @@ export function bindTeamBattle(p: Profile, salt: number): Profile {
   const teamBattle = ensureBattle(p.teamBattle, team, salt, p.day);
   if (teamBattle === p.teamBattle && team === p.team) return p;
   return { ...p, team, teamBattle };
+}
+
+/**
+ * Align day-1 AI foothold owners with the browser's neighbour salt (`aiSalt`).
+ * Call beside `bindTeam` on load so 「攻める」 names match the map's AI islands.
+ */
+export function bindStartingFootholds(p: Profile, salt: number): Profile {
+  const poiState = realignStartingFootholds(p.poiState, salt);
+  return poiState === p.poiState ? p : { ...p, poiState };
 }
 
 /**

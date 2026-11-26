@@ -7,7 +7,7 @@ import { AI, START_FOOTHOLDS, aiIsland, withStartingFootholds } from "../src/rin
 import { attackScouts } from "../src/ringfall/meta/attack-scout";
 import { islandHolds, newIsland } from "../src/ringfall/meta/island";
 import { aiOwner } from "../src/ringfall/sim/holds";
-import { newProfile } from "../src/ringfall/meta/profile";
+import { bindStartingFootholds, newProfile } from "../src/ringfall/meta/profile";
 import { leagueOf, LEAGUE, TROPHY } from "../src/ringfall/meta/trophies";
 import { frontNodes } from "../src/ringfall/sim/front";
 import { NODES, nodeIndex } from "../src/ringfall/sim/map";
@@ -54,6 +54,31 @@ assert.equal(p.poiState.powerplant?.state?.startsWith("rival:"), true);
 assert.equal(p.poiState.fuel?.state?.startsWith("rival:"), true);
 assert.equal(p.team?.members.length, 4, "team from day 1");
 assert.ok(p.teamBattle, "team battle from day 1");
+
+// Codex P2: profile seed ≠ browser aiSalt — bind realigns foothold owners.
+const browserSalt = 0;
+assert.notEqual(aiIsland(salt, 0).code, aiIsland(browserSalt, 0).code, "salts differ");
+const aligned = bindStartingFootholds(p, browserSalt);
+for (const f of START_FOOTHOLDS) {
+  assert.equal(aligned.poiState[f.id]?.state, `rival:${aiOwner(aiIsland(browserSalt, f.slot).code)}`, `${f.id} realigned`);
+}
+const alignedNeighbours: Neighbour[] = START_FOOTHOLDS.map((f) => {
+  const a = aiIsland(browserSalt, f.slot);
+  return {
+    code: a.code,
+    name: a.name,
+    held: 4,
+    total: NODES.length,
+    day: 1,
+    slot: f.slot,
+    trophies: TROPHY.start,
+    factory: 0,
+    ai: true as const,
+  };
+});
+const named = attackScouts(aligned.poiState, 1, alignedNeighbours, TROPHY.start, [], browserSalt, { x: 0, z: 500 });
+assert.ok(named.length >= 2);
+assert.ok(named.every((r) => !r.ownerName.includes("他のプレイヤー")), named.map((r) => r.ownerName).join(","));
 
 assert.equal(leagueOf(TROPHY.start).name, "銅");
 assert.equal(leagueOf(0).name, "見習い");

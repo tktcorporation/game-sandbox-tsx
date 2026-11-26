@@ -11,7 +11,7 @@ import { POI_AT } from "./sim/areas";
 import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, bindTeam, bindTeamBattle, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { analyse, bindStartingFootholds, bindTeam, bindTeamBattle, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
@@ -594,10 +594,16 @@ let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const loaded = loadProfile();
 // 作り順④/⑤: bind the 4-person team and open a 部隊戦 to this browser's identity.
+// Early-MP: realign day-1 AI footholds to aiSalt() so 「攻める」 names match map neighbours.
 const who0 = loadIdentity();
+const salt0 = aiSalt();
 const withTeam = bindTeamBattle(
-  bindTeam({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, { id: who0.id, name: who0.name, code: who0.code }, aiSalt()),
-  aiSalt(),
+  bindTeam(
+    bindStartingFootholds({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, salt0),
+    { id: who0.id, name: who0.name, code: who0.code },
+    salt0,
+  ),
+  salt0,
 );
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub(withTeam, () => {

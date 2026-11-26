@@ -118,6 +118,25 @@ export function withStartingFootholds(island: Island, salt: number): Island {
   return out;
 }
 
+/**
+ * Rewrite AI owners on `START_FOOTHOLDS` to match the browser neighbour salt (`aiSalt`).
+ * Profile seed ≠ identity salt, so `newProfile` footholds must be realigned on load
+ * (Codex P2 / 2026-11-26). Leaves human rivals and retaken hubs alone.
+ */
+export function realignStartingFootholds(island: Island, salt: number): Island {
+  let out: Island | null = null;
+  for (const f of START_FOOTHOLDS) {
+    const cur = island[f.id]?.state ?? "foe";
+    const who = rivalOf(cur);
+    if (!who || !isAiOwner(who)) continue;
+    const want = rivalHold(aiOwner(aiIsland(salt, f.slot).code));
+    if (cur === want) continue;
+    if (!out) out = { ...island };
+    out[f.id] = { state: want };
+  }
+  return out ?? island;
+}
+
 /** The game's island of code `code` among those `taken` leaves free, or null. */
 export const aiByCode = (salt: number, code: string, taken: readonly number[] = []): AiIsland | null => aiIslands(salt, taken).find((a) => a.code === code) ?? null;
 
