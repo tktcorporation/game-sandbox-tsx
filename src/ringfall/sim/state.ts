@@ -1143,6 +1143,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     // An owned POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
     // A POI with no garrison standing (the player's, or another player's without contested defence) starts cleared.
     cleared: hold.map((h, i) => {
+      // A sortie is played at its holding alone: no other POI stands robots to clear, nor counts as cleared.
+      if (sortie && POIS[i].id !== sortie.id) return true;
       if (h === "foe") return false;
       const who = rivalOf(h);
       if (who && (isContestedPoi(i) || POIS[i].id === sortie?.id) && defence[who] !== undefined) return false;
