@@ -638,13 +638,17 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
     title: TERM.seaIslands,
     // 【元】お隣の島は最初から外側の拠点を攻めてくる。
     // 【案】地図にも最初から出る、を足す 【理由】初日可視化：隣島の存在を地図で先に見せる
-    body: `${TERM.seaIslands}は地図に最初から出る。外側の拠点を攻めてくる。`,
+    // 【元】…外側の拠点を攻めてくる。
+    // 【案】島で占領した拠点を攻めてくる 【理由】攻められる場所＝占領した陣地（holdings-raid.md）
+    body: `${TERM.seaIslands}は地図に最初から出る。島で占領した拠点を攻めてくる。`,
   },
   {
     title: TERM.attack,
     // 【元】「攻める」で相手の拠点を選んで出撃。…／前線の拠点
     // 【案】門の一覧を先に言う 【理由】攻めるリストが初日の入口だと分かる
-    body: `門の「${TERM.attack}」に相手の拠点が一覧で出る。取れば${TERM.trophy}が増え、取られると減る。`,
+    // 【元】門の「攻める」に相手の拠点が一覧で出る。取れば…
+    // 【案】選ぶとその拠点へ短く攻めに行く、を足す 【理由】攻めは相手の島への短い出撃（holdings-raid.md）
+    body: `門の「${TERM.attack}」にお隣の拠点が一覧で出る。選ぶとその拠点へ短く攻めに行く。取れば${TERM.trophy}が増える。`,
   },
   {
     title: TERM.captureCore,

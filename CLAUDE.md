@@ -112,7 +112,7 @@ confirm. A click or tap chooses a start (`Hub.choose()`); the confirm, Enter, th
 second click on the chosen start goes, the arrows step the choice, Esc turns back into the yard.
 A depot the loadout does not fit (`fitsStart()`) cannot be confirmed. From the gate, a start at
 `FIRST_ENTRY` walks out where the player stands (`walkOut()`); any other start comes after a fade.
-The chosen depot is kept by the hub between departures, not in the profile. The
+The chosen depot is kept by the hub between departures, not in the profile. Beside the map the 攻める list (`renderAttack()`) offers the neighbours' holdings (`Hub.sortieTargets()`, `meta/sortie.ts`): choosing one (`Hub.selectSortie()`, again to take it back) makes the confirm a sortie there (`Launch.sortie`, after a fade; `main.ts` starts it with no battle, lease or AI expedition of the island), and choosing a start on the map makes it a raid of the island again. The
 camp shows the day's line and a 今日の作戦 card (`Hub.today()`). No robot
 walks into the yard (`inCamp()` in `enemies.ts`); during a raid they see and shoot into it as
 anywhere. Walking back into it during a raid, after `HOME.away` seconds outside and with no robot

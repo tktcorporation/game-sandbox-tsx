@@ -718,7 +718,7 @@ export class Hud {
     setHtml($("obj-bag"), `バッグ ${bagCells}${bagLoad(p)}/${BAG.slots}${worth ? `<span class="worth">・回収 ${worth}</span>` : ""}`);
     // The raid's deadline is the battle's end (past it the raid ends as a wipe), as a clock; the next
     // reinforcements as their mark and seconds; a raid above 強度 0 says so first.
-    const left = s.battle ? Math.max(0, s.battle.end - s.time) : null;
+    const left = s.battle ? Math.max(0, s.battle.end - s.time) : s.sortie ? Math.max(0, s.sortie.end - s.time) : null;
     const raid = (s.threat ? `<span>強度 <b>${s.threat}</b></span>` : "") + (s.phase === "play" && left !== null ? `<span class="deadline">${clockIcon()}<b>${clock(left)}</b></span>` : "");
     const next = s.phase !== "play" || s.reinforceT >= 60 ? "" : `<span class="reinforce${s.reinforceT > 0 ? "" : " now"}">${reinforceIcon()}${s.reinforceT > 0 ? `<b>${Math.ceil(s.reinforceT)}</b>` : ""}</span>`;
     setHtml($("obj-raid"), raid + next);

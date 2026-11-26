@@ -2,6 +2,8 @@ import { PLAYER } from "../sim/config";
 import { aiSalt, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { attackScouts, revengeNodeFromLine, type AttackScout } from "../meta/attack-scout";
+import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
+import type { Start } from "../sim/state";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -422,6 +424,8 @@ export interface Launch {
   teamField?: boolean;
   /** 「攻める」hub chosen at the gate (TKT-218 star scoring). */
   attack?: { id: NodeId; owner: string; N: number; M: number };
+  /** A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): the raid is played there. */
+  sortie?: NonNullable<Start["sortie"]>;
 }
 
 /**
@@ -525,6 +529,8 @@ export class Hub {
    * nearest-start pick; set by `selectAttack()` / やり返す (案 F).
    */
   attackFocus: NodeId | null = null;
+  /** The neighbour's holding the departure's 攻める list has chosen (a sortie), or null for a raid of the island. */
+  sortieFocus: { owner: string; id: NodeId } | null = null;
   /**
    * 部隊戦 field sortie armed (作り順⑤): next launch uses the field map.
    * Cleared on cancel / after launch.
@@ -919,6 +925,7 @@ export class Hub {
   /** Whether the chosen start is the gate's own way in: walking out of the gate then starts the raid where the player stands. */
   walksOut(): boolean {
     this.fixStart();
+    if (this.sortiePick()) return false;
     return !this.from && this.region === HOME_REGION.id && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
   }
 
@@ -1004,6 +1011,8 @@ export class Hub {
   choose(kind: StartPoint["kind"], id: string): boolean {
     const p = this.profile;
     this.peeked = null;
+    // A start on the island's map is a raid of the island: the sortie chosen before goes.
+    this.sortieFocus = null;
     if (kind === "depot") {
       if (!departDepots(p).includes(id as PoiId)) return false;
       this.from = id as PoiId;
@@ -1074,11 +1083,46 @@ export class Hub {
   }
 
   /**
+   * The neighbours' holdings the departure's 攻める list offers (docs/ringfall/holdings-raid.md):
+   * the islands next door's, within the trophy band, those taken lately left out.
+   */
+  sortieTargets(): SortieTarget[] {
+    const p = this.profile;
+    return sortieTargets(neighboursFor(p), aiSalt(), p.day, p.trophies ?? TROPHY.start, p.raided ?? []);
+  }
+
+  /** The holding chosen for a sortie, while it is still on the list. */
+  sortiePick(): SortieTarget | null {
+    const f = this.sortieFocus;
+    if (!f) return null;
+    return this.sortieTargets().find((t) => t.owner === f.owner && t.id === f.id) ?? null;
+  }
+
+  /** Chooses holding `id` of `owner` on the 攻める list for the next departure (choosing it again takes it back). False when it is not on the list. */
+  selectSortie(owner: string, id: NodeId): boolean {
+    if (!this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
+    const same = this.sortieFocus?.owner === owner && this.sortieFocus.id === id;
+    this.sortieFocus = same ? null : { owner, id };
+    this.peeked = null;
+    return true;
+  }
+
+  /**
    * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
    * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
    */
   launch(): Launch | null {
     this.fixStart();
+    // A sortie: the kit as for a way in (no depot's allowance), played at the holding; the island's start stays as it was.
+    const sortie = !this.fieldSortie ? this.sortiePick() : null;
+    if (sortie) {
+      const taken = takeKit(this.profile, this.startLoad(), null);
+      if (!taken) return null;
+      this.set(taken.profile);
+      this.load = emptyLoadout();
+      this.sortieFocus = null;
+      return { kit: taken.kit, region: poiRegion(sortie.id).id, seed: this.profile.seed, entry: this.profile.entry, sortie: sortieStart(sortie) };
+    }
     // Field sorties never start from a depot (allowance / home island).
     const field = this.fieldSortie;
     const from = field ? null : this.from;
@@ -1474,6 +1518,8 @@ export class Hub {
         : esc(`${TERM.teamBattle} · ${TERM.battleField}`);
       return { rows: [["装備", this.kitMarks()], [PLAN_GOAL, goal]], warn: [] };
     }
+    const sortie = this.sortiePick();
+    if (sortie) return { rows: [["装備", this.kitMarks()], [PLAN_GOAL, `${flagIcon(SIDE.rival)}${esc(attackGoal(sortie.title))}`]], warn: [] };
     const front = this.frontPick();
     // TKT-204 案 B/D: 攻める一覧の選択（なければ前線の相手持ち）を野営と同じ言い方で。
     const attack = this.attackPick();
