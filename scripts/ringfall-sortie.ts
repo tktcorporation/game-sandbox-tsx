@@ -89,8 +89,14 @@ function parts(): { name: string; err: string | null; line: string }[] {
                 : null;
     // A minute on: nothing more has come.
     const before = s.enemies.length;
-    run(s, 60);
-    const later = s.enemies.length > before ? `${s.enemies.length - before} more robots came in a minute` : null;
+    const seen = run(s, 60);
+    const clears = seen.filter((t) => t === "poiClear" || t === "titanDown").length;
+    const later =
+      s.enemies.length > before
+        ? `${s.enemies.length - before} more robots came in a minute`
+        : clears || s.stats.cleared.length
+          ? `${clears} clear events, ${s.stats.cleared.length} POIs counted cleared with the defence standing`
+          : null;
     out.push({ name: "alone", err: err ?? later, line: `${s.enemies.length} robots (${defenceKinds(2).join("+")} +${DEFENCE_AID} grunts), parties ${s.parties.length}` });
   }
 
