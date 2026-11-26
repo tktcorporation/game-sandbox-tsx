@@ -1706,19 +1706,24 @@ export class Hud {
       : [];
     this.newsKeep = [...expNews, ...takeLines];
     const allNews = [...this.newsKeep, ...news];
-    // 2026-11-26: only robot outer hubs taken → trophies did not move.
-    const robotOnly =
+    // 2026-11-26: robot outer hubs taken → note that those captures do not move trophies.
+    // Keep any real trophy breakdown (defence awards / overnight losses can coexist).
+    const tookRobotHub =
       !!settled &&
       !(settled.takenRival?.length) &&
       capturedIds(s).some((id) => {
         const i = poiIndex(id);
         return isContestedShore(id) && (s.hold?.[i] ?? "foe") === "foe";
       });
-    const tropLine = robotOnly
-      ? `<p class="trop-line">${esc(robotHubTropNote())}</p>`
-      : settled?.trophies
-        ? `<p class="trop-line">${trophyLine(settled.trophies.before, settled.trophies.after, settled.trophies.gained, settled.trophies.lost, settled.trophies.defended ?? 0)}</p>`
-        : "";
+    const trop = settled?.trophies;
+    const tropMoved =
+      !!trop &&
+      (trop.before !== trop.after || trop.gained > 0 || trop.lost > 0 || (trop.defended ?? 0) > 0);
+    const tropBreakdown = tropMoved
+      ? `<p class="trop-line">${trophyLine(trop!.before, trop!.after, trop!.gained, trop!.lost, trop!.defended ?? 0)}</p>`
+      : "";
+    const robotNote = tookRobotHub ? `<p class="trop-line">${esc(robotHubTropNote())}</p>` : "";
+    const tropLine = `${tropBreakdown}${robotNote}`;
     // 作り順⑤: 部隊戦 result when the period just closed.
     const fieldLine = settled?.fieldBattle
       ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs))}</p>`

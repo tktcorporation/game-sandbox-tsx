@@ -594,7 +594,8 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   },
   {
     title: `${TERM.front}の拠点`,
-    body: `「${TERM.attack}」で相手の拠点を選んで${TERM.sortie}。勝てば増え、負ければ減る。`,
+    // 失敗した攻めでは減らない（trophyDelta）。減るのは自分の拠点を取られたとき。星ペナは後続。
+    body: `「${TERM.attack}」で相手の拠点を選んで${TERM.sortie}。取れば${TERM.trophy}が増え、取られると減る。`,
   },
   {
     title: TERM.captureCore,
