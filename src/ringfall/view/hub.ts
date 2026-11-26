@@ -1105,6 +1105,8 @@ export class Hub {
     if (!this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
     const same = this.sortieFocus?.owner === owner && this.sortieFocus.id === id;
     this.sortieFocus = same ? null : { owner, id };
+    // A holding chosen is the departure: a 部隊戦 field sortie armed before goes.
+    if (this.sortieFocus) this.fieldSortie = false;
     this.peeked = null;
     return true;
   }

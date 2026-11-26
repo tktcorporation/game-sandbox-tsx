@@ -988,7 +988,8 @@ function start(go: Launch, from?: State) {
   const aiLent = go.sortie ? [] : aiLentFor(hub.profile);
   // The names of the islands whose squads come or stand in this raid, for its banners.
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
-  raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
+  // A sortie fights no defence of the island: the game's islands' expedition of the day is no win or loss of it.
+  raidAi = go.sortie ? null : { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
   const neigh = neighboursFor(hub.profile);
   const defence = contestedDefence(hub.profile.poiState, hub.profile.day, neigh, aiSalt());
