@@ -166,7 +166,7 @@ const SALT = 42;
 // --- Profile v48: no personal warScore; teamBattle.score present ---
 {
   const p = newProfile(9);
-  assert.equal(p.v, 48);
+  assert.equal(p.v, 49);
   assert.equal("warScore" in p, false, "personal warScore must be gone");
   assert.ok(p.teamBattle);
   assert.equal(p.teamBattle!.score, 0);
@@ -179,7 +179,7 @@ const SALT = 42;
   delete (raw.teamBattle as Record<string, unknown>).score;
   const migrated = parseProfile(raw, 9);
   assert.ok(migrated);
-  assert.equal(migrated!.v, 48);
+  assert.equal(migrated!.v, 49);
   assert.equal("warScore" in migrated!, false);
   assert.ok(migrated!.teamBattle);
   assert.equal(typeof migrated!.teamBattle!.score, "number");
