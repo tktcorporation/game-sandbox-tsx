@@ -116,9 +116,14 @@ function parts(): { name: string; err: string | null; line: string }[] {
   // home: the player's own 島の守り at the same POI stays home when the neighbour's holding is taken.
   {
     const home = { ...p0, parcels: [{ id: 901, poi: t.id, kind: "board" as const, from: { code: "", name: "" }, at: 0 }] };
-    const r = settle(home, play(t, true));
+    const s = play(t, true);
+    // Something left at the neighbour's depot in the sortie.
+    s.leftParcels = [{ poi: t.id, kind: "gyro" }];
+    const r = settle(home, s);
     const kept = r.profile.parcels.some((q) => q.id === 901);
-    out.push({ name: "home", err: kept ? null : "the player's own 島の守り at that POI was seized", line: `home parcel at ${t.id} ${kept ? "kept" : "gone"}` });
+    const added = r.profile.parcels.filter((q) => q.id !== 901).length;
+    const err = !kept ? "the player's own 島の守り at that POI was seized" : added ? `${added} 島の守り added at home from the neighbour's depot` : null;
+    out.push({ name: "home", err, line: `home parcel at ${t.id} ${kept ? "kept" : "gone"}, ${added} added` });
   }
   {
     const s = play(t, false, true);
