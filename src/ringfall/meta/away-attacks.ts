@@ -59,7 +59,11 @@ export interface AwayResult<P> {
 export const takeOdds = (attack: number, defence: number): number => Math.max(0.1, Math.min(0.9, 0.5 + (attack - defence) * AWAY.slope));
 
 /** The AI players' attacks on the player's holdings between `p.attackedAt` and `now`. */
-export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, taken: readonly number[] = []): AwayResult<P> {
+/**
+ * `held`, when given, is the holdings as the reckoned hours began (a profile settled since may hold nodes it took
+ * after them): an attack picks only among those still held.
+ */
+export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, taken: readonly number[] = [], held?: readonly NodeId[]): AwayResult<P> {
   const news: IslandLogEntry[] = [];
   const first = Math.max(Math.floor(p.attackedAt / AWAY.hour) + 1, Math.floor(now / AWAY.hour) - AWAY.catchUp + 1);
   const last = Math.floor(now / AWAY.hour);
@@ -82,7 +86,7 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
       checked = h * AWAY.hour - 1;
       break;
     }
-    const own = playerNodes({ poiState }).filter((id) => !POIS[nodeIndex(id)]?.boss);
+    const own = playerNodes({ poiState }).filter((id) => !POIS[nodeIndex(id)]?.boss && (!held || held.includes(id)));
     if (!own.length) continue;
     const node: NodeId = own[hash(salt, h, 7) % own.length]!;
     const a: AiIsland = islands[hash(salt, h, 11) % islands.length]!;
