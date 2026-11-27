@@ -237,7 +237,8 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
-  const parcels = s.parcels ? [...s.parcels] : p.parcels;
+  // 島の守り stand only at the player's holdings: stock the server still lists at a node lost since (an AI player's attack) stays gone.
+  const parcels = s.parcels ? s.parcels.filter((q) => poiState[q.poi as NodeId]?.state === "own") : p.parcels;
   // 作り順③: merge server snapshot with local (AI takes never hit the server), then
   // bump from new "taken" log lines when the sync brought no view snapshot.
   const now = Date.now();
