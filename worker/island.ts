@@ -190,6 +190,13 @@ export interface IslandState {
   pings?: IslandPing[];
   /** Aid parcels at depots (ux-design C2, CoC-style donation). Optional on older islands. */
   parcels?: IslandParcel[];
+  /**
+   * Holdings another player's sortie took (`raid`) that the owner's reports have not yet shown as lost:
+   * a report still calling one the owner's, from a copy of the island older than the loss, leaves it
+   * the robots'. It leaves this list once a report shows it lost or names it among `retaken`.
+   * Optional on older islands.
+   */
+  raided?: number[];
 }
 
 /** A look-ping on the island map: where, whose name, and when it expires. */
@@ -701,6 +708,11 @@ function report(
         contestedRetaken.push({ shore: NODE_IDS[i], from });
       }
     } else if (h === "foe" || h === "own") {
+      // A holding a sortie took stays lost until the owner's copy shows it, or their raid takes it back.
+      if (s.raided?.includes(i)) {
+        if (h === "own" && !op.retaken.includes(NODE_IDS[i])) return;
+        s.raided = s.raided.filter((k) => k !== i);
+      }
       const was = cur;
       s.holds[i] = h;
       // Contested shore claimed from the enemy (方向 A / TKT-201): mirror onto this week's neighbour.
@@ -975,7 +987,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     if (i < 0) return done(400, fail("bad-request"));
     // Only a holding is attacked; one already gone is no news for its owner.
     if (s.holds[i] !== "own") return done(409, fail("node-not-open"));
-    const guarded = isIslandShielded(s, now) || outerLossCapReached(s, now);
+    const guarded = isShielded(s, i, now) || isIslandShielded(s, now) || outerLossCapReached(s, now);
     if (!op.captured || guarded) {
       appendLog(s, now, "wiped", i, op.from);
       return done(200, { ok: true, taken: false }, true);
@@ -985,6 +997,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     s.parcels = (s.parcels ?? []).filter((q) => q.poi !== poi);
     // Back to the robots first, so the log counts the day's loss once (here, not as a contested shore's).
     s.holds[i] = "foe";
+    s.raided = [...(s.raided ?? []).filter((k) => k !== i), i];
     appendLog(s, now, "taken", i, op.from);
     recordOuterTaken(s, now);
     return done(200, { ok: true, taken: true, parcels: seized.map((q) => q.kind) }, true);

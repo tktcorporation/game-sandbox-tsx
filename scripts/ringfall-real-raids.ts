@@ -8,7 +8,7 @@
  * Run: `npx tsx scripts/ringfall-real-raids.ts`
  */
 import assert from "node:assert/strict";
-import { islandOp, NODE_IDS, type IslandOp, type IslandState } from "../worker/island";
+import { islandOp, NODE_IDS, shieldNode, type IslandOp, type IslandState } from "../worker/island";
 import { applySync, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
 import { newProfile } from "../src/ringfall/meta/profile";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
@@ -45,6 +45,26 @@ assert.equal(r.state!.holds[NODE_IDS.indexOf("quarry")], "own", "two holdings lo
 
 // A node not held is no target.
 assert.equal(op(r.state, { t: "raid", from: B, target: "relay", captured: true }, T0 + 4000).status, 409);
+
+// A report from the owner's copy older than the loss does not undo it; one showing it lost clears the mark.
+const stale = op(structuredClone(r.state), { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply", "quarry"]), factory: 1, day: 1 }, T0 + 5000);
+assert.equal(stale.state!.holds[NODE_IDS.indexOf("supply")], "foe", "a stale report gave the holding taken back");
+const seen = op(structuredClone(stale.state), { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["quarry"]), factory: 1, day: 1 }, T0 + 6000).state!;
+assert.deepEqual(seen.raided ?? [], []);
+// Taken back in the owner's raid: named among retaken, it is theirs again.
+const back = op(structuredClone(stale.state), { t: "report", player: { id: A.id, name: A.name }, retaken: ["supply"], holds: holdsWith(["supply", "quarry"]), factory: 1, day: 1 }, T0 + 6000).state!;
+assert.equal(back.holds[NODE_IDS.indexOf("supply")], "own");
+
+// A contested shore shielded for the day is not taken by a sortie.
+{
+  const wi = NODE_IDS.indexOf("wreck");
+  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, T0).state!;
+  w = op(w, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["wreck"]), factory: 1, day: 1 }, T0).state!;
+  shieldNode(w, wi, T0);
+  const hit = op(w, { t: "raid", from: B, target: "wreck", captured: true }, T0 + 1000);
+  assert.equal(hit.state!.holds[wi], "own", "a shielded holding was taken");
+  assert.equal((hit.body as { taken: boolean }).taken, false);
+}
 
 // The owner's sync: supply goes back to the robots and costs trophies.
 const p = { ...newProfile(5), poiState: { ...newProfile(5).poiState, supply: { state: "own" as const }, quarry: { state: "own" as const } } };
