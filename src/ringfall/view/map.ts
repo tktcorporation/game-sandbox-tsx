@@ -13,7 +13,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import { isContestedShore, NEIGHBOUR_SLOTS, neighbourNameByCode, type Neighbour } from "../meta/neighbours";
-import { aiLabel, attackOwner, contestOwner } from "./copy";
+import { aiLabel } from "./copy";
 import { UI, alpha } from "./palette";
 
 /*
@@ -64,44 +64,6 @@ export const holdCss = (h: PoiHold) => (h === "foe" || h === "own" ? HOLD_CSS[h]
  * A flare as the HUD's icon draws it, centred on (x, y) and `r` tall from its middle: a red stick
  * under a yellow flame, lit; a grey outline when the flare is gone (its bin searched).
  */
-/**
- * Small pennant beside a contested hub the player can attack (TKT-204 案 A).
- * CoC-like: the attackable village itself carries the attack cue, not a sea island.
- */
-export function drawAttackFlag(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
-  g.save();
-  g.strokeStyle = alpha(UI.night, 0.85);
-  g.fillStyle = color;
-  g.lineWidth = Math.max(1, s * 0.12);
-  g.beginPath();
-  g.moveTo(x, y - s * 0.55);
-  g.lineTo(x, y + s * 0.45);
-  g.stroke();
-  g.beginPath();
-  g.moveTo(x, y - s * 0.5);
-  g.lineTo(x + s * 0.7, y - s * 0.28);
-  g.lineTo(x, y - s * 0.06);
-  g.closePath();
-  g.fill();
-  g.stroke();
-  g.restore();
-}
-
-/**
- * Subtle dashed ring on a contested hub the player holds (作り順②): others can take it.
- * Rival green, thin, no caption — the ring alone marks「取られうる」without a new term.
- */
-export function drawExposedRing(g: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
-  g.save();
-  g.strokeStyle = alpha(color, 0.7);
-  g.lineWidth = Math.max(1, r * 0.12);
-  g.setLineDash([Math.max(2, r * 0.35), Math.max(2, r * 0.28)]);
-  g.beginPath();
-  g.arc(x, y, r, 0, Math.PI * 2);
-  g.stroke();
-  g.restore();
-}
-
 export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: number, lit: boolean) {
   g.save();
   // A dark disc behind it, so it reads on the red and blue ground alike.
@@ -1069,30 +1031,11 @@ export class IslandMap {
       if (n) return n.ai ? aiLabel(n.name) : n.name;
       return neighbourNameByCode(owner, this.neighbours) ?? "他のプレイヤー";
     };
-    /**
-     * Caption under a POI mark (TKT-204 案 A / 2026-11-26):
-     * - rival contested → 「ツバキ · 攻める」
-     * - foe contested facing a neighbour → 「ロボット · トロフィーなし」
-     * - other rival → owner name only
-     */
+    /** Caption under a POI mark: another player's holding names its owner. */
     const shoreCaption = (i: number): string | null => {
-      const id = POIS[i].id;
-      const h = hold(i);
-      const owner = rivalOf(h);
-      if (owner) {
-        const who = ownerName(owner);
-        return isContestedShore(id) ? attackOwner(who) : who;
-      }
-      if (h !== "foe" || !isContestedShore(id)) return null;
-      const slot = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === id);
-      if (slot < 0) return null;
-      const n = this.neighbours.find((x) => x.slot === slot);
-      if (!n) return null;
-      return contestOwner(n.ai ? aiLabel(n.name) : n.name);
+      const owner = rivalOf(hold(i));
+      return owner ? ownerName(owner) : null;
     };
-    const attackable = (i: number): boolean => isContestedShore(POIS[i].id) && rivalOf(hold(i)) !== null;
-    /** Own contested outer hub: can be taken by others (dashed ring); off while island-shielded. */
-    const exposed = (i: number): boolean => !this.islandShielded && isContestedShore(POIS[i].id) && hold(i) === "own";
     // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
     const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
     // The POI names written: goal POIs and nodes that changed hands come first (and are never
@@ -1373,14 +1316,6 @@ export class IslandMap {
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
         if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "own");
-        // Contested hub held by a neighbour: 攻める pennant (raid / depart / minimap / results).
-        if (attackable(i)) {
-          drawAttackFlag(g, p.x + r * 1.55, p.y - r * 0.85, (this.mini ? 9 : 11) * dpr, RIVAL_CSS);
-        }
-        // Own outer contested hub: dashed ring — others can take it (作り順②).
-        if (exposed(i) && !plain) {
-          drawExposedRing(g, p.x, p.y, r * 1.7, RIVAL_CSS);
-        }
       }
       if (poi.boss) {
         // The titan's eye, in the robots' red.

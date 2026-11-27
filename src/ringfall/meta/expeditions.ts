@@ -15,7 +15,7 @@ import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
-import { clampTrophies, defenceWin, rivalTrophies, trophyDelta } from "./trophies";
+import { clampTrophies, defenceWin, raidOdds, rivalTrophies, starGain, trophyDelta } from "./trophies";
 import { emptyOuterGuard, guardOn, mergeOuterGuard, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
 
@@ -60,7 +60,7 @@ export interface IslandView {
   outerLost: number;
   /** Loss cap for outer hubs (作り順③). Older servers omit → OUTER_GUARD.lossCap. */
   outerLossCap: number;
-  nodes: { id: string; hold: PoiHold; open: boolean }[];
+  nodes: { id: string; hold: PoiHold; open: boolean; shielded?: boolean }[];
   /** The expeditions on the island; `id` is the number the island gave each when it took it. */
   expeditions: { id: number; by: { code: string; name: string }; target: string; units: number; state: ServerState; arriveAt: number }[];
   /** Live look-pings (ux-design M6). */
@@ -91,6 +91,8 @@ export interface IslandLogEntry {
   t: "noticed" | "landed" | "taken" | "wiped" | "retaken" | "released" | "recalled";
   node: string;
   by: { code: string; name: string };
+  /** A sortie's stars (0–3): what its attacker won, and so what this island's owner loses. */
+  stars?: number;
 }
 
 const STATES: readonly ServerState[] = ["coming", "attacking", "waiting", "holding"];
@@ -105,7 +107,7 @@ export function parseView(raw: unknown): IslandView | null {
   if (!isObj(raw) || !isIslandCode(raw.code) || typeof raw.owner !== "string" || !Array.isArray(raw.nodes) || !Array.isArray(raw.expeditions)) return null;
   const nodes = raw.nodes.flatMap((n) => {
     const hold = isObj(n) ? parseHold(n.hold) : null;
-    return isObj(n) && typeof n.id === "string" && hold ? [{ id: n.id, hold, open: n.open === true }] : [];
+    return isObj(n) && typeof n.id === "string" && hold ? [{ id: n.id, hold, open: n.open === true, ...(n.shielded === true ? { shielded: true } : {}) }] : [];
   });
   const expeditions = raw.expeditions.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;
@@ -133,7 +135,9 @@ export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: numbe
   if (!isObj(raw) || !Array.isArray(raw.entries) || !count(raw.next)) return null;
   const entries = raw.entries.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;
-    return isObj(e) && by && count(e.seq) && typeof e.at === "number" && LOG_KINDS.includes(e.t as never) && typeof e.node === "string" ? [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by }] : [];
+    if (!(isObj(e) && by && count(e.seq) && typeof e.at === "number" && LOG_KINDS.includes(e.t as never) && typeof e.node === "string")) return [];
+    const stars = count(e.stars) && e.stars <= 3 ? { stars: e.stars } : {};
+    return [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by, ...stars }];
   });
   return { entries, next: raw.next };
 }
@@ -233,11 +237,21 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   rivalTrop?: (owner: string) => number,
 ): { profile: P; news: IslandLogEntry[]; notes: string[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
-  const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
+  let poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
+  // Another player's sortie took a holding (glossary.md 攻め): it went back to the robots on the server; so here.
+  const raidedBy: { code: string; stars: number }[] = [];
+  for (const e of news) {
+    if (e.t !== "taken" || isAiOwner(e.by.code) || poiState[e.node as NodeId]?.state !== "own") continue;
+    const srv = s.holds?.find((h) => h.id === e.node)?.hold;
+    if (srv === "own") continue;
+    poiState = { ...poiState, [e.node]: { state: "foe" } };
+    raidedBy.push({ code: e.by.code, stars: e.stars ?? 3 });
+  }
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
-  const parcels = s.parcels ? [...s.parcels] : p.parcels;
+  // 島の守り stand only at the player's holdings: stock the server still lists at a node lost since (an AI player's attack) stays gone.
+  const parcels = s.parcels ? s.parcels.filter((q) => poiState[q.poi as NodeId]?.state === "own") : p.parcels;
   // 作り順③: merge server snapshot with local (AI takes never hit the server), then
   // bump from new "taken" log lines when the sync brought no view snapshot.
   const now = Date.now();
@@ -265,11 +279,22 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       lost = d.lost;
       next = d.next;
     }
-    // 守りきった → +M of each attacker (TKT-218). AI / remote takes already ★★ via trophyDelta.
+    // A holding another player's sortie took costs what their stars won (starGain of raidOdds N).
+    for (const r of raidedBy) {
+      const foe = rivalTrop ? rivalTrop(r.code) : rivalTrophies(r.code, p.trophies!);
+      const n = starGain(raidOdds(foe, p.trophies!).N, r.stars);
+      lost += n;
+      next = clampTrophies(next - n);
+    }
+    // 守りきった → +M of each attacker (TKT-218); a sortie that won a star without the core costs that star instead.
     let defended = 0;
     for (const e of news.filter((n) => n.t === "wiped")) {
       const foe = rivalTrop ? rivalTrop(e.by.code) : rivalTrophies(e.by.code, p.trophies!);
-      defended += defenceWin(foe, p.trophies!);
+      if (e.stars) {
+        const n = starGain(raidOdds(foe, p.trophies!).N, e.stars);
+        lost += n;
+        next = clampTrophies(next - n);
+      } else defended += defenceWin(foe, p.trophies!);
     }
     if (defended) next = clampTrophies(next + defended);
     if (next !== p.trophies) {

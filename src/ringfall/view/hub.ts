@@ -1,16 +1,13 @@
 import { PLAYER } from "../sim/config";
-import { aiSalt, neighboursFor } from "../island-net";
+import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
-import { attackScouts, revengeNodeFromLine, type AttackScout } from "../meta/attack-scout";
 import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
 import type { Start } from "../sim/state";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, bindTeamBattle, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
-import { FIELD_ENTRY, FIELD_REGION } from "../sim/team-field";
-import { battleOpen, daysLeft, hubCounts, TEAM_BATTLE } from "../meta/team-battle";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 // buyPrice / canStartIn / onSale used by sourceGuide
 import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
@@ -22,7 +19,9 @@ import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, contestGateHint, expOutLine, fieldBattleLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
+import { islandDay } from "../meta/days";
+import { collect } from "../meta/income";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
@@ -48,50 +47,15 @@ export function teachFrontCapture(p: Profile): boolean {
   return ownNodes(islandHolds(p)) === 0;
 }
 
-/** A front node held by another player — the reason to sortie and take it back. */
-export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
-  const holds = islandHolds(p);
-  const front = frontNodes(holds);
-  const neigh = neighboursFor(p);
-  const label = (n: (typeof NODES)[number], i: number): string => {
-    const who = rivalOf(holds[i]);
-    if (!who) return n.name;
-    const hit = neigh.find((x) => x.code === who || (who.startsWith("ai-") && x.code === who.slice(3)));
-    // 方向 A: 「ツバキの浄水場」— 持ち主＋拠点名. AI → 「カゲウツ · AIの浄水場」(TKT-204 案 G).
-    if (hit) return `${hit.ai ? aiLabel(hit.name) : hit.name}の${n.name}`;
-    const owner = neighbourNameByCode(who, neigh);
-    return owner ? `${owner}の${n.name}` : `他のプレイヤーの${n.name}`;
-  };
-  const near = NODES.map((n, i) => ({ n, i }))
-    .filter(({ i }) => front[i] && rivalOf(holds[i]) !== null)
-    // Contested coastal hubs first, then nearer.
-    .sort((a, b) => {
-      const ac = Number(isContestedShore(a.n.id));
-      const bc = Number(isContestedShore(b.n.id));
-      if (ac !== bc) return bc - ac;
-      return Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z);
-    })[0];
-  return near ? { name: label(near.n, near.i), x: near.n.x, z: near.n.z } : null;
+/** The holding the camp suggests attacking: the first on the 攻める list (nearest trophies), or null. */
+export function sortieTopFor(p: Profile): SortieTarget | null {
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings())[0] ?? null;
 }
 
-/**
- * When a rival holds a contested hub that is not yet on the front: which front node to take first
- * (TKT-204 案 D — 「前線に出すには先に{拠点}」. Not a sea-route gate).
- */
-export function rivalGateHint(p: Profile, from: { x: number; z: number } = CAMP.wake): string | null {
-  if (rivalFrontPick(p, from)) return null;
-  const holds = islandHolds(p);
-  const front = frontNodes(holds);
-  const blocked = NODES.map((n, i) => ({ n, i }))
-    .filter(({ n, i }) => isContestedShore(n.id) && rivalOf(holds[i]) !== null && !front[i])
-    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z));
-  for (const { i } of blocked) {
-    const gate = NEIGHBOURS[i]
-      .filter((k) => front[k] && holds[k] === "foe")
-      .sort((a, b) => Math.hypot(NODES[a].x - from.x, NODES[a].z - from.z) - Math.hypot(NODES[b].x - from.x, NODES[b].z - from.z))[0];
-    if (gate !== undefined) return contestGateHint(NODES[gate].name);
-  }
-  return null;
+/** The holding of whoever took one of the player's in this 島の知らせ line, to attack back (やり返す), or null. */
+export function revengeFor(p: Profile, line: string): SortieTarget | null {
+  if (!line.includes("取られた")) return null;
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings()).find((t) => line.startsWith(`${t.ownerName}に`)) ?? null;
 }
 
 /**
@@ -101,8 +65,6 @@ export function rivalGateHint(p: Profile, from: { x: number; z: number } = CAMP.
 export function nextHandFor(p: Profile): string {
   // 倉庫の整理 waits before any sortie or build tip.
   if (needsOrganize(p)) return PHRASE.nextOrganize;
-  const rival = rivalFrontPick(p);
-  if (rival) return nextAttack(rival.name);
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
   if (teachFrontCapture(p)) {
     const pick = frontPickFor(p);
@@ -111,6 +73,8 @@ export function nextHandFor(p: Profile): string {
   if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
   // 倉庫を含む隠れ家設備は作業場で上げる（工場は工場）。
   if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
+  const sortie = sortieTopFor(p);
+  if (sortie) return nextAttack(sortie.title);
   const pick = frontPickFor(p);
   return pick ? nextFront(pick.name) : PHRASE.nextGate;
 }
@@ -420,8 +384,6 @@ export interface Launch {
   seed: number;
   from?: PoiId;
   entry: EntryId;
-  /** 部隊戦 field sortie (作り順⑤): start on the field map, not the home island. */
-  teamField?: boolean;
   /** 「攻める」hub chosen at the gate (TKT-218 star scoring). */
   attack?: { id: NodeId; owner: string; N: number; M: number };
   /** A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): the raid is played there. */
@@ -524,22 +486,8 @@ export class Hub {
    * Cleared once the departure opens on it.
    */
   focusPoi: PoiId | null = null;
-  /**
-   * Contested hub chosen on the 攻める list (TKT-204 案 B). Drives the departure goal and
-   * nearest-start pick; set by `selectAttack()` / やり返す (案 F).
-   */
-  attackFocus: NodeId | null = null;
   /** The neighbour's holding the departure's 攻める list has chosen (a sortie), or null for a raid of the island. */
   sortieFocus: { owner: string; id: NodeId } | null = null;
-  /**
-   * 部隊戦 field sortie armed (作り順⑤): next launch uses the field map.
-   * Cleared on cancel / after launch.
-   */
-  fieldSortie = false;
-  /**
-   * Open the departure for a field sortie after the signal panel closes (like focusPoi).
-   */
-  openFieldDepart = false;
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
   private exped: ExpeditionPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -574,7 +522,7 @@ export class Hub {
           return;
         }
         if (act === "revenge") {
-          this.act(act, el.dataset.node ?? el.dataset.arg ?? "");
+          this.act(act, el.dataset.arg ?? "");
           return;
         }
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
@@ -676,6 +624,31 @@ export class Hub {
   }
 
   /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
+  /**
+   * The AI players' attacks on the holdings while the player was away (`awayFor()`): the profile as
+   * they left it, their lines in 島の知らせ, a trophy line for what was lost and the defences paid.
+   * Null when nothing came.
+   */
+  takeAway(r: { profile: Profile; news: IslandLogEntry[]; lost: number }): { lines: string[]; before: number; after: number; lost: number; defended: number } | null {
+    const before = this.profile.trophies ?? TROPHY.start;
+    this.update(r.profile);
+    saveProfile(this.profile);
+    if (!r.news.length) return null;
+    this.takeNews(r.news);
+    const lines = r.news.filter(newsVisible).map(logLine);
+    if (r.lost) this.recordNews([trophyLine(before, this.profile.trophies ?? TROPHY.start, 0, r.lost, 0)]);
+    const def = this.awardDefence(r.news.filter((e) => e.t === "wiped"));
+    return { lines, before, after: this.profile.trophies ?? TROPHY.start, lost: r.lost, defended: def?.defended ?? 0 };
+  }
+
+  /** Collects 拠点の収入 the holdings made up to `now` into the cash (meta/income.ts): the credits collected. */
+  collectIncome(now = Date.now()): number {
+    const { credits, stores } = collect(this.profile.stores, this.profile.poiState, now);
+    this.update({ ...this.profile, stores, cash: this.profile.cash + credits });
+    saveProfile(this.profile);
+    return credits;
+  }
+
   update(p: Profile) {
     this.set(p);
     // The signal station open shows the expeditions out as they now stand.
@@ -755,15 +728,7 @@ export class Hub {
     }
     if (act === "revenge") {
       // やり返す → 攻める一覧でその拠点を選んだ出撃（案 F）。
-      if (arg && this.revenge(arg as NodeId)) {
-        sfx.click();
-        this.close();
-      }
-      return;
-    }
-    if (act === "field-sortie") {
-      // 部隊戦へ出撃 → 門の出撃地図を戦場の入口で開く（作り順⑤）.
-      if (this.armFieldSortie()) {
+      if (arg && this.revenge(arg)) {
         sfx.click();
         this.close();
       }
@@ -876,15 +841,8 @@ export class Hub {
    * Keeps the chosen start one the profile allows: a depot still on, a region with a known way in
    * or a depot on (else the reservoir, whose first way in is always known), a known way in of it,
    * and a depot when the region has no known way in.
-   * Field sorties (作り順⑤) keep the battlefield entry — home-island unlocks do not apply.
    */
   private fixStart() {
-    if (this.fieldSortie) {
-      this.from = null;
-      this.region = FIELD_REGION;
-      this.entry = FIELD_ENTRY;
-      return;
-    }
     const p = this.profile;
     if (this.from && !departDepots(p).includes(this.from)) this.from = null;
     if (!canStartIn(p, this.region)) {
@@ -1032,56 +990,15 @@ export class Hub {
   }
 
   /**
-   * Contested hubs another player holds, for the departure's 攻める list (TKT-204 案 B).
-   * Front ones first; includes shut rows that need a gate taken first.
+   * やり返す (TKT-204 案 F): `arg` is the holding's owner and id (`owner|id`); chooses it on the
+   * 攻める list and opens the departure on it via `focusPoi` (same path as 地図で見る).
    */
-  attackTargets(): AttackScout[] {
-    const p = this.profile;
-    const at = this.startPoints().find((q) => q.on) ?? { x: CAMP.wake.x, z: CAMP.wake.z };
-    // 作り順⑥ / 2026-11-26: trophy band ±400; mark leader bounty (foe badge only).
-    return attackScouts(p.poiState, p.day, neighboursFor(p), p.trophies ?? TROPHY.start, p.parcels ?? [], aiSalt(), at, {
-      foe: p.teamBattle?.foe,
-    });
-  }
-
-  /**
-   * Picks a hub on the 攻める list: frames the goal, chooses the nearest open start, and remembers
-   * the focus for the side panel. False when the hub is unknown. With `force`, a shut (not-yet-front)
-   * hub is still focused so やり返す can open the list on it.
-   */
-  selectAttack(id: NodeId, opts: { force?: boolean } = {}): boolean {
-    const hit = this.attackTargets().find((t) => t.id === id);
-    if (!hit) return false;
-    if (!hit.onFront && !opts.force) return false;
-    this.attackFocus = id;
-    this.peeked = null;
-    if (hit.onFront) {
-      const starts = this.startPoints().filter((q) => q.open);
-      const near = [...starts].sort((a, b) => Math.hypot(a.x - hit.x, a.z - hit.z) - Math.hypot(b.x - hit.x, b.z - hit.z))[0];
-      if (near) this.choose(near.kind, near.id);
-    }
-    return true;
-  }
-
-  /**
-   * やり返す (TKT-204 案 F): focus the hub they took (still rival-held) and open the departure on it
-   * via `focusPoi` (same path as 地図で見る).
-   */
-  revenge(id: NodeId): boolean {
-    if (!this.selectAttack(id, { force: true })) return false;
+  revenge(arg: string): boolean {
+    const [owner, id] = arg.split("|") as [string, NodeId];
+    if (!owner || !id || !this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
+    this.sortieFocus = { owner, id };
     this.focusPoi = id;
     return true;
-  }
-
-  /** The scout row the departure highlights: explicit focus, else the nearest front rival hub. */
-  attackPick(): AttackScout | null {
-    const targets = this.attackTargets();
-    if (!targets.length) return null;
-    if (this.attackFocus) {
-      const hit = targets.find((t) => t.id === this.attackFocus);
-      if (hit) return hit;
-    }
-    return targets.find((t) => t.onFront) ?? null;
   }
 
   /**
@@ -1090,7 +1007,7 @@ export class Hub {
    */
   sortieTargets(): SortieTarget[] {
     const p = this.profile;
-    return sortieTargets(neighboursFor(p), aiSalt(), p.day, p.trophies ?? TROPHY.start, p.raided ?? []);
+    return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings());
   }
 
   /** The holding chosen for a sortie, while it is still on the list. */
@@ -1105,8 +1022,6 @@ export class Hub {
     if (!this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
     const same = this.sortieFocus?.owner === owner && this.sortieFocus.id === id;
     this.sortieFocus = same ? null : { owner, id };
-    // A holding chosen is the departure: a 部隊戦 field sortie armed before goes.
-    if (this.sortieFocus) this.fieldSortie = false;
     this.peeked = null;
     return true;
   }
@@ -1118,7 +1033,7 @@ export class Hub {
   launch(): Launch | null {
     this.fixStart();
     // A sortie: the kit as for a way in (no depot's allowance), played at the holding; the island's start stays as it was.
-    const sortie = !this.fieldSortie ? this.sortiePick() : null;
+    const sortie = this.sortiePick();
     if (sortie) {
       const taken = takeKit(this.profile, this.startLoad(), null);
       if (!taken) return null;
@@ -1127,64 +1042,16 @@ export class Hub {
       this.sortieFocus = null;
       return { kit: taken.kit, region: poiRegion(sortie.id).id, seed: this.profile.seed, entry: this.profile.entry, sortie: sortieStart(sortie) };
     }
-    // Field sorties never start from a depot (allowance / home island).
-    const field = this.fieldSortie;
-    const from = field ? null : this.from;
+    const from = this.from;
     const taken = takeKit(this.profile, this.startLoad(), from);
     if (!taken) return null;
     const { profile, kit } = taken;
-    const region = field ? FIELD_REGION : this.region;
-    const entry = field ? FIELD_ENTRY : (this.entry ?? this.profile.entry);
-    // The start is remembered for the next departure, which opens on it (home raids only).
-    if (!field) this.set({ ...profile, region, entry });
-    else this.set(profile);
+    const region = this.region;
+    const entry = this.entry ?? this.profile.entry;
+    // The start is remembered for the next departure, which opens on it.
+    this.set({ ...profile, region, entry });
     this.load = emptyLoadout();
-    this.fieldSortie = false;
-    const attack = !field ? this.attackPick() : null;
-    const attackGo =
-      attack && attack.onFront && !attack.gate
-        ? { id: attack.id, owner: attack.owner, N: attack.win, M: attack.lose }
-        : undefined;
-    return {
-      kit,
-      region,
-      seed: this.profile.seed,
-      from: from ?? undefined,
-      entry,
-      ...(field ? { teamField: true } : {}),
-      ...(attackGo ? { attack: attackGo } : {}),
-    };
-  }
-
-  /**
-   * Arm a 部隊戦 field sortie and open the departure on the field's way in.
-   * False when no open battle or 倉庫の整理待ち.
-   */
-  armFieldSortie(): boolean {
-    const p = bindTeamBattle(this.profile, aiSalt());
-    if (p !== this.profile) this.set(p);
-    if (needsOrganize(this.profile)) return false;
-    if (!battleOpen(this.profile.teamBattle, this.profile.day)) return false;
-    this.fieldSortie = true;
-    this.from = null;
-    this.region = FIELD_REGION;
-    this.entry = FIELD_ENTRY;
-    this.openFieldDepart = true;
-    return true;
-  }
-
-  /** Clear a cancelled field arm (departure turned back). */
-  clearFieldSortie() {
-    this.fieldSortie = false;
-    this.openFieldDepart = false;
-  }
-
-  /** Field battle status for the departure column / camp tip. */
-  fieldStatus(): { days: number; ours: number; total: number } | null {
-    const b = this.profile.teamBattle;
-    if (!battleOpen(b, this.profile.day) || !b) return null;
-    const n = hubCounts(b.holds);
-    return { days: daysLeft(b, this.profile.day), ours: n.ours, total: TEAM_BATTLE.hubs };
+    return { kit, region, seed: this.profile.seed, from: from ?? undefined, entry };
   }
 
   /** No contract system — always null (callers that still ask get nothing taken). */
@@ -1312,9 +1179,9 @@ export class Hub {
   /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）。 */
   private signalNews(): string {
     const items = (this.profile.news ?? []).map((line) => {
-      const node = revengeNodeFromLine(this.profile.poiState, line);
-      const btn = node
-        ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
+      const t = revengeFor(this.profile, line);
+      const btn = t
+        ? `<button type="button" class="revenge" data-act="revenge" data-arg="${esc(`${t.owner}|${t.id}`)}">${TERM.revenge}</button>`
         : "";
       return `<li>${esc(line)}${btn}</li>`;
     });
@@ -1514,31 +1381,17 @@ export class Hub {
   departure(): { rows: [string, string][]; warn: string[] } {
     this.fixStart();
     const p = this.profile;
-    // 部隊戦 field sortie (作り順⑤): purpose is the field, not the home front.
-    if (this.fieldSortie) {
-      const st = this.fieldStatus();
-      const goal = st
-        ? esc(fieldBattleLine(st.days, st.ours, st.total))
-        : esc(`${TERM.teamBattle} · ${TERM.battleField}`);
-      return { rows: [["装備", this.kitMarks()], [PLAN_GOAL, goal]], warn: [] };
-    }
     const sortie = this.sortiePick();
     if (sortie) return { rows: [["装備", this.kitMarks()], [PLAN_GOAL, `${flagIcon(SIDE.rival)}${esc(attackGoal(sortie.title))}`]], warn: [] };
     const front = this.frontPick();
-    // TKT-204 案 B/D: 攻める一覧の選択（なければ前線の相手持ち）を野営と同じ言い方で。
-    const attack = this.attackPick();
-    const rival = attack ? { name: attack.title, x: attack.x, z: attack.z } : rivalFrontPick(p);
     const teach = teachFrontCapture(p) && front;
-    const goal = rival
-      ? esc(attackGoal(rival.name))
-      : esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
-    const hint = rivalGateHint(p);
+    const goal = esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
       [PLAN_GOAL, goal],
     ];
-    return { rows, warn: hint ? [hint] : [] };
+    return { rows, warn: [] };
   }
 
   /**
@@ -1567,27 +1420,25 @@ export class Hub {
     const now = Date.now();
     const remain = shieldRemainingMs(p.outerGuard, now);
     const guard = guardOn(p.outerGuard, now);
-    // 作り順③: day line shows island shield timer and/or today's outer-hub loss cap.
-    const headParts = [`${p.day} 日目`];
+    // The island shield's timer and/or today's loss (no count of days: a day is the calendar's).
+    const headParts: string[] = [];
     if (remain > 0) headParts.push(shieldLine(remain));
     else if (guard.lost > 0) headParts.push(lostTodayLine(guard.lost, OUTER_GUARD.lossCap));
     const head = headParts.join(" · ");
     const pick = this.frontPick();
     // Each value is HTML: marks, and names escaped here.
-    const rival = rivalFrontPick(p);
-    const teach = teachFrontCapture(p);
+    const rival = sortieTopFor(p);
     const plan: [string, string][] = [
-      // A rival on the front is why to sortie. First sessions name 核 · 制圧 on the node so the line's middle is the day's ask.
+      // The front node to raid (first sessions name 核 · 制圧 on it), then the holding to attack.
       [
         PLAN_GOAL,
-        rival
-          ? `${flagIcon(SIDE.rival)}${esc(attackGoal(rival.name))}`
-          : pick
-            ? teach
-              ? `${esc(pick.name)} · ${TERM.captureCore}`
-              : esc(pick.name)
-            : "—",
+        pick
+          ? teachFrontCapture(p)
+            ? `${esc(pick.name)} · ${TERM.captureCore}`
+            : esc(pick.name)
+          : "—",
       ],
+      ...(rival ? [[TERM.attack, `${flagIcon(SIDE.rival)}${esc(rival.title)}`] as [string, string]] : []),
       ["装備", this.kitMarks()],
     ];
     if (remain > 0 || guard.lost > 0) {

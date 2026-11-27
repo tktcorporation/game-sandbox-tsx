@@ -25,7 +25,7 @@ import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { mergeHolds, reportHolds, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { isIslandCode } from "../src/ringfall/meta/island-code";
 import { NEIGHBOUR_SLOTS, type Neighbour } from "../src/ringfall/meta/neighbours";
-import { AI, aiAttack, aiHeld, aiIncoming, aiIslands, aiLent, aiOutcome, aiRaidNews, aiRefresh, aiRivals, aiView, withAi } from "../src/ringfall/meta/ai-islands";
+import { AI, aiHeld, aiIslands, aiOutcome, aiRefresh, aiView, withAi } from "../src/ringfall/meta/ai-islands";
 
 const fail = (msg: string): never => {
   console.error(`ai islands: ${msg}`);
@@ -53,99 +53,9 @@ for (const a of aiIslands(SALT)) {
   console.log(`growth: ${a.name} holds ${by.join(" / ")} on days 1 5 10 20 30 60`);
 }
 
-// attack — build from blankIsland so closed-route cases are not polluted by starting shores.
-const at = (day: number, freed: NodeId[], expeditions: Outgoing[] = []): Profile => {
-  const p = newProfile(3);
-  const poiState = { ...blankIsland() } as Island;
-  for (const id of freed) poiState[id] = { state: "own" };
-  return { ...p, day, poiState, expeditions };
-};
-const shore = NEIGHBOUR_SLOTS[0].shore;
-if (AI.start !== 1 || AI.scoutDay !== 1) fail(`AI.start/scoutDay should be 1, got ${AI.start}/${AI.scoutDay}`);
-if (aiAttack(at(0, ["supply", shore]), SALT, []) !== null) fail("an island attacked on day 0");
-for (let d = AI.start; d < AI.start + 40; d++) if (aiAttack(at(d, ["supply"]), SALT, []) !== null) fail(`an island attacked on day ${d} with no sea route open`);
-// The first scout: once a facing route is open (from day 1), whatever the day's draw; a small squad.
-const scout = aiAttack(at(AI.scoutDay, ["supply", shore]), SALT, [], false);
-if (!scout?.scout || scout.node !== shore) fail(`the first scout reads ${JSON.stringify(scout)}`);
-if (aiAttack(at(AI.scoutDay, ["supply"]), SALT, [], false) !== null) fail("a scout came with no sea route open");
-if (aiAttack(at(0, ["supply", shore]), SALT, [], false) !== null) fail("a scout came on day 0");
-const scoutLent = aiLent(at(AI.scoutDay, ["supply", shore]), SALT, [], false);
-if (scoutLent.length !== 1 || scoutLent[0].kinds.join() !== AI.scout.join()) fail(`the scout lent reads ${JSON.stringify(scoutLent)}`);
-console.log(`scout: ${scout.island.name} on day ${AI.scoutDay}, ${AI.scout.length} robots`);
-
-// New profiles start with all four shores → routes open on day 1 without capturing robots.
-{
-  const fresh = newProfile(3);
-  const hit = aiAttack({ ...fresh, day: 1 }, SALT, [], false);
-  if (!hit?.scout) fail(`fresh profile day-1 scout missing: ${JSON.stringify(hit)}`);
-  console.log(`start shores: day-1 scout from ${hit.island.name} at ${hit.node}`);
-}
-let days = 0;
-let answered = 0;
+// The game's islands' attacks on the player's holdings are reckoned by real time (meta/away-attacks.ts, scripts/ringfall-early-mp.ts).
 const first = aiIslands(SALT)[0];
 const sent: Outgoing = { code: first.code, node: "supply", sentAt: NOW, id: 1, units: 3, state: "coming" };
-for (let d = AI.start; d < AI.start + 200; d++) {
-  const x = aiAttack(at(d, ["supply", shore]), SALT, []);
-  if (x && (x.island.slot !== 0 || x.node !== shore)) fail(`day ${d}'s expedition from slot ${x.island.slot} at ${x.node}`);
-  if (x) days++;
-  if (aiAttack(at(d, ["supply", shore], [sent]), SALT, [])) answered++;
-}
-if (days < 20 || days > 80 || answered <= days) fail(`expeditions on ${days} days of 200, ${answered} while the player's is on the island`);
-console.log(`attack: ${days} days of 200 with the station held, ${answered} with an expedition on its island`);
-
-// battle: a day on which the slot-0 island comes at the station, held by nobody.
-let day = AI.start;
-while (!aiAttack(at(day, ["supply", shore]), SALT, [])) day++;
-const p = at(day, ["supply", shore]);
-const lent = aiLent(p, SALT, []);
-if (lent.length !== 1 || lent[0].target !== shore || lent[0].by.code !== aiOwner(first.code)) fail(`the day's lent read ${JSON.stringify(lent)}`);
-if (aiIncoming(p, SALT, []).length !== 1) fail("the camp is not warned of the day's expedition");
-const s = newRun(21, starterKit(), "reservoir", { island: holds(p), battle: { factory: 0, rivals: aiRivals(lent) } });
-s.reinforceT = s.raiderT = 1e9;
-s.parties = [];
-s.ally.active = false;
-const STATION = nodeIndex(shore);
-// The enemy's and the factory's squads leave the station to the expedition.
-const b = s.battle!;
-const spot = { ...s.player.pos };
-let t = 0;
-for (; t < 1500 / TICK && s.phase === "play" && s.nodes[STATION] === "own"; t++) {
-  b.squads = b.squads.filter((q) => q.side === 3);
-  s.enemies = s.enemies.filter((e) => e.rival);
-  step(s, idleInput(), false);
-  s.player.pos = { ...spot };
-  s.player.hp = 1e7;
-}
-if (t * TICK > AI.landAt + 300) fail(`the expedition took ${Math.round(t * TICK)} s to take the node it came down by`);
-if (rivalOf(s.nodes[STATION]) !== aiOwner(first.code)) fail(`the expedition left the station ${s.nodes[STATION]} after ${Math.round(t * TICK)} s`);
-console.log(`battle: ${first.name} took the ${NODES[STATION].name} ${Math.round(t * TICK)} s in`);
-s.outcome = "extracted";
-finishBattle(s);
-const after = settle(p, s).profile;
-if (after.poiState[shore].state !== rivalHold(aiOwner(first.code))) fail(`the next day the station is ${after.poiState[shore].state}`);
-const news = aiRaidNews(p, after, SALT, [], NOW);
-if (news.length !== 1 || news[0].t !== "taken" || news[0].by.code !== first.code) fail(`the news read ${JSON.stringify(news)}`);
-if (reportHolds(after)[NODES.findIndex((n) => n.id === shore)] !== "foe") fail("the report gives the server the island's node");
-const synced = mergeHolds(after.poiState, NODES.map((n) => ({ id: n.id, hold: n.id === shore ? "foe" : after.poiState[n.id].state })));
-if (synced[shore].state !== after.poiState[shore].state) fail("a sync from the server undid the island's node");
-// Contested coastal hubs (方向 A): defence is 工場 + 島の守り as POI garrison, not a battle holding squad.
-const owner = aiOwner(first.code);
-const next = aiLent(after, SALT, []);
-if (next.some((l) => l.target === shore && l.state === "holding")) fail("contested shore still gets a battle holding lent");
-const def = contestedDefence(after.poiState, after.day, [], SALT);
-if (!def.some((d) => d.owner === owner)) fail(`contestedDefence missed ${owner}: ${JSON.stringify(def)}`);
-const ns = newRun(22, starterKit(), "reservoir", {
-  island: holds(after),
-  battle: { factory: 0, rivals: aiRivals(next) },
-  defence: def,
-});
-const poi = poiIndex(shore);
-if (ns.cleared[poi]) fail("the contested station starts cleared despite defence");
-if (!ns.enemies.some((e) => e.poi === poi && e.rival === owner)) fail("the island's 工場 defence does not stand at the station in the next raid");
-// A player's island the server offers in that slot later: the node stays the AI island's, and defence still stands.
-const defKept = contestedDefence(after.poiState, after.day, [], SALT);
-if (!defKept.some((d) => d.owner === owner)) fail("the island's defence leaves the station once a player's island takes its slot");
-console.log("battle: kept overnight, reported as the enemy's, kept through a sync, held in the next raid");
 
 // sent: the player's expedition on its way, fighting, then holding or gone; the view shows it while it is out.
 const go = (min: number, o: Outgoing) => aiOutcome(first, SALT, o, o.sentAt + min * 60_000);

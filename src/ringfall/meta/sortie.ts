@@ -16,15 +16,17 @@ import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import type { Start } from "../sim/state";
 import { aiDefenceParcels, aiFactory, aiIslands, aiNodes } from "./ai-islands";
 import { aiLabel, type Neighbour } from "./neighbours";
-import { SEIZE, raidOdds, rivalTrophies, trophiesTable, winBonusBase } from "./trophies";
-import { canRaidOwner } from "./war-score";
+import { SEIZE, canRaidOwner, raidOdds, rivalTrophies, trophiesTable, winBonusBase } from "./trophies";
 
 /** The numbers of sorties outside the raid itself (that is `SORTIE` in sim/config.ts). */
 export const SORTIE_META = {
   /** Days a holding taken stays the robots' on its owner's island, the day it was taken included. */
   regrow: 2,
-  /** The most records kept (`Profile.raided`): older ones have regrown long since. */
-  keep: 24,
+  /**
+   * The most records kept (`Profile.raided`): every holding the islands next door could hold (four
+   * islands of twenty-one nodes), so none still regrowing is ever dropped by the cap.
+   */
+  keep: 84,
 };
 
 /** A holding a sortie took: its owner (a `RivalHold`'s id), the node and the profile's day. */
@@ -45,7 +47,7 @@ export function parseRaided(raw: unknown): Raided[] {
 
 /** `list` with holding `id` of `owner` taken on `day`. */
 export const recordRaid = (list: readonly Raided[], owner: string, id: NodeId, day: number): Raided[] =>
-  [...list.filter((r) => !(r.owner === owner && r.id === id)), { owner, id, day }].slice(-SORTIE_META.keep);
+  [...list.filter((r) => !(r.owner === owner && r.id === id) && day - r.day < SORTIE_META.regrow), { owner, id, day }].slice(-SORTIE_META.keep);
 
 /** Whether holding `id` of `owner` is still the robots' on `day` after a sortie took it. */
 export const regrowing = (list: readonly Raided[], owner: string, id: NodeId, day: number): boolean =>
@@ -81,7 +83,14 @@ export interface SortieTarget {
  * (`neighbours` marked `ai`) holds on its own island, but those taken lately (`raided`), within the
  * trophy band, nearest trophies first, then by island and the front's order.
  */
-export function sortieTargets(neighbours: readonly Neighbour[], salt: number, day: number, selfTrop: number, raided: readonly Raided[] = []): SortieTarget[] {
+export function sortieTargets(
+  neighbours: readonly Neighbour[],
+  salt: number,
+  day: number,
+  selfTrop: number,
+  raided: readonly Raided[] = [],
+  real: Readonly<Record<string, { held: readonly string[]; guard: Readonly<Record<string, number>> }>> = {},
+): SortieTarget[] {
   const table = trophiesTable(neighbours);
   const taken = neighbours.filter((n) => !n.ai && n.slot !== undefined).map((n) => n.slot!);
   const rows: (SortieTarget & { gap: number; slot: number; order: number })[] = [];
@@ -116,6 +125,38 @@ export function sortieTargets(neighbours: readonly Neighbour[], salt: number, da
         gap: Math.abs(rivalTrop - selfTrop),
         slot: a.slot,
         order: nodeIndex(id),
+      });
+    }
+  }
+  // Other players: the holdings their islands last showed (island-net.ts `cachedHoldings()`), their owner id their code.
+  for (const n of neighbours) {
+    const h = real[n.code];
+    if (n.ai || !h) continue;
+    const owner = n.code;
+    const rivalTrop = n.trophies ?? rivalTrophies(owner, selfTrop, table);
+    if (!canRaidOwner(owner, selfTrop, rivalTrop)) continue;
+    const { N, M } = raidOdds(selfTrop, rivalTrop);
+    for (const id of h.held) {
+      const i = nodeIndex(id as NodeId);
+      if (i < 0 || regrowing(raided, owner, id as NodeId, day)) continue;
+      const node = NODES[i];
+      rows.push({
+        id: node.id,
+        title: `${n.name}の${node.name}`,
+        owner,
+        ownerName: n.name,
+        hubName: node.name,
+        code: n.code,
+        ai: false,
+        factory: Math.max(0, Math.round(n.factory ?? 0)),
+        guard: Math.min(DEFENCE_AID, h.guard[id] ?? 0),
+        win: N,
+        lose: M,
+        loot: SEIZE.emptyReserve + SEIZE.bonus,
+        winBonus: winBonusBase(selfTrop),
+        gap: Math.abs(rivalTrop - selfTrop),
+        slot: n.slot ?? 9,
+        order: i,
       });
     }
   }

@@ -39,18 +39,9 @@ export type TermId =
   | "attack"
   | "contest"
   | "revenge"
+  | "today"
   | "shielding"
   | "lostToday"
-  | "team"
-  | "aiMate"
-  | "outerHubs"
-  | "teamBattle"
-  | "battleField"
-  | "foeTeam"
-  | "fieldHubs"
-  | "warPower"
-  | "bounty"
-  | "warScore"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -119,6 +110,8 @@ export const TERM = {
    * 【元】（なし）／仕返し 【案】やり返す 【理由】取られた行から攻め先へ
    */
   revenge: "やり返す",
+  /** The calendar day the player is on (glossary.md 日 / 今日). No count of days is shown. */
+  today: "今日",
   /**
    * Island-wide shield after an outer hub is taken (作り順③).
    * 【元】（なし）／保護中（新規島） 【案】守り中 【理由】取られたあとの島全体の盾。新規保護と語を分けず「守り」に寄せる
@@ -129,56 +122,6 @@ export const TERM = {
    * 【元】（なし） 【案】今日取られた 【理由】喪失上限が見える。内部名は出さない
    */
   lostToday: "今日取られた",
-  /**
-   * 4-person team board (作り順④).
-   * 【元】（なし） 【案】チーム 【理由】部隊戦の片側。新しい別名を増やさない
-   */
-  team: "チーム",
-  /**
-   * AI fill seat on a team (作り順④).
-   * 【元】（なし）／AIの味方 【案】AIの仲間 【理由】味方は戦場の語。仲間は席の埋め
-   */
-  aiMate: "AIの仲間",
-  /**
-   * Outer contested hub count on the team board (作り順④).
-   * 【元】（なし）／拠点 【案】外側の拠点 【理由】取り合う外側だけを数えると分かる
-   */
-  outerHubs: "外側の拠点",
-  /**
-   * Team battle mode (作り順⑤).
-   * 【元】（なし） 【案】部隊戦 【理由】design-direction の語。別名を増やさない
-   */
-  teamBattle: "部隊戦",
-  /**
-   * On-screen name of the team-battle field (作り順⑤).
-   * 【元】（なし） 【案】荒地の戦場 【理由】自島と別の場だと一目で分かる
-   */
-  battleField: "荒地の戦場",
-  /**
-   * Opposing team on the field (作り順⑤).
-   * 【元】（なし）／敵チーム 【案】相手チーム 【理由】部隊戦の片側。チームと揃える
-   */
-  foeTeam: "相手チーム",
-  /**
-   * Field hub count readout (作り順⑤).
-   * 【元】（なし）／拠点 【案】戦場の拠点 【理由】自島の外側の拠点と混ぜない
-   */
-  fieldHubs: "戦場の拠点",
-  /**
-   * War power from outer hubs on the field (作り順⑥ / 2026-11-26).
-   * 【元】力 【案】部隊戦の力 【理由】部隊戦ボード専用だと分かる。トロフィーと並べない
-   */
-  warPower: "部隊戦の力",
-  /**
-   * Leader bounty on the strongest rival (作り順⑥).
-   * 【元】（なし） 【案】懸賞金 【理由】design-direction の語。先頭への上乗せ（物資。トロフィーではない）
-   */
-  bounty: "懸賞金",
-  /**
-   * Team score inside one 部隊戦 match only (作り順⑥ / 2026-11-26).
-   * 【元】得点（個人の通算） 【案】得点＝チームの得点 【理由】トロフィーと分離。ボードにだけ出す
-   */
-  warScore: "得点",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -375,10 +318,11 @@ export function attackSeized(whoHub: string): string {
  * 【案】…（取った +a · 守りきった +d · 取られた −b）
  * 【理由】攻め／守りの内訳（design-direction トロフィーと物資）
  */
-export function trophyLine(before: number, after: number, gained = 0, lost = 0, defended = 0): string {
+export function trophyLine(before: number, after: number, gained = 0, lost = 0, defended = 0, failed = 0): string {
   const parts: string[] = [];
   if (gained > 0) parts.push(`取った +${gained}`);
   if (defended > 0) parts.push(`守りきった +${defended}`);
+  if (failed > 0) parts.push(`攻めきれず −${failed}`);
   if (lost > 0) parts.push(`取られた −${lost}`);
   const mid = parts.length ? `（${parts.join(" · ")}）` : "";
   return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;
@@ -464,52 +408,11 @@ export function nextAttack(name: string): string {
 }
 
 /**
- * Map label under a rival-held contested hub.
- * 【元】ツバキ 【案】ツバキ · 攻める 【理由】取るのが攻めだと分かる（TKT-204 案 A）
- */
-export function attackOwner(who: string): string {
-  return `${who} · ${TERM.attack}`;
-}
-
-/**
- * Map label under a robot-held contested hub facing a neighbour (2026-11-26).
- * 【元】カゲウツ · AIと取り合う 【案】ロボット · トロフィーなし 【理由】ロボット拠点はトロフィーが動かないと分かる
- */
-export function contestOwner(_who?: string): string {
-  return `ロボット · ${TERM.trophy}なし`;
-}
-
-/**
- * Toast after seizing a robot-held outer hub (2026-11-26).
- * 【元】制圧した · {拠点} · {誰}が攻めてくる 【案】制圧した · {拠点} · トロフィーなし
- * 【理由】お隣は最初から来る。ロボット拠点を取っても海路ゲートではない
- */
-export function robotHubSeized(hub: string, _who?: string): string {
-  return `制圧した · ${hub} · ${TERM.trophy}なし`;
-}
-
-/**
- * Results note when only robot hubs were taken this raid (2026-11-26).
- * 【元】（トロフィー行のみ／無し） 【案】ロボットの拠点 · トロフィーは動かない 【理由】ライバル攻めと混ぜない
- */
-export function robotHubTropNote(): string {
-  return `ロボットの拠点 · ${TERM.trophy}は動かない`;
-}
-
-/**
  * Goal / 今日の作戦 / 出撃の目的 for a rival hub (TKT-204 案 D).
  * 【元】前線：浄水場 【案】ツバキの浄水場を攻める 【理由】野営と出撃を同じ言い方に
  */
 export function attackGoal(whoHub: string): string {
   return `${whoHub}を${TERM.attack}`;
-}
-
-/**
- * Depart hint when a rival hub is held but not yet on the front (not a sea-route gate).
- * 【元】先に{拠点}を取ると攻められる 【案】前線に出すには先に{拠点} 【理由】海路開放と混同しない。前線の隣接だけ
- */
-export function contestGateHint(gate: string): string {
-  return `前線に出すには先に${gate}`;
 }
 
 /**
@@ -539,35 +442,6 @@ export function shieldLine(remainMs: number): string {
  */
 export function lostTodayLine(lost: number, cap: number): string {
   return `${TERM.lostToday} ${lost}/${cap}`;
-}
-
-/**
- * Team board seat line (作り順④): outer hub count.
- * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種。力そのものは fieldBoard の「力」
- */
-export function teamOuterLine(outer: number): string {
-  return `${TERM.outerHubs} ${outer}`;
-}
-
-/**
- * Field battle status line (作り順⑤).
- * 【元】（なし） 【案】荒地の戦場 · あと 2 日 · 戦場の拠点 2/5 【理由】期間と持ち分が一行で分かる
- */
-export function fieldBattleLine(daysLeft: number, ours: number, total: number): string {
-  return `${TERM.battleField} · あと ${daysLeft} 日 · ${TERM.fieldHubs} ${ours}/${total}`;
-}
-
-/**
- * Field battle result line (作り順⑤ + TKT-219 stars).
- * 【元】部隊戦 · 勝ち · 戦場の拠点 3/5
- * 【案】部隊戦 · 勝ち · ★★☆ · 戦場の拠点 3/5
- * 【理由】クラン戦型の星を結果に出す（トロフィーは動かさない）
- */
-export function fieldResultLine(result: "win" | "loss" | "draw", ours: number, total: number, stars?: number): string {
-  const say = result === "win" ? "勝ち" : result === "loss" ? "負け" : "引き分け";
-  const s = stars === undefined ? undefined : Math.max(0, Math.min(3, Math.round(stars)));
-  const starBit = s === undefined ? "" : ` · ${"★".repeat(s)}${"☆".repeat(3 - s)}`;
-  return `${TERM.teamBattle} · ${say}${starBit} · ${TERM.fieldHubs} ${ours}/${total}`;
 }
 
 /**
@@ -606,30 +480,6 @@ export function raidStarsLine(stars: number, delta: number): string {
 }
 
 /**
- * War power line on the field board only (作り順⑥ / 2026-11-26).
- * 【元】力 12 【案】部隊戦の力 12 【理由】部隊戦ボード専用
- */
-export function warPowerLine(power: number): string {
-  return `${TERM.warPower} ${power}`;
-}
-
-/**
- * Team score on the field board only (作り順⑥ / 2026-11-26).
- * 【元】得点 42 【案】チームの得点 42 【理由】個人トロフィーと並べず、今の部隊戦だけ
- */
-export function warScoreLine(total: number): string {
-  return `チームの${TERM.warScore} ${total}`;
-}
-
-/**
- * Bounty mark under an 攻める row (作り順⑥ / 2026-11-26).
- * 【元】懸賞金 【案】懸賞金 · 物資 +3 【理由】トロフィーではなく物資の上乗せだと分かる
- */
-export function bountyMark(extraMaterials = 3): string {
-  return `${TERM.bounty} · 物資 +${extraMaterials}`;
-}
-
-/**
  * First-time multiplayer guide cards (TKT-204 案 C / 2026-11-26 early-MP).
  * Shown at first camp (not only at the gate).
  */
@@ -640,7 +490,7 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
     // 【案】地図にも最初から出る、を足す 【理由】初日可視化：隣島の存在を地図で先に見せる
     // 【元】…外側の拠点を攻めてくる。
     // 【案】島で占領した拠点を攻めてくる 【理由】攻められる場所＝占領した陣地（holdings-raid.md）
-    body: `${TERM.seaIslands}は地図に最初から出る。島で占領した拠点を攻めてくる。`,
+    body: `${TERM.seaIslands}は地図に最初から出る。留守のあいだ、島で占領した拠点を攻めてくる。`,
   },
   {
     title: TERM.attack,
@@ -648,22 +498,26 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
     // 【案】門の一覧を先に言う 【理由】攻めるリストが初日の入口だと分かる
     // 【元】門の「攻める」に相手の拠点が一覧で出る。取れば…
     // 【案】選ぶとその拠点へ短く攻めに行く、を足す 【理由】攻めは相手の島への短い出撃（holdings-raid.md）
-    body: `門の「${TERM.attack}」にお隣の拠点が一覧で出る。選ぶとその拠点へ短く攻めに行く。取れば${TERM.trophy}が増える。`,
+    body: `門の「${TERM.attack}」に別プレイヤーの陣地が一覧で出る。選ぶとその拠点へ短く攻めに行く。取れば${TERM.trophy}が増える。`,
   },
   {
     title: TERM.captureCore,
     // 【元】相手の拠点を核 · 制圧すると…
     // 【案】相手の拠点の核を制圧すると… 【理由】ユーザー承認済み（TKT-218）
-    body: `相手の拠点の核を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。${TERM.signal}に${TERM.team}もある。`,
+    body: `相手の拠点の核を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
   },
 ];
 
 /** Guide next / done button labels (TKT-204 案 C). */
 export const mpHowtoNext = (last: boolean): string => (last ? "分かった" : "次へ");
 
-/** Re-export for view callers (canonical: meta/neighbours.ts / meta/team.ts). */
+/** Re-export for view callers (canonical: meta/neighbours.ts). */
 export { aiLabel } from "../meta/neighbours";
-export { memberLabel } from "../meta/team";
+
+/** 拠点の収入 collected at the camp (glossary.md 拠点の収入): made by the clock at each holding. */
+export function incomeLine(credits: number): string {
+  return `拠点の収入 +${credits.toLocaleString("ja-JP")} クレジット`;
+}
 
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;

@@ -105,7 +105,8 @@ function battleDay(b: Battle, nodes: readonly NodeHold[]): BattleDay {
 
 /** The island part of a profile that a day moves. */
 export interface IslandDay {
-  day: number;
+  /** When the island started (ms; 0 before its first look): its day is counted from it (`islandDay()`). */
+  since: number;
   poiState: Island;
   depots: PoiId[];
   /** The next raid's seed. */
@@ -113,7 +114,7 @@ export interface IslandDay {
 }
 
 /** What the maps read of an island day. */
-export type IslandView = Pick<IslandDay, "day" | "poiState">;
+export type IslandView = Pick<IslandDay, "since" | "poiState">;
 
 /** Each node's standing on an island day (sim/front.ts). */
 export const islandHolds = (p: Pick<IslandDay, "poiState">): NodeHold[] => nodeHolds((id) => p.poiState[id].state);
@@ -186,12 +187,11 @@ export interface DayChange {
 const changeOf = (from: readonly NodeId[], to: readonly NodeId[]): FrontChange => ({ gained: to.filter((id) => !from.includes(id)), lost: from.filter((id) => !to.includes(id)) });
 
 /**
- * What the overnight pass would do to `p` after raid `r`: the next day's island fields and the
- * nodes that changed hands. `settle()` reads the change first (`dayChange`) while the stash is
- * still being packed, then applies the same pass once (`advanceDay`) to the settled profile.
+ * What raid `r` does to `p`'s island: its fields after the raid and the
+ * nodes that changed hands. `settle()` reads the change first (`raidChange`) while the stash is
+ * still being packed, then applies the same pass once (`applyRaid`) to the settled profile.
  */
 function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; change: DayChange } {
-  const today = p.day;
   const before = islandHolds(p);
   const was = NODES.filter((_, i) => before[i] === "own").map((n) => n.id);
   const ended = r.battle ? r.battle.held : [...was, ...(r.captured ?? [])];
@@ -209,7 +209,7 @@ function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; c
   const lost = NODES.filter((_, i) => before[i] === "own" && after[i] !== "own").map((n) => n.id);
   const depots = DEPOTS.map((d) => d.poi).filter((id) => p.depots.includes(id) || poiState[id].state === "own");
   return {
-    profile: { ...p, day: today + 1, poiState, depots },
+    profile: { ...p, poiState, depots },
     change: {
       gained,
       front: { gained, lost },
@@ -225,26 +225,23 @@ function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; c
  * writing the next day onto the profile. Used when settle needs the list (contracts, `freedAt`)
  * before the stash is packed onto today's island.
  */
-export const dayChange = (p: IslandDay, r: RaidDay): DayChange => reckonOvernight(p, r).change;
+export const raidChange = (p: IslandDay, r: RaidDay): DayChange => reckonOvernight(p, r).change;
 
 /**
- * Ends the day `p.day` with the raid `r` and starts the next. With a battle, each node stays
+ * The island after the raid `r` (no day passes: a day is the calendar's, meta/days.ts). With a battle, each node stays
  * with whoever held it as the battle ended: the nodes the player took (by their cores or with
  * their robots) and the nodes the enemy's squads took back alike, other players' as well. Without
  * one, a node whose core the raid captured is the player's, and other players keep the rest of
  * theirs. Clearing a POI of its robots takes nothing. The titan's pad is the enemy's for good.
  * A node the player holds has its depot on.
  */
-export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P; change: DayChange } {
+export function applyRaid<P extends IslandDay>(p: P, r: RaidDay): { profile: P; change: DayChange } {
   return reckonOvernight(p, r);
 }
 
 /** The day's other players' nodes beat by beat (`DayChange.rivals`), or nothing when there were none. */
 const rivalBeats = (start: Partial<Record<NodeId, string>>, left: Partial<Record<NodeId, string>>, end: Partial<Record<NodeId, string>>): Pick<DayChange, "rivals"> =>
   Object.keys(start).length || Object.keys(left).length || Object.keys(end).length ? { rivals: { start, left, end } } : {};
-
-/** Credits paid at the settle for every node the player holds: `FRONT.income` each (not only the front). */
-export const heldIncome = (p: Pick<IslandDay, "poiState">): number => playerNodes(p).length * FRONT.income;
 
 /** Each POI's standing for a raid's start (`Start.island`). */
 export const holds = (p: Pick<IslandDay, "poiState">): Partial<Record<PoiId, PoiHold>> => Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id].state]));

@@ -167,8 +167,17 @@ interface Particle {
   gravity: number;
 }
 
+/** A robot's model in another player's colours: purple armour, a violet eye's halo. Its armour materials are its own. */
+function tintPurple(m: EnemyModel) {
+  m.mats[0].color.setHex(PAL.rivalArmor);
+  m.mats[1]?.color.setHex(PAL.rivalArmorLight);
+  (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rivalEye);
+}
+
 interface EnemyView {
   m: EnemyModel;
+  /** Drawn in another player's colour (`Enemy.rival` or `Enemy.by`). */
+  purple?: boolean;
   kind: EnemyKind;
   flash: number;
   /** 0..1: how hard the last hits rocked it; the lean falls away in a fraction of a second. */
@@ -1240,7 +1249,7 @@ export class World {
           this.shake = Math.max(this.shake, 0.5);
           break;
         case "enemyFire": {
-          const hue = e.friend ? PAL.friendOrb : e.rival ? PAL.rivalOrb : e.rogue ? PAL.rogueOrb : PAL.orb;
+          const hue = e.friend ? PAL.friendOrb : e.rival || e.ai ? PAL.rivalOrb : e.rogue ? PAL.rogueOrb : PAL.orb;
           this.burst(e.pos, hue, 3, 2, 0.06, 0, 0.25);
           if (e.foe) {
             // Fire between the factions: a tracer and a flash that read from far off, thicker with distance (see FACTION).
@@ -1481,12 +1490,8 @@ export class World {
           m.mats[1]?.color.setHex(PAL.rogueArmorLight);
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rogueEye);
         }
-        // Another player's: the same robot in purple, its eye violet (sim/battle.ts side 3).
-        if (e.rival !== undefined) {
-          m.mats[0].color.setHex(PAL.rivalArmor);
-          m.mats[1]?.color.setHex(PAL.rivalArmorLight);
-          (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rivalEye);
-        }
+        // Another player's (an AI player's too, `Enemy.by`): the same robot in purple, its eye violet (sim/battle.ts side 3).
+        if (e.rival !== undefined || e.by !== undefined) tintPurple(m);
         // One of the player's own: the same robot in blue, its eye cyan (sim/battle.ts).
         if (e.friend) {
           m.mats[0].color.setHex(PAL.friendArmor);
@@ -1503,8 +1508,13 @@ export class World {
         beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
         m.body.rotation.order = "YXZ";
-        v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null, plates };
+        v = { m, purple: e.rival !== undefined || e.by !== undefined, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null, plates };
         this.enemies.set(e.id, v);
+      }
+      // A squad named an AI player's after its robots were drawn (sim/battle.ts `nameRaiders()`) turns purple then.
+      if (!v.purple && e.by !== undefined) {
+        tintPurple(v.m);
+        v.purple = true;
       }
       const k = ENEMIES[e.kind];
       const m = v.m;
@@ -1567,7 +1577,7 @@ export class World {
       m.eye.scale.setScalar(tele);
       m.eyeHalo.scale.setScalar(k.weakR * (winding ? 9 : 4));
       (m.eyeHalo.material as THREE.SpriteMaterial).opacity = winding ? 0.95 : 0.55;
-      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.friend ? PAL.friendEye : e.rival !== undefined ? PAL.rivalEye : e.rogue ? PAL.rogueEye : PAL.eye);
+      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.friend ? PAL.friendEye : e.rival !== undefined || e.by !== undefined ? PAL.rivalEye : e.rogue ? PAL.rogueEye : PAL.eye);
       v.flash = Math.max(0, v.flash - dt);
       for (const mat of m.mats) mat.emissive.setHex(v.flash > 0 ? 0xffffff : e.mode === "stunned" ? 0x1f4b5c : 0x000000);
       v.shieldFlash = Math.max(0, v.shieldFlash - dt);
@@ -1624,7 +1634,7 @@ export class World {
       }
       g.visible = true;
       // The rogues' bolts burn yellow, the network's magenta.
-      const hue = o.friend ? PAL.friendOrb : o.rival ? PAL.rivalOrb : o.rogue ? PAL.rogueOrb : PAL.orb;
+      const hue = o.friend ? PAL.friendOrb : o.rival || o.ai ? PAL.rivalOrb : o.rogue ? PAL.rogueOrb : PAL.orb;
       ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(hue);
       ((g.children[2] as THREE.Sprite).material as THREE.SpriteMaterial).color.setHex(hue);
       g.position.set(o.pos.x, o.pos.y, o.pos.z);

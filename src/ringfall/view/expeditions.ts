@@ -3,22 +3,18 @@
  *
  * 能動的な遠征送信・出ている遠征一覧は置かない。本パネルはお隣の偵察、トロフィー、島の番号の確認を担う（`#hub-exped`）。
  */
+import { islandDay } from "../meta/days";
 import { aiOvernight, aiSalt, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { expeditionsOut, numbered, dropStale, recallAll, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
-import { bindStartingFootholds, bindTeam, bindTeamBattle, type Profile } from "../meta/profile";
-import { loadIdentity } from "../meta/identity";
+import { type Profile } from "../meta/profile";
 import { NODES, nodeIndex } from "../sim/map";
-import { fieldBattleLine, fieldResultLine, lostTodayLine, memberLabel, shieldLine, teamOuterLine, TERM, trophyHead, warPowerLine, warScoreLine } from "./copy";
+import { lostTodayLine, shieldLine, TERM, trophyHead } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
-import { outerCap, TEAM, type Team } from "../meta/team";
-import { battleOpen, daysLeft, hubCounts, TEAM_BATTLE, warPowerOf, type TeamBattle } from "../meta/team-battle";
-import { fieldStars } from "../meta/trophies";
-import { FIELD_HUBS } from "../sim/team-field";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
@@ -88,13 +84,8 @@ export class ExpeditionPanel {
     const p0 = refreshAi(this.get());
     // Codex / PR6: 出ている遠征 UI 削除後もセーブやセッションに残る遠征は引き上げ → flushRecalls が DELETE。
     const retired = recallAll(dropStale(p0.expeditions, Date.now()).filter((e) => e.state !== "sending" && e.id > 0));
-    // 作り順④/⑤: refresh team seats and ensure an open 部隊戦.
-    const who = loadIdentity();
-    const salt = aiSalt();
-    const footholds = bindStartingFootholds({ ...p0, expeditions: retired }, salt);
-    const teamBound = bindTeam(footholds, { id: who.id, name: who.name, code: who.code }, salt);
-    const battleBound = bindTeamBattle(teamBound, salt);
-    if (battleBound !== this.get()) this.put(battleBound);
+    const fresh = { ...p0, expeditions: retired };
+    if (JSON.stringify(fresh) !== JSON.stringify(this.get())) this.put(fresh);
     // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
     this.neighbours = neighboursFor(this.get());
     if (this.conn.t !== "ok") this.conn = { t: "wait" };
@@ -124,9 +115,7 @@ export class ExpeditionPanel {
       void this.look();
     }
     const { profile, news } = takeSync(this.get(), r.body);
-    // 作り順④: poiState may have lost outer hubs in the sync — refresh team.outer before paint.
-    const synced = bindTeam(profile, { id: who.id, name: who.name, code: who.code }, aiSalt());
-    if (synced !== this.get()) this.put(synced);
+    if (profile !== this.get()) this.put(profile);
     if (news.length) this.news(news);
     this.paint();
     await readNeighbours();
@@ -239,11 +228,8 @@ export class ExpeditionPanel {
         : guard.lost > 0
           ? `<p class="exp-shield">${esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))}</p>`
           : "";
-    // 作り順④/⑤: team board + 部隊戦 field status before お隣.
-    const team = this.teamBoard(p.team);
-    const field = this.fieldBoard(p.teamBattle);
     // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
-    const head = `${trop}${shield}${team}${field}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
+    const head = `${trop}${shield}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
     // Island codes: folded away from daily entry (お隣 cards are the primary).
@@ -262,57 +248,6 @@ export class ExpeditionPanel {
     return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${browse}<div class="exp-foot">${own}</div></div></div>`;
   }
 
-  /**
-   * 作り順④: four seats with outer-hub counts (力・得点は fieldBoard に出す).
-   * AI seats show 「 · AI」 like neighbours; caption uses TERM.aiMate once for the fill.
-   */
-  private teamBoard(team: Team | undefined): string {
-    if (!team?.members?.length) return "";
-    const cap = Math.max(1, outerCap());
-    const seats = team.members.slice(0, TEAM.size).map((m) => {
-      const who = m.ai ? `${esc(m.name)}<span class="ai-tag">AI</span>` : esc(memberLabel(m));
-      const held = `<span class="exp-held" style="--w:${Math.round((100 * m.outer) / cap)}%"></span>`;
-      const foot = `<small>${esc(teamOuterLine(m.outer))}</small>`;
-      const mine = m.ai ? "" : " mine";
-      return `<div class="team-seat${mine}"><b>${who}</b>${held}${foot}</div>`;
-    });
-    const fill = team.members.some((m) => m.ai) ? `<small class="team-fill">${esc(TERM.aiMate)}</small>` : "";
-    return `<div class="team-board"><div class="mod-head"><strong>${TERM.team}</strong>${fill}</div><div class="team-seats">${seats.join("")}</div></div>`;
-  }
-
-  /**
-   * 作り順⑤+⑥: 部隊戦 field status — name, days left, hub bar, foe seats, 力 / 得点, sortie.
-   */
-  private fieldBoard(battle: TeamBattle | null | undefined): string {
-    if (!battle) return "";
-    const p = this.get();
-    const open = battleOpen(battle, p.day);
-    const n = hubCounts(battle.holds);
-    const total = TEAM_BATTLE.hubs;
-    const status = open
-      ? esc(fieldBattleLine(daysLeft(battle, p.day), n.ours, total))
-      : battle.result
-        ? esc(fieldResultLine(battle.result, n.ours, total, fieldStars(n.ours, total)))
-        : esc(TERM.battleField);
-    const bar = `<span class="exp-held" style="--w:${Math.round((100 * n.ours) / Math.max(1, total))}%"></span>`;
-    const hubs = FIELD_HUBS.map((h) => {
-      const ours = battle.holds[h.id] === "ours";
-      return `<span class="field-hub${ours ? " ours" : ""}">${esc(h.name)}</span>`;
-    }).join("");
-    const foe = battle.foe.members
-      .slice(0, TEAM.size)
-      .map((m) => `<span class="field-foe">${esc(memberLabel(m))}</span>`)
-      .join("");
-    // 作り順⑥ / 2026-11-26: 部隊戦の力 + この試合のチーム得点（個人トロフィーとは別）。
-    const power = warPowerOf(p.team, battle.hooks);
-    const score = battle.score ?? 0;
-    const meta = `<p class="field-meta"><small>${esc(warPowerLine(power))}</small><small>${esc(warScoreLine(score))}</small></p>`;
-    const go = open
-      ? `<button type="button" data-act="field-sortie">${esc(TERM.teamBattle)}へ${esc(TERM.sortie)}</button>`
-      : "";
-    return `<div class="field-board"><div class="mod-head"><strong>${TERM.teamBattle}</strong><small>${esc(TERM.battleField)}</small></div><p class="field-status">${status}</p>${bar}<div class="field-hubs">${hubs}</div>${meta}<div class="field-foe-row"><small>${esc(TERM.foeTeam)}</small>${foe}</div>${go}</div>`;
-  }
-
   /** Neighbours as a board, plus a looked-up island's nodes (read-only; no send button). */
   private neighboursBoard(p: Profile): string {
     const dis = this.busy ? " disabled" : "";
@@ -329,7 +264,7 @@ export class ExpeditionPanel {
             const reach = open && (this.conn.t === "ok" || n.ai);
             // TKT-204 案 G: AI is 「名前 · AI」 same as map / news (span kept for style).
             const who = n.ai ? `${esc(n.name)}<span class="ai-tag">AI</span>` : esc(n.name);
-            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${who}</b>${trop}${held}${foot}${overnight(n, p.day)}</button>`;
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${who}</b>${trop}${held}${foot}${overnight(n, islandDay(p))}</button>`;
           })
           .join("")}</div>`
       : "";

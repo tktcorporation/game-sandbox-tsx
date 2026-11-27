@@ -3,15 +3,15 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { realignStartingFootholds, withStartingFootholds } from "./ai-islands";
-import { advanceDay, blankIsland, contestedOwned, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
+import { islandDay, sinceFor } from "./days";
+import { emptyStores, parseStores, type Stores } from "./income";
+import { applyRaid, blankIsland, contestedOwned, raidChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
 import {
   clampTrophies,
-  fieldStars,
   leagueChanged,
   raidTrophyDelta,
   rivalTrophies,
@@ -24,21 +24,6 @@ import {
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
 import { parseRaided, recordRaid, type Raided } from "./sortie";
 import { isContestedShore } from "./neighbours";
-import { ensureTeam, formTeam, parseTeam, selfOuterCount, teamSalt, type Team, type TeamSelf } from "./team";
-import {
-  applyFieldCaptures,
-  autoDefendField,
-  battleDue,
-  ensureBattle,
-  FIELD_NAME,
-  hubCounts,
-  markSortie,
-  parseTeamBattle,
-  settleBattle,
-  tickTeamScore,
-  type TeamBattle,
-} from "./team-battle";
-import { BOUNTY, bountyOwnersFrom, takeHomeSlots } from "./war-score";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -55,7 +40,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 49;
+  v: 53;
   cash: number;
   stash: Item[];
   raids: number;
@@ -79,8 +64,12 @@ export interface Profile {
   seen: string;
   /** The routes opened for good (`ROUTES` order): every raid's world has them open. */
   routes: RouteId[];
-  /** The island's day: the next raid is played on it, and each settled raid ends it. */
-  day: number;
+  /**
+   * When the island started (ms; 0 until the first camp sets it): its day is the calendar day
+   * counted from it (`islandDay()` in meta/days.ts). No raid moves it. v51 and older count their
+   * day back from the first look (`sinceFor()`).
+   */
+  since: number;
   /** Who holds each POI (meta/island.ts). */
   poiState: Island;
   /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
@@ -149,18 +138,12 @@ export interface Profile {
    */
   raided: Raided[];
   /**
-   * 4-person team (作り順④): self + AI の仲間 fill. Outer counts refresh with the day.
-   * v45 and older saves get a fresh auto-assigned team on load.
-   * Future: war power / battle field / scoring read `team` without reshaping it.
+   * When the AI players' attacks on the holdings were last reckoned (ms, `awayAttacks()`). 0 on a
+   * profile not yet looked at: the first look starts the clock. v50 and older start at 0.
    */
-  team: Team;
-  /**
-   * Active / last 部隊戦 on the field (作り順⑤+⑥). Null until first ensure.
-   * v46 and older saves get a fresh battle on load via `ensureBattle`.
-   * Step 6: war power / bounty on `hooks`; team score on `TeamBattle.score` (match-only).
-   * Personal 得点 / warScore is gone (2026-11-26) — trophies stay the personal rank.
-   */
-  teamBattle: TeamBattle | null;
+  attackedAt: number;
+  /** 拠点の収入 waiting at each holding, made by the clock (meta/income.ts). v52 and older start empty. */
+  stores: Stores;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -216,21 +199,14 @@ export function withStarters(stash: Item[]): Item[] {
 /** The stash entries that take room (`stashCap()`): all but the starter weapons. */
 export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !isStarter(i)).length;
 
-/** Seed-stable self for a fresh profile (tests / before identity is wired). */
-const seedSelf = (seed: number): TeamSelf => {
-  const id = `local-${(seed & 0xffff).toString(16).padStart(4, "0")}`;
-  return { id, name: `プレイヤー-${id.slice(-4)}` };
-};
-
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   const s = seed & 0xffff;
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
-  const poiState = withStartingFootholds(newIsland(), s);
-  const team = formTeam(seedSelf(s), s, 1, contestedOwned({ poiState }).length);
+  const poiState = newIsland();
   return {
-    v: 49,
+    v: 53,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -245,7 +221,7 @@ export function newProfile(seed = 1): Profile {
     depotSent: {},
     seen: "",
     routes: [],
-    day: 1,
+    since: 0,
     poiState,
     known: [...MOD_START],
     threat: 0,
@@ -264,39 +240,11 @@ export function newProfile(seed = 1): Profile {
     goal: null,
     outerGuard: emptyOuterGuard(),
     raided: [],
-    // 作り順④: auto-assign self + AI の仲間 (identity may replace self later via bindTeam).
-    team,
-    // 作り順⑤+⑥: open the first 部隊戦 on day 1 (AI foe fill; score starts at 0).
-    teamBattle: ensureBattle(null, team, s, 1),
+    attackedAt: 0,
+    stores: emptyStores(),
   };
 }
 
-/** Ensure / refresh the profile's 部隊戦 (open a match if none or the last one settled). */
-export function bindTeamBattle(p: Profile, salt: number): Profile {
-  const team = p.team?.members?.length ? p.team : formTeam(seedSelf(p.seed), salt, p.day, selfOuterCount(p));
-  const teamBattle = ensureBattle(p.teamBattle, team, salt, p.day);
-  if (teamBattle === p.teamBattle && team === p.team) return p;
-  return { ...p, team, teamBattle };
-}
-
-/**
- * Align day-1 AI foothold owners with the browser's neighbour salt (`aiSalt`).
- * Call beside `bindTeam` on load so 「攻める」 names match the map's AI islands.
- */
-export function bindStartingFootholds(p: Profile, salt: number): Profile {
-  const poiState = realignStartingFootholds(p.poiState, salt);
-  return poiState === p.poiState ? p : { ...p, poiState };
-}
-
-/**
- * Bind / refresh the profile's team to the browser identity (or any TeamSelf).
- * Keeps AI seats; updates self name/code and all outer counts.
- */
-export function bindTeam(p: Profile, self: TeamSelf, salt: number): Profile {
-  const team = ensureTeam(p.team, self, salt, p.day, selfOuterCount(p));
-  if (JSON.stringify(team) === JSON.stringify(p.team)) return p;
-  return { ...p, team };
-}
 
 /**
  * The 強度 the next raid plays at. Island liberation / cycle is gone (v43): always 0 for a
@@ -623,8 +571,6 @@ export interface Settlement {
   soldFor: number;
   /** Same items as `sold` after settle: the haul that waits for 倉庫の整理. */
   pending: Item[];
-  /** The island's day the raid was played on (the profile is on the next). */
-  day: number;
   /** Nodes that became the player's overnight (`DayChange.gained`). */
   gained: NodeId[];
   /** The nodes that turned the player's overnight, and those the enemy took, all told and in turn (`DayChange`). */
@@ -634,7 +580,7 @@ export interface Settlement {
   raid: FrontChange;
   after: FrontChange;
   /**
-   * Credits the nodes the player holds paid at this settle (`heldIncome()`), plus any still held
+   * 拠点の収入 collected as the raid came home (the caller adds it, meta/income.ts), plus any still held
    * away on other islands (`awayIncome()` folded in — 方向 A: 拠点の収入に一本化).
    */
   income: number;
@@ -648,7 +594,7 @@ export interface Settlement {
    * Trophy change this settle (`gained` / `lost` / `defended` / `stars`); left out when none moved.
    * `stars` is set for a 「攻める」raid (0–3), even when the net delta is 0.
    */
-  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number; stars?: number };
+  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number; stars?: number; failed?: number };
   /**
    * Rival / contested hubs taken this settle (home raid): owner id at raid start, for 島の知らせ
    * 「{誰}の{拠点}を制圧した · トロフィー +n · 倉庫へ届く」. Left out when none.
@@ -663,7 +609,6 @@ export interface Settlement {
    * 部隊戦 that just closed this settle (作り順⑤), when the period ended.
    * `stars` = clan-war shaped hub stars (TKT-219); trophies do not move.
    */
-  fieldBattle?: { result: "win" | "loss" | "draw"; ours: number; theirs: number; name: string; stars: number };
   /** League band crossed this settle (TKT-219); left out when unchanged. */
   league?: { from: string; to: string };
   /**
@@ -811,29 +756,25 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
     for (const k of tools) home.push({ t: "tool", kind: k });
   } else {
-    // 作り順⑥: take-home is pouch slots only (war power never feeds this).
-    const kept = pouchKeep(pl.haul, tools, takeHomeSlots(p.hideout));
+    const kept = pouchKeep(pl.haul, tools, pouchSlots(p.hideout));
     for (const v of kept.haul) home.push({ t: "valuable", kind: v });
     for (const k of kept.tools) home.push({ t: "tool", kind: k });
   }
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
-  // 作り順⑥: leader bounty adds extra materials when the owner is the strongest rival.
   // A sortie's holding is on the neighbour's island: the player's own 島の守り there is never its stock.
-  const seized = seizeRivalLoot(s.sortie ? { ...p, parcels: [] } : p, s, bountyOwners(p, s));
+  const seized = seizeRivalLoot(s.sortie ? { ...p, parcels: [] } : p, s);
   if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
   for (const it of seized.items) home.push(it);
-  // Field sorties (作り順⑤): captures write field holds, not home-island poiState / depots / entries.
-  const fieldRaid = !!s.teamField;
   // A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md) leaves the player's own
   // island as it was: no capture, depot, way in or explored ground of it is the player's.
   const sortieRaid = !!s.sortie;
-  const awayRaid = fieldRaid || sortieRaid;
+  const awayRaid = sortieRaid;
   // TKT-219: league win-bonus materials for 「攻める」stars (before store so they can fit stash).
-  // Robot hubs / field sorties never get this — only a gate-picked rival attack.
+  // Robot hubs never get this — only a gate-picked rival attack.
   let tropStarsEarly: 0 | 1 | 2 | 3 | undefined;
   let winBonusCount = 0;
-  if (!fieldRaid && s.attack) {
+  if (s.attack) {
     const a = s.attack;
     const half = a.defenceMax > 0 && a.defenceDealt >= a.defenceMax * 0.5;
     const captured = (s.stats.captured ?? []).includes(a.id);
@@ -855,7 +796,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   }
   const day = awayRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
-  const change = dayChange(p, day);
+  const change = raidChange(p, day);
   const threat = s.threat ?? 0;
   const { profile, pending } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
   // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
@@ -888,33 +829,32 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
     ];
   }
-  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, p.day) } : {}) };
+  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, islandDay(p)) } : {}) };
   // Apply the same overnight pass once the raid's haul is on today's island.
-  const { profile: night } = advanceDay(settled, day);
+  const { profile: night } = applyRaid(settled, day);
   // Trophy (TKT-218): 「攻める」star score, then overnight / other contested moves (★★ remote).
-  // Field sorties never move trophies (部隊戦 uses team score only).
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
   const selfTrop = p.trophies ?? TROPHY.start;
   let tropGained = 0;
   let tropLost = 0;
+  // Lost by an attack that took no star (攻めきれず), apart from holdings taken (取られた).
+  let tropFailed = 0;
   let tropStars: number | undefined = tropStarsEarly;
   const skip = new Set<NodeId>();
   const attackTaken: { id: NodeId; owner: string }[] = [];
-  if (!fieldRaid && s.attack && tropStars !== undefined) {
+  if (s.attack && tropStars !== undefined) {
     const a = s.attack;
     const d = raidTrophyDelta(a.N, a.M, tropStars);
     if (d > 0) tropGained += d;
-    else tropLost += -d;
+    else tropFailed += -d;
     skip.add(a.id);
     if ((s.stats.captured ?? []).includes(a.id)) attackTaken.push({ id: a.id, owner: a.owner });
   }
-  const trop = fieldRaid
-    ? { next: selfTrop, gained: 0, lost: 0, taken: [] as NodeId[], dropped: [] as NodeId[] }
-    : trophyDelta(selfTrop + tropGained - tropLost, beforeHolds, afterHolds, rivalTrop ?? ((o) => rivalTrophies(o, selfTrop)), skip);
+  const trop = trophyDelta(selfTrop + tropGained - tropFailed, beforeHolds, afterHolds, rivalTrop ?? ((o) => rivalTrophies(o, selfTrop)), skip);
   tropGained += trop.gained;
   tropLost += trop.lost;
-  const tropNext = fieldRaid ? selfTrop : clampTrophies(selfTrop + tropGained - tropLost);
+  const tropNext = clampTrophies(selfTrop + tropGained - tropLost - tropFailed);
   if (tropNext !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: tropNext });
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).
@@ -932,47 +872,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   if (outerGuard !== (p.outerGuard ?? emptyOuterGuard())) Object.assign(night, { outerGuard });
-  // 作り順④: refresh team outer counts (self from island; AI mates by day). Keep seats + salt.
-  if (night.team?.members?.length) {
-    const self = night.team.members.find((m) => !m.ai);
-    if (self) {
-      const salt = night.team.salt ?? teamSalt(self.id);
-      const team = ensureTeam(night.team, { id: self.id, name: self.name, code: self.code || undefined }, salt, night.day, selfOuterCount(night));
-      if (JSON.stringify(team) !== JSON.stringify(night.team)) Object.assign(night, { team });
-    }
-  }
-  // 作り順⑤+⑥: tick 部隊戦 — field captures, war-power auto-defence, team score, period settle.
-  let fieldBattle: Settlement["fieldBattle"];
-  {
-    let tb = night.teamBattle ?? p.teamBattle ?? null;
-    const ours = night.team ?? p.team;
-    if (ours?.members?.length) {
-      if (!tb) tb = ensureBattle(null, ours, night.seed, p.day);
-      if (fieldRaid) tb = markSortie(tb, p.day);
-      if (fieldRaid) tb = applyFieldCaptures(tb, capturedIds(s));
-      // Overnight on the field: war power ≥ foe keeps; else foe takes one hub if no sortie.
-      tb = autoDefendField(tb, p.day, ours);
-      // Team score for this match only (hub-days of the day that just ended).
-      tb = tickTeamScore(tb);
-      if (battleDue(tb, night.day)) {
-        tb = settleBattle(tb);
-        const n = hubCounts(tb.holds);
-        const total = n.ours + n.theirs;
-        fieldBattle = {
-          result: tb.result!,
-          ours: n.ours,
-          theirs: n.theirs,
-          name: FIELD_NAME,
-          stars: fieldStars(n.ours, total),
-        };
-      }
-      // Open the next match once the period is settled (score resets there).
-      tb = ensureBattle(tb, ours, night.seed, night.day);
-      Object.assign(night, { teamBattle: tb });
-    }
-  }
-  // The nodes the player holds once the night is over pay their day's credits.
-  const homePay = heldIncome(night);
+  // 拠点の収入 is made by the clock and collected at the camp (meta/income.ts), not paid per raid.
+  const homePay = 0;
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
   // 方向 A: 遠征で持つ拠点の収入も拠点の収入に合算（リザルトの別行は出さない）。
@@ -993,7 +894,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       return owner ? [{ id, owner }] : [];
     }),
   ];
-  const tropMoved = tropGained > 0 || tropLost > 0 || tropStars !== undefined;
+  const tropMoved = tropGained > 0 || tropLost > 0 || tropFailed > 0 || tropStars !== undefined;
   // League from trophy before → after this settle (including overnight).
   const league = tropMoved || tropNext !== selfTrop ? leagueChanged(selfTrop, tropNext) : null;
   return {
@@ -1005,7 +906,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     sold: pending,
     soldFor: 0,
     pending,
-    day: p.day,
     ...change,
     income,
     ...(spoils > 0 && { spoils }),
@@ -1018,13 +918,13 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
             after: tropNext,
             gained: tropGained,
             lost: tropLost,
+            ...(tropFailed > 0 ? { failed: tropFailed } : {}),
             ...(tropStars !== undefined ? { stars: tropStars } : {}),
           },
         }
       : {}),
     ...(takenRival.length ? { takenRival } : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),
-    ...(fieldBattle ? { fieldBattle } : {}),
     ...(league ? { league } : {}),
     // Show awarded count (requested); stash overflow still listed under 倉庫に入らなかった.
     ...(winBonusCount > 0 ? { winBonus: winBonusCount } : {}),
@@ -1068,41 +968,14 @@ export function keptSeized(
 }
 
 /**
- * Owners who pay the leader bounty this raid (作り順⑥).
- * Leader is the strongest rival among **all** contested holders at raid start — not among
- * captured only — so taking a weak hub never pays the leader bounty by accident.
- */
-function bountyOwners(p: Pick<Profile, "teamBattle">, s: Pick<State, "hold" | "stats">): Set<string> {
-  const hold = s.hold;
-  if (!hold) return new Set();
-  const captured: string[] = [];
-  for (const id of capturedIds(s)) {
-    const i = poiIndex(id);
-    if (i < 0) continue;
-    const who = rivalOf(hold[i] ?? "foe");
-    if (who) captured.push(who);
-  }
-  const heldBy = new Map<string, number>();
-  for (let i = 0; i < POIS.length; i++) {
-    if (!isContestedShore(POIS[i]!.id)) continue;
-    const who = rivalOf(hold[i] ?? "foe");
-    if (!who) continue;
-    heldBy.set(who, (heldBy.get(who) ?? 0) + 1);
-  }
-  return bountyOwnersFrom(heldBy, captured, p.teamBattle?.hooks?.bountyTarget);
-}
-
-/**
  * Raid loot from 核 · 制圧 of rival-held nodes (CoC resource loot, including AI):
  * 島の守り stock at that 中継ボックス → warehouse; empty stock still pays `SEIZE.emptyReserve`
  * commons; every 制圧 also adds `SEIZE.bonus` on top so the core capture feels like materials
  * even when trophies are the ownership change. Empty when no island / no rivals (sim gate).
- * 作り順⑥: `bounty` owners get `BOUNTY.extraMaterials` more commons.
  */
 export function seizeRivalLoot(
   p: Pick<Profile, "parcels" | "seed">,
   s: Pick<State, "hold" | "stats" | "seed">,
-  bounty: ReadonlySet<string> = new Set(),
 ): { items: Item[]; ids: number[]; at: { poi: PoiId; kinds: ValuableKind[] }[] } {
   const items: Item[] = [];
   const ids: number[] = [];
@@ -1133,11 +1006,7 @@ export function seizeRivalLoot(
       }
     }
     // Always a small bonus on top of parcels (CoC: breaking in yields resources).
-    let bonus = SEIZE.bonus;
-    if (bounty.has(who) || (who.startsWith("ai-") && bounty.has(who.slice(3))) || bounty.has(`ai-${who}`)) {
-      bonus += BOUNTY.extraMaterials;
-    }
-    for (let k = 0; k < bonus; k++) {
+    for (let k = 0; k < SEIZE.bonus; k++) {
       const kind = raidReserveKind(seed ^ 0x85ebca6b, id, k + SEIZE.emptyReserve);
       items.push({ t: "valuable", kind });
       kinds.push(kind);
@@ -1227,13 +1096,17 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v45 and older have no `team`; v46 adds 4-person teams with AI の仲間 fill (作り順④).
  * v46 and older have no `teamBattle`; v47 adds 部隊戦 on the field (作り順⑤).
  * v47 and older may lack war-power hooks / team `score` on `teamBattle`; v48 fills them (作り順⑥).
- * Personal `warScore` (7-day rolling) is dropped — team score lives on `TeamBattle.score` only (2026-11-26).
+ * v49 and older may hold `team` / `teamBattle` (チーム・部隊戦); v50 drops them (glossary.md 決定 C).
+ * v50 and older may hold other players' nodes on the player's own island; v51 makes them the enemy's
+ * (only other players take holdings, and a holding taken goes back to the robots) and adds `attackedAt`.
+ * v51 and older count the island's day by raids (`day`); v52 keeps when it started (`since`) and counts calendar days.
+ * v52 and older are paid 拠点の収入 at each settle; v53 makes it by the clock at each holding (`stores`).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1259,10 +1132,12 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
-  const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, o.v >= 26) : blankIsland();
+  const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, false) : blankIsland();
   const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
+  // v52: the island's day is the calendar's (meta/days.ts); an older save's count of raids is kept as days since it started.
+  const since = typeof o.v === "number" && o.v >= 52 ? (Number.isFinite(o.since) ? Math.max(0, o.since as number) : 0) : sinceFor(day);
   const v17 = typeof o.v === "number" && o.v >= 17;
   const v19 = typeof o.v === "number" && o.v >= 19;
   const v20 = typeof o.v === "number" && o.v >= 20;
@@ -1305,6 +1180,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v46: 作り順④の 4 人チーム（`team`、空きは AI の仲間）。
   // v47: 作り順⑤の部隊戦（`teamBattle`、荒地の戦場）。
   // v48: 作り順⑥の力・懸賞金・部隊戦チーム得点（`teamBattle.score`）。個人 `warScore` は捨てる。
+  // v50: チーム・部隊戦（`team` / `teamBattle`）を捨てる。
   const news =
     typeof o.v === "number" && o.v >= 40 && Array.isArray(o.news)
       ? o.news.filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim()).slice(0, 10)
@@ -1314,14 +1190,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // v49: holdings of other islands the sorties took (`raided`).
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
-  const savedTeam = typeof o.v === "number" && o.v >= 46 ? parseTeam(o.team) : null;
-  const team =
-    savedTeam ??
-    formTeam(seedSelf(seedN), seedN, day, contestedOwned({ poiState }).length);
-  const savedBattle = typeof o.v === "number" && o.v >= 47 ? parseTeamBattle(o.teamBattle) : null;
-  const teamBattle = ensureBattle(savedBattle, team, seedN, day);
   return {
-    v: 49,
+    v: 53,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1336,7 +1206,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     depotSent,
     seen: (typeof o.v === "number" && o.v >= 25) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
-    day,
+    since,
     poiState,
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
@@ -1354,10 +1224,9 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     goal,
     outerGuard,
     raided,
-    team,
-    teamBattle,
+    stores: typeof o.v === "number" && o.v >= 53 ? parseStores(o.stores) : emptyStores(),
+    attackedAt: typeof o.v === "number" && o.v >= 51 && Number.isFinite(o.attackedAt) ? Math.max(0, o.attackedAt as number) : 0,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
-    // Personal warScore (v48 early) is dropped — team score is on teamBattle.score.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
     freedAt,

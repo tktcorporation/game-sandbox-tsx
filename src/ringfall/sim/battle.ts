@@ -54,6 +54,12 @@ export interface BattleSquad {
   ashore: number;
   /** Landed to take back a node the player had just taken (`COUNTER`): it comes on whatever the enemy's limit. */
   counter?: true;
+  /**
+   * An enemy's squad bound for a node of the player's is shown as the AI player's (`BattleStart.raiders`, its code):
+   * the player's holdings are taken only by other players (docs/ringfall/glossary.md 決定 B). The view and the
+   * results read it; no rule does.
+   */
+  by?: string;
 }
 
 /** The day's battle (`State.battle`). */
@@ -77,7 +83,7 @@ export interface Battle {
   /** Each node's standing as the battle began. */
   start: NodeHold[];
   /** The nodes that changed hands in the battle, in order: which, to whom, when. */
-  taken: { node: NodeId; side: Side; t: number }[];
+  taken: { node: NodeId; side: Side; t: number; by?: string }[];
   /** Reckoned to its end. */
   done: boolean;
   /** The enemy's dropships and boats: where each comes down, whether a boat, and the battle's clock at its touchdown. The last few. */
@@ -96,6 +102,8 @@ export interface Battle {
   rivals: RivalExpedition[];
   /** The factory's squads out on expeditions to other players' islands: each keeps one fewer squad out here (`homeMax()`). */
   away: number;
+  /** The AI players whose names the enemy's squads at the player's nodes go by (`BattleStart.raiders`); empty, none. */
+  raiders: string[];
 }
 
 /**
@@ -118,6 +126,8 @@ export interface BattleStart {
   rivals?: readonly RivalExpedition[];
   /** The factory's squads out on expeditions (meta/expeditions.ts `squadsAway()`); left out, none. */
   away?: number;
+  /** The AI players next door (their codes, meta/ai-islands.ts): the enemy's squads that come at the player's nodes are shown as theirs. */
+  raiders?: readonly string[];
 }
 
 /** Where the enemy's squads come ashore: the titan's pad, where its dropships land, and the harbor's north shore, where its boats do. */
@@ -328,6 +338,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
     left: null,
     rivals: [],
     away: Math.max(0, Math.round(start.away ?? 0)),
+    raiders: [...(start.raiders ?? [])],
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "own") return;
@@ -425,7 +436,41 @@ function reckon(s: State, b: Battle) {
   counterAttack(s, b);
   rivalsLand(s, b);
   march(s, b, dt);
+  nameRaiders(s, b);
   fightAndTake(s, b, dt);
+}
+
+/**
+ * The holdings battle `b` took from the player as it ended (`nodes`, the island's standing then)
+ * and the AI player each went to: held as it began, not the player's at its end, its last change
+ * made under an AI player's name.
+ */
+export function lostToRaiders(b: Pick<Battle, "start" | "taken">, nodes: readonly NodeHold[]): { node: NodeId; by: string }[] {
+  const out: { node: NodeId; by: string }[] = [];
+  NODES.forEach((n, i) => {
+    if (b.start[i] !== "own" || nodes[i] === "own") return;
+    const last = b.taken.filter((t) => t.node === n.id).at(-1);
+    if (last?.by !== undefined) out.push({ node: n.id, by: last.by });
+  });
+  return out;
+}
+
+/** The AI player squad `q` goes by: one of the raiders, by its id. */
+const raiderOf = (b: Battle, id: number) => b.raiders[id % b.raiders.length]!;
+
+/**
+ * The enemy's squads bound for a node of the player's take an AI player's name (`BattleSquad.by`),
+ * their robots in the world too (`Enemy.by`). Names only: nothing the battle does reads them.
+ */
+function nameRaiders(s: State, b: Battle) {
+  if (!b.raiders.length) return;
+  for (const q of b.squads) {
+    if (q.side !== 1 || q.by !== undefined || q.task === "post") continue;
+    const end = q.via.length ? q.via[q.via.length - 1]! : q.to;
+    if (end < 0 || sideOf(s.nodes[end]) !== 0) continue;
+    q.by = raiderOf(b, q.id);
+    for (const e of membersOf(s, q)) e.by = q.by;
+  }
 }
 
 /**
@@ -623,6 +668,7 @@ function toWorld(s: State, q: BattleSquad, appear: boolean) {
     e.hp = u.hp;
     e.shield = u.shield;
     e.battle = q.id;
+    if (q.by !== undefined) e.by = q.by;
     if (friend) {
       e.friend = true;
       if (q.task === "post") e.post = true;
@@ -1102,7 +1148,9 @@ function seize(s: State, b: Battle, i: number, side: Side, hold: NodeHold) {
   const n = NODES[i];
   const was = sideOf(s.nodes[i]);
   s.nodes[i] = hold;
-  b.taken.push({ node: n.id, side, t: Math.round(b.now) });
+  // A holding of the player's the enemy takes is lost to the AI player its squads went by.
+  const by = side === 1 && was === 0 && b.raiders.length ? (b.squads.find((q) => q.side === 1 && q.to === i && q.by !== undefined)?.by ?? raiderOf(b, i)) : undefined;
+  b.taken.push(by === undefined ? { node: n.id, side, t: Math.round(b.now) } : { node: n.id, side, t: Math.round(b.now), by });
   if (side === 0) {
     dueCounter(b, i);
     garrisonLeaves(s, i);
@@ -1115,7 +1163,7 @@ function seize(s: State, b: Battle, i: number, side: Side, hold: NodeHold) {
   // A capture the player had under way at a node the player now holds is done with.
   if (s.capture?.node === i && side === 0) s.capture = null;
   useZones(s);
-  tell(s, { t: "nodeTaken", node: i, side });
+  tell(s, by === undefined ? { t: "nodeTaken", node: i, side } : { t: "nodeTaken", node: i, side, by });
 }
 
 /**

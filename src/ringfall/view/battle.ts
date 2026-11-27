@@ -249,7 +249,7 @@ export class BattleView {
     };
     // The battle's robots in the world.
     for (const e of s.friends) put(e.pos.x, e.pos.z, e.yaw, e.kind, 0, this.time * 6 + e.id);
-    for (const e of s.enemies) if (e.battle && e.mode !== "spawning") put(e.pos.x, e.pos.z, e.yaw, e.kind, e.rival !== undefined ? 3 : e.rogue ? 2 : 1, this.time * 6 + e.id);
+    for (const e of s.enemies) if (e.battle && e.mode !== "spawning") put(e.pos.x, e.pos.z, e.yaw, e.kind, e.rival !== undefined || e.by !== undefined ? 3 : e.rogue ? 2 : 1, this.time * 6 + e.id);
     // The squads that are numbers.
     const seen = new Set<number>();
     for (const q of b.squads) {
@@ -264,7 +264,7 @@ export class BattleView {
       this.eased.set(q.id, v);
       const pts = columnPoints(q, v.d, v);
       const head = pts.length > 1 ? Math.atan2(pts[0].x - pts[1].x, -(pts[0].z - pts[1].z)) : Math.atan2(nodePoint(q.to).x - v.x, -(nodePoint(q.to).z - v.z));
-      q.units.forEach((u, m) => put(pts[m].x, pts[m].z, head, u.kind, q.side, this.time * 6 + q.id * 3 + m));
+      q.units.forEach((u, m) => put(pts[m].x, pts[m].z, head, u.kind, q.by !== undefined ? 3 : q.side, this.time * 6 + q.id * 3 + m));
     }
     for (const id of this.eased.keys()) if (!seen.has(id)) this.eased.delete(id);
     this.bodies.count = this.visors.count = n;

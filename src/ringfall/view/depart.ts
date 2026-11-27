@@ -2,9 +2,8 @@ import { sfx } from "./sfx";
 import { neighboursOnMap } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type NodeId, type RegionId } from "../sim/map";
-import { BOUNTY } from "../meta/war-score";
-import { PHRASE, TERM, attackScoutDef, attackScoutTrop, bountyMark, winBonusMark } from "./copy";
-import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
+import { PHRASE, TERM, attackScoutDef, attackScoutTrop, winBonusMark } from "./copy";
+import { frontPickFor, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
 import { IslandMap, islandScene, VIEW_PAD } from "./map";
 import { isIslandProtected } from "../meta/outer-guard";
@@ -215,7 +214,7 @@ export class DepartPicker {
       .filter((m) => Math.hypot(m.x - m.x0, m.y - m.y0) > 4)
       .map((m) => `<line x1="${m.x0.toFixed(1)}" y1="${m.y0.toFixed(1)}" x2="${m.x.toFixed(1)}" y2="${m.y.toFixed(1)}"/><circle cx="${m.x0.toFixed(1)}" cy="${m.y0.toFixed(1)}" r="2"/>`)
       .join("");
-    // Thin pull from the chosen start toward the 攻める focus / today's front (ux-design Round 9).
+    // Thin pull from the chosen start toward today's front (ux-design Round 9).
     const chosen = marks.find((m) => m.q.on);
     const frontPull = (() => {
       if (!chosen) return "";
@@ -223,8 +222,7 @@ export class DepartPicker {
       const at = { x: chosen.q.x, z: chosen.q.z };
       // A sortie is played on the neighbour's island: no line from the island's start.
       if (this.hub.sortiePick()) return "";
-      const attack = this.hub.attackPick();
-      const toward = attack ?? rivalFrontPick(p, at) ?? frontPickFor(p, at);
+      const toward = frontPickFor(p, at);
       if (!toward) return "";
       const end = this.map.screenAt(toward.x, toward.z);
       if (!end) return "";

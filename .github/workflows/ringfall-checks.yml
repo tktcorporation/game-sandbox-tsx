@@ -26,4 +26,6 @@ jobs:
       - run: npm run test:ringfall-encoding
       - run: npm run models:ringfall
       - run: node --import tsx scripts/ringfall-early-mp.ts
-      - run: node --import tsx scripts/ringfall-team-battle.ts
+      - run: node --import tsx scripts/ringfall-income.ts
+      - run: node --import tsx scripts/ringfall-real-raids.ts
+      - run: node --import tsx scripts/ringfall-raiders.ts

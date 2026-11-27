@@ -10,7 +10,11 @@ import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
-import { aiByCode, aiChanges, aiIncoming, aiLent, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { aiByCode, aiChanges, aiIslands, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { awayAttacks, battleLosses } from "./meta/away-attacks";
+import { aiLabel } from "./meta/neighbours";
+import { islandDay } from "./meta/days";
+import { playerNodes } from "./meta/island";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import { pushNews } from "./view/copy";
@@ -96,7 +100,68 @@ export async function readNeighbours(): Promise<Neighbour[]> {
   } catch {
     // Storage blocked: the list lasts for this page.
   }
+  void readHoldings(list);
   return list;
+}
+
+/** Where the browser keeps the other players' holdings as their islands last showed them. */
+const HOLDINGS_KEY = "ringfall.holdings.v1";
+/** Each other player's island (by code): the nodes they hold and the 島の守り at each, and until when the island is shielded (0, none). */
+export type Holdings = Record<string, { held: string[]; guard: Record<string, number>; until?: number }>;
+let lastHoldings: Holdings | null = null;
+
+/** The other players' holdings as last read (the 攻める list's real players); an island shielded at `now` offers none. */
+export function cachedHoldings(now = Date.now()): Holdings {
+  return attackable(storedHoldings(), now);
+}
+
+function storedHoldings(): Holdings {
+  if (lastHoldings) return lastHoldings;
+  try {
+    const raw = JSON.parse(localStorage.getItem(HOLDINGS_KEY) ?? "null");
+    return raw && typeof raw === "object" ? (raw as Holdings) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The holdings a sortie can take at `now`: none on an island under its day's shield (a capture there would not take). */
+export const attackable = (h: Holdings, now: number): Holdings =>
+  Object.fromEntries(Object.entries(h).map(([code, x]) => [code, (x.until ?? 0) > now ? { ...x, held: [] } : x]));
+
+/** Reads each real neighbour's island for the nodes it holds (a sortie's targets). */
+async function readHoldings(list: readonly Neighbour[]) {
+  const out: Holdings = {};
+  for (const n of list.filter((x) => !x.ai)) {
+    const v = await readView(n.code, 4000);
+    if (!v.ok) continue;
+    // A holding under its own day's shield is no target either.
+    const held = v.body.nodes.filter((x) => x.hold === "own" && !x.shielded).map((x) => x.id);
+    const guard: Record<string, number> = {};
+    for (const q of v.body.parcels ?? []) guard[q.poi] = (guard[q.poi] ?? 0) + 1;
+    // Shielded for the day or still under a new island's protection: nothing to attack until then.
+    const until = Math.max(v.body.shieldUntil, v.body.protectedUntil);
+    out[n.code] = { held, guard, ...(until > 0 ? { until } : {}) };
+  }
+  lastHoldings = out;
+  try {
+    localStorage.setItem(HOLDINGS_KEY, JSON.stringify(out));
+  } catch {
+    // Storage blocked: kept for this page.
+  }
+}
+
+/**
+ * A sortie on another player's holding has ended (docs/ringfall/glossary.md 攻め): tell their island
+ * whether its core was taken. Best effort: the attacker's own settle never waits on it.
+ */
+export async function reportRaid(code: string, target: string, captured: boolean, stars?: number): Promise<void> {
+  const who = loadIdentity();
+  if (!who.code) return;
+  await call(`/api/islands/${encodeURIComponent(code)}/raids`, {
+    method: "POST",
+    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}) }),
+  });
 }
 
 /**
@@ -122,7 +187,7 @@ export function aiSalt(): number {
 const serverSlots = () => cachedNeighbours().map((n) => n.slot);
 
 /** The neighbours as the camp's maps, the horizon and the factory's panel show them: the server's, and the game's own in the slots left free. */
-export const neighboursFor = (p: Pick<Profile, "day">): Neighbour[] => withAi(cachedNeighbours(), aiSalt(), p.day, Date.now());
+export const neighboursFor = (p: Pick<Profile, "since">): Neighbour[] => withAi(cachedNeighbours(), aiSalt(), islandDay(p), Date.now());
 
 /** The neighbours now, of the profile the page plays (`useAi()`); the server's alone before it is named. */
 export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSource()) : cachedNeighbours());
@@ -132,43 +197,32 @@ export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSour
  * Always shown from the first session — sea-route open/shut still gates expeditions (`routeOpen`),
  * but the islands themselves stay visible so multiplayer is not gated behind first outer ownership.
  */
-export function neighboursOnMap(p: Pick<Profile, "day" | "poiState">): Neighbour[] {
+export function neighboursOnMap(p: Pick<Profile, "since" | "poiState">): Neighbour[] {
   return neighboursFor(p);
 }
 
 /** Raid / live map neighbours for the page's profile (`useAi`), gated like `neighboursOnMap`. */
 export const neighboursNowOnMap = (): Neighbour[] => (aiSource ? neighboursOnMap(aiSource()) : []);
 
-/** The expeditions coming at this island: the server's warnings, and the game's islands' for the next raid. */
-export const incomingFor = (p: Profile): Incoming[] => [...p.incoming, ...aiIncoming(p, aiSalt(), serverSlots(), aiScouted())];
+/** The expeditions coming at this island: the server's warnings. */
+export const incomingFor = (p: Profile): Incoming[] => p.incoming;
 
-/** What the game's islands bring to the next raid of `p` (their expedition, their squads holding nodes of this island). */
-export const aiLentFor = (p: Profile): LentIn[] => aiLent(p, aiSalt(), serverSlots(), aiScouted());
-
-/** Where the browser keeps that the game's first scout has come (meta/ai-islands.ts `AI.scout`): it comes once a browser. */
-const SCOUTED_KEY = "ringfall.ai.scouted.v1";
-/** Whether this page has seen it, for storage that is blocked. */
-let scoutedHere = false;
-
-/** Whether the first scout of the game's islands has come in a raid of this browser. */
-export function aiScouted(): boolean {
-  if (scoutedHere) return true;
-  try {
-    return localStorage.getItem(SCOUTED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/** The first scout came in the raid just settled: it does not come again. */
-export function markScouted() {
-  scoutedHere = true;
-  try {
-    localStorage.setItem(SCOUTED_KEY, "1");
-  } catch {
-    // Storage blocked: kept for this page.
-  }
-}
+/** The AI players' attacks on the holdings since the profile last looked, up to `now` (meta/away-attacks.ts). */
+/** The AI players' attacks since `p.attackedAt`; `before`, the profile as those hours began, when `p` has settled a raid since. */
+export const awayFor = (p: Profile, now = Date.now(), before?: Profile) => awayAttacks(p, aiSalt(), now, serverSlots(), before && playerNodes(before));
+/**
+ * The AI players next door, whose names the enemy's squads at the player's holdings go by in a raid
+ * (決定 B). With every slot at sea taken by real players, the game's own islands still lend their
+ * names: the enemy's squads are always some other player's.
+ */
+export const raidersFor = (): { code: string; name: string }[] => raiderIslands().map((a) => ({ code: a.code, name: aiLabel(a.name) }));
+const raiderIslands = () => {
+  const next = aiIslands(aiSalt(), serverSlots());
+  return next.length ? next : aiIslands(aiSalt());
+};
+/** The holdings a raid's battle lost, as the AI players' attacks (`battleLosses()`). */
+// Against every one of the game's islands, not the slots free now: the neighbours may have changed since the raid began.
+export const lossesFor = (p: Profile, lost: readonly { node: NodeId; by: string }[], now = Date.now()) => battleLosses(p, aiIslands(aiSalt()), lost, now);
 
 /** The expeditions with those on the game's islands brought up to now: the profile itself when none changes. */
 export function refreshAi(p: Profile): Profile {
@@ -206,7 +260,7 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
   const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
   if (ai) {
     const p = aiSource!();
-    return { ok: true, body: aiView(ai, aiSalt(), p.day, p.expeditions, loadIdentity().code ?? "", Date.now(), []) };
+    return { ok: true, body: aiView(ai, aiSalt(), islandDay(p), p.expeditions, loadIdentity().code ?? "", Date.now(), []) };
   }
   const r = await call(`/api/islands/${encodeURIComponent(code)}`, {}, timeout);
   if (!r.ok) return r;
@@ -327,7 +381,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         holds: reportHolds(p),
         retaken,
         factory: p.factory,
-        day: p.day,
+        day: islandDay(p),
         ...(raid?.lent.length ? { lent: raid.lent } : {}),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
