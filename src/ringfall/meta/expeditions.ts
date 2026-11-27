@@ -258,7 +258,8 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   }
   // A holding a sortie took whose log line has already scrolled away: lost all the same (its trophies are past knowing).
   for (const id of s.raided ?? []) {
-    if (poiState[id as NodeId]?.state !== "own" || s.holds?.find((h) => h.id === id)?.hold === "own") continue;
+    // One taken back since whose report has not reached the island yet (`retaken`) stays the player's.
+    if (poiState[id as NodeId]?.state !== "own" || s.holds?.find((h) => h.id === id)?.hold === "own" || p.retaken.includes(id as NodeId)) continue;
     poiState = { ...poiState, [id]: { state: "foe" } };
   }
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
