@@ -270,3 +270,18 @@ export function trophyDelta(
   }
   return { next: clampTrophies(self + gained - lost), gained, lost, taken, dropped };
 }
+
+/**
+ * Who may appear on the 攻める list (CoC trophy band): owners within `TROPHY.band` of the player.
+ */
+export const RAID_TARGET = { trophyBand: TROPHY.band } as const;
+
+export const trophiesNear = (self: number, rival: number, band = RAID_TARGET.trophyBand): boolean =>
+  Math.abs(self - rival) <= band;
+
+/** Whether an owner may be attacked at these trophies. */
+export const canRaidOwner = (_owner: string, selfTrop: number, rivalTrop: number): boolean => trophiesNear(selfTrop, rivalTrop);
+
+/** Sort key for 攻める rows: closer trophies first, then nearer ground. Lower is better. */
+export const raidTargetRank = (selfTrop: number, rivalTrop: number, dist2: number): number =>
+  Math.abs(selfTrop - rivalTrop) * 1e6 + dist2;

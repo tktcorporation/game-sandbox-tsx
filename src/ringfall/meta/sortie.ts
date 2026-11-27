@@ -16,8 +16,7 @@ import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import type { Start } from "../sim/state";
 import { aiDefenceParcels, aiFactory, aiIslands, aiNodes } from "./ai-islands";
 import { aiLabel, type Neighbour } from "./neighbours";
-import { SEIZE, raidOdds, rivalTrophies, trophiesTable, winBonusBase } from "./trophies";
-import { canRaidOwner } from "./war-score";
+import { SEIZE, canRaidOwner, raidOdds, rivalTrophies, trophiesTable, winBonusBase } from "./trophies";
 
 /** The numbers of sorties outside the raid itself (that is `SORTIE` in sim/config.ts). */
 export const SORTIE_META = {

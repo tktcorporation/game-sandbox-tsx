@@ -1,9 +1,7 @@
 /*
  * CoC-style attack scouting for the departure screen (TKT-204 案 B):
  * list contested coastal hubs a neighbour holds, with defence + trophy preview.
- *
- * 作り順⑥ / 2026-11-26: order by trophy closeness within ±RAID_TARGET.trophyBand;
- * mark the leader (懸賞金) among eligible owners. No opponent-team preference.
+ * Order by trophy closeness within ±RAID_TARGET.trophyBand.
  */
 import { DEFENCE_AID } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
@@ -13,18 +11,9 @@ import { aiFactory } from "./ai-islands";
 import { contestedDefence } from "./contested-defence";
 import { islandHolds, type Island } from "./island";
 import { aiLabel, isContestedShore, neighbourNameByCode, type Neighbour } from "./neighbours";
-import { SEIZE, raidOdds, trophiesTable, rivalTrophies, winBonusBase } from "./trophies";
+import { SEIZE, canRaidOwner, raidOdds, raidTargetRank, trophiesTable, rivalTrophies, winBonusBase } from "./trophies";
 import type { Parcel } from "./parcels";
 import type { IslandLogEntry } from "./expeditions";
-import type { Team } from "./team";
-import {
-  BOUNTY,
-  canRaidOwner,
-  foeOwnerKeys,
-  isFoeTeamOwner,
-  pickLeader,
-  raidTargetRank,
-} from "./war-score";
 
 /** One attackable contested hub as the depart screen lists it. */
 export interface AttackScout {
@@ -46,7 +35,7 @@ export interface AttackScout {
   win: number;
   /** 負ければ −M（0★）. */
   lose: number;
-  /** Materials expected from 核 · 制圧 (empty reserve + bonus + bounty). */
+  /** Materials expected from 核 · 制圧 (empty reserve + bonus). */
   loot: number;
   /** League win-bonus materials at ★★★ for the attacker's band (TKT-219). 0 in 見習い. */
   winBonus: number;
@@ -55,17 +44,7 @@ export interface AttackScout {
   gate: string | null;
   x: number;
   z: number;
-  /** Owner is on the current 相手チーム (badge only; not a sort key). */
-  foeTeam?: boolean;
-  /** Taking this hub pays the leader bounty. */
-  bounty?: boolean;
 }
-
-/** Optional 作り順⑥ context for bounty / foe badge. */
-export type AttackScoutOpts = {
-  /** Current 部隊戦 foe team (bounty / badge only — not raid gating). */
-  foe?: Pick<Team, "members"> | null;
-};
 
 /**
  * Contested coastal hubs held by a neighbour, for the 攻める list.
@@ -80,14 +59,12 @@ export function attackScouts(
   parcels: readonly Parcel[] = [],
   salt = 0,
   from: { x: number; z: number } = { x: 0, z: 0 },
-  opts: AttackScoutOpts = {},
 ): AttackScout[] {
   const holds = islandHolds({ poiState });
   const front = frontNodes(holds);
   const defence = new Map(contestedDefence(poiState, day, neighbours, salt).map((d) => [d.owner, d.factory]));
   const table = trophiesTable(neighbours);
   const guardAt = (id: NodeId) => Math.min(DEFENCE_AID, parcels.filter((q) => q.poi === id).length);
-  const foeKeys = foeOwnerKeys(opts.foe ?? null);
 
   const rows: AttackScout[] = [];
   for (const n of NODES) {
@@ -111,7 +88,6 @@ export function attackScouts(
         .sort((a, b) => Math.hypot(NODES[a].x - from.x, NODES[a].z - from.z) - Math.hypot(NODES[b].x - from.x, NODES[b].z - from.z))[0];
       if (k !== undefined) gate = NODES[k].name;
     }
-    const foeTeam = isFoeTeamOwner(who, foeKeys);
     const { N, M } = raidOdds(selfTrop, rivalTrop);
     rows.push({
       id: n.id,
@@ -130,28 +106,7 @@ export function attackScouts(
       gate,
       x: n.x,
       z: n.z,
-      ...(foeTeam ? { foeTeam: true } : {}),
     });
-  }
-
-  // Leader among eligible owners: most outer (neighbour.held), then trophies.
-  const byOwner = new Map<string, { id: string; outer?: number; trophies?: number }>();
-  for (const r of rows) {
-    if (byOwner.has(r.owner)) continue;
-    const hit = neighbours.find((x) => x.code === r.owner || (isAiOwner(r.owner) && x.code === r.owner.slice(3)));
-    byOwner.set(r.owner, {
-      id: r.owner,
-      outer: hit?.held,
-      trophies: hit?.trophies ?? rivalTrophies(r.owner, selfTrop, table),
-    });
-  }
-  const leader = pickLeader([...byOwner.values()]);
-  if (leader) {
-    for (const r of rows) {
-      if (r.owner !== leader) continue;
-      r.bounty = true;
-      r.loot = SEIZE.emptyReserve + SEIZE.bonus + BOUNTY.extraMaterials;
-    }
   }
 
   return rows.sort((a, b) => {
