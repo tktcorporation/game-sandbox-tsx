@@ -1571,7 +1571,13 @@ type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlo
  * stands the antenna array: a lattice mast, thin aerials and an equipment cabinet. `block` is the
  * block's footprint, `roof` its roof over the sunk yard's floor.
  */
-const CONTROL = { block: { w: 30, d: 14, floors: 3 }, roof: 3 * WORKS.storey, bridge: { x0: -28, x1: -15, half: 1.4 } } as const;
+const CONTROL = {
+  block: { w: 30, d: 14, floors: 3 },
+  roof: 3 * WORKS.storey,
+  bridge: { x0: -28, x1: -15, half: 1.4 },
+  /** The grounds' wall round the yard (`controlGrounds()`): its bounds and height, over a standing player's eyes. */
+  yard: { x0: -72, x1: 72, z0: -62, z1: 66, h: 2.2 },
+} as const;
 function control(): Floors {
   const { block, roof, bridge: br } = CONTROL;
   const up = (b: Box): Box => ({ ...b, y0: b.y0 + roof, h: b.h + roof });
@@ -1600,11 +1606,87 @@ function control(): Floors {
     box(40, -14, 0.8, 4.5, 1.1, "wall", 1),
     box(-30, -26, 7.3, 2.5, 3, "steel", 3),
     box(44, 20, 1.2, 1.2, 1.8, "crate"),
+    ...controlGrounds(),
   ];
   return [
     [LEVEL.controlPit, sunk],
     [LEVEL.plateau, plateau],
   ];
+}
+
+/**
+ * The control centre's grounds on the plateau (`CONTROL.yard`, docs/ringfall/field-design.md): a
+ * wall a little over head height round the yard, opened on four sides (the east gate from the
+ * depot's road, the south gate toward the assembly building, the west gate toward the pads and a
+ * breach in the north wall for going round), and inside it four outbuildings that part the yard
+ * into lanes: a garage hall in the north-east, a two-storey barracks in the north-west, the
+ * antenna huts round a mast in the south-west and a vehicle shed with a roof reached by stairs
+ * in the south-east. Cover stands in groups of two to five by the gates and along the lanes, no
+ * piece alone, so no stretch of the yard is open from wall to wall.
+ */
+function controlGrounds(): Box[] {
+  const { x0, x1, z0, z1, h } = CONTROL.yard;
+  return [
+    ...compound((x0 + x1) / 2, (z0 + z1) / 2, x1 - x0, z1 - z0, h, [
+      { side: "e", at: -(z0 + z1) / 2, w: 10 },
+      { side: "s", at: 6, w: 12 },
+      { side: "w", at: -20 - (z0 + z1) / 2, w: 8 },
+      { side: "n", at: -30, w: 6 },
+    ]),
+    // The breach: the north wall's broken ends fallen outward and in, waist-high rubble.
+    box(-30, z0 - 2.5, 7, 2, 1.2, "rock", 0),
+    box(-24, z0 + 2, 3, 2.2, 1.6, "rock", 0),
+    // North-east: the garage hall, a roller door on its south and a door on its west.
+    ...hall(46, -44, 22, 14, 6, { doors: [{ side: "s", at: 2, w: 6 }], hatches: [{ side: "w" }], scale: WORKS }),
+    // North-west: the barracks, two storeys, its doors on the east and south.
+    ...tower(-50, -44, 14, 9, 2, { doors: [["e", "s"], ["e"]], windows: [["w", "s"], ["w", "s", "n"]], scale: HOUSE }),
+    // South-west: the antenna huts round a lattice mast, a cable trench's cover between them.
+    ...building(-54, 42, 8, 6, 3.2, { doors: ["e"], windows: ["n"], scale: HOME }),
+    ...building(-36, 52, 7, 5, 3.2, { doors: ["n"], windows: ["w"], scale: HOME }),
+    ...lattice(-46, 54, 3, 3, 2, 14),
+    box(-44, 36, 4, 1.2, 1.6, "wall", 1),
+    // South-east: the vehicle shed, its roof 4.2 m up reached by stairs on its east, a truck by it.
+    ...building(48, 38, 14, 9, 4.2, { doors: ["w"], windows: ["s"], roof: "e", scale: WORKS }),
+    box(36, 32, 2.5, 7.3, 3, "steel", 3),
+    // The east gate's forecourt: containers either side of the lane in and a crate stack in front.
+    box(56, -11, 6.1, 2.5, 2.6, "container", 1),
+    box(56, 11, 6.1, 2.5, 2.6, "container", 2),
+    box(46, 13.5, 2.5, 6.1, 2.6, "container", 3),
+    box(48, -4, 1.2, 1.2, 1.8, "crate"),
+    box(49.3, -4, 1.2, 1.2, 1.8, "crate"),
+    // North of the sunk yard: a cable tray's concrete housing in lengths with gaps to cross.
+    box(-8, -36, 10, 1.4, 1.6, "wall", 1),
+    box(10, -36, 10, 1.4, 1.6, "wall", 1),
+    box(22, -48, 1.2, 1.2, 1.8, "crate"),
+    box(23.3, -48, 1.2, 1.2, 1.8, "crate"),
+    box(-14, -52, 6.1, 2.5, 2.6, "container", 2),
+    // The west yard off the footbridge: a broken barrier line and a pallet stack.
+    box(-52, -6, 1, 7, 1.6, "wall", 1),
+    box(-52, 9, 1, 6, 1.6, "wall", 1),
+    box(-62, -24, 1.2, 1.2, 1.8, "crate"),
+    box(-62, -22.8, 1.2, 1.2, 1.8, "crate"),
+    // Either side of the ramp's top: crate groups.
+    box(-12, 34, 1.2, 1.2, 1.8, "crate"),
+    box(-12, 35.3, 1.2, 1.2, 1.8, "crate"),
+    box(-13.3, 34.6, 1.2, 1.2, 1.8, "crate"),
+    box(24, 26, 6.1, 2.5, 2.6, "container", 3),
+    // The approaches outside the wall: rock and wreck groups 15 to 35 m out, the last cover
+    // before a gate on each side and a stop every 40 m or so on the way round.
+    ...CONTROL_APPROACH.flatMap(([x, z, along]) => approachGroup(x, z, along)),
+  ];
+}
+
+/** Where `approachGroup()`s stand round the control centre's wall, and whether each lies along x. */
+const CONTROL_APPROACH: [number, number, boolean][] = [
+  [98, -24, false], [100, 26, false], [-22, 94, true], [36, 98, true], [-98, -34, false], [-100, 22, false],
+  [-8, -92, true], [42, -90, true], [88, -78, true], [-86, 84, true], [88, 82, true], [-88, -80, true],
+];
+
+/** A rock outcrop with a crate pair in its lee: cover for two, `along` x or z. */
+function approachGroup(x: number, z: number, along: boolean): Box[] {
+  const [w, d] = along ? [7, 2.6] : [2.6, 7];
+  const [ox, oz] = along ? [0, 2.6] : [2.6, 0];
+  return [box(x, z, w, d, 1.9, "rock", 0), box(x + (along ? 4.6 : 0), z + (along ? 0 : 4.6), 2.4, 2.4, 1.6, "rock", 0), box(x - 2 + ox, z - 2 + oz, 1.2, 1.2, 1.8, "crate")];
 }
 
 /**

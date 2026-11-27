@@ -1225,3 +1225,5 @@ AI の島を 30 日に入れた変更（`scripts/ringfall-campaign.ts` と `meta
 使用キーの対象選定（向き・優先・ヒステリシス・T 切替、`USE` / `useCandidates` / `State.useFocus`。ボットは `cycleUse` を押さない）では、計測は CPU 59.5 秒（`RINGFALL_SIM_JOBS=1`）、ハッシュは同じ（83b7a1d3bcf8）。
 
 陣地への攻めの出撃（`Start.sortie`、docs/ringfall/holdings-raid.md）を足した変更では、出撃を指定しないレイドは何も変わらない。続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 75.4 秒、変更後が 76.1 秒（2 コアの機械。読み込み 7.3 秒は同じ）で、ハッシュは同じ（1d211a2c8e31）。出撃そのものの確認は `scripts/ringfall-sortie.ts`（ゲートの `checkSortie()`）。
+
+管制センターの敷地を作り直した変更（`controlGrounds()`、docs/ringfall/field-design.md）では、続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 76.8 秒（読み込み 8.4 秒）、変更後が 78.5 秒（読み込み 7.9 秒）で、2 コアの機械。ハッシュは 1d211a2c8e31 から e9129637a298 に変わった。変わったのは発射場の 2 周（launch beginner / good）だけで、他の 8 周のハッシュは同じ。`npm run sim:ringfall -- 0` は main でも `front: a new island's front is …` の確認で止まるため、この変更では 30 周の表を取り直していない（配置の確認 `layout ok` は通る）。
