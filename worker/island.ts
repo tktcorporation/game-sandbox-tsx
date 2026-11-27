@@ -989,6 +989,8 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     if (i < 0) return done(400, fail("bad-request"));
     // Only a holding is attacked; one already gone is no news for its owner.
     if (s.holds[i] !== "own") return done(409, fail("node-not-open"));
+    // A new island's protection holds for sorties as for expeditions.
+    if (now - s.since < EXPEDITION.protectDays * DAY_MS) return done(403, fail("protected"));
     const guarded = isShielded(s, i, now) || isIslandShielded(s, now) || outerLossCapReached(s, now);
     // The stars the attacker won (a report before stars were sent: ★★★ for a capture, none otherwise).
     const stars = Math.max(0, Math.min(3, Math.round(Number.isFinite(op.stars) ? op.stars! : op.captured ? 3 : 0)));

@@ -138,7 +138,9 @@ async function readHoldings(list: readonly Neighbour[]) {
     const held = v.body.nodes.filter((x) => x.hold === "own").map((x) => x.id);
     const guard: Record<string, number> = {};
     for (const q of v.body.parcels ?? []) guard[q.poi] = (guard[q.poi] ?? 0) + 1;
-    out[n.code] = { held, guard, ...(v.body.shieldUntil > 0 ? { until: v.body.shieldUntil } : {}) };
+    // Shielded for the day or still under a new island's protection: nothing to attack until then.
+    const until = Math.max(v.body.shieldUntil, v.body.protectedUntil);
+    out[n.code] = { held, guard, ...(until > 0 ? { until } : {}) };
   }
   lastHoldings = out;
   try {
