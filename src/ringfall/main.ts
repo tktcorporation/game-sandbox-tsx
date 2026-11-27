@@ -303,7 +303,7 @@ function onEvent(e: GameEvent, s: State) {
     if (s.sortie && !isAiOwner(s.sortie.owner)) void reportRaid(s.sortie.owner, NODES[s.sortie.node].id, capturedIds(s).includes(NODES[s.sortie.node].id));
     syncIsland(settled.profile, s);
     // The AI players' attacks on the holdings while the raid ran (real time): on the results and the signal station.
-    const away = hub.takeAway(awayFor(hub.profile));
+    const away = hub.takeAway(awayFor(hub.profile, Date.now(), before));
     if (away && settlement) {
       const t = settlement.trophies;
       const beforeTrop = t?.before ?? away.before;
