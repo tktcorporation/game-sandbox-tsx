@@ -144,12 +144,12 @@ async function readHoldings(list: readonly Neighbour[]) {
  * A sortie on another player's holding has ended (docs/ringfall/glossary.md 攻め): tell their island
  * whether its core was taken. Best effort: the attacker's own settle never waits on it.
  */
-export async function reportRaid(code: string, target: string, captured: boolean): Promise<void> {
+export async function reportRaid(code: string, target: string, captured: boolean, stars?: number): Promise<void> {
   const who = loadIdentity();
   if (!who.code) return;
   await call(`/api/islands/${encodeURIComponent(code)}/raids`, {
     method: "POST",
-    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured }),
+    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}) }),
   });
 }
 
