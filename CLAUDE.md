@@ -3,7 +3,9 @@
 RINGFALL (a working title), a single-player PvE shooter on three.js, built with Vite and served by
 a Cloudflare Worker. The root page (`/`, `index.html`) is the game's front door and links to the game
 at `/ringfall/` (`ringfall/index.html`, code in `src/ringfall/`); read `docs/ringfall/brief.md` before
-changing anything visual. A new page needs an entry in
+changing anything visual. `docs/ringfall/glossary.md` is the domain's words, one meaning each:
+use them as it defines them in code, docs and PRs, and none of its unused ones (a day is the real
+calendar's, never a raid's count). A new page needs an entry in
 `environments.client.build.rolldownOptions.input` in `vite.config.ts`.
 
 ## RINGFALL
