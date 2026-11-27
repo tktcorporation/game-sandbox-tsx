@@ -39,6 +39,7 @@ export type TermId =
   | "attack"
   | "contest"
   | "revenge"
+  | "today"
   | "shielding"
   | "lostToday"
   | "sendExpedition"
@@ -109,6 +110,8 @@ export const TERM = {
    * 【元】（なし）／仕返し 【案】やり返す 【理由】取られた行から攻め先へ
    */
   revenge: "やり返す",
+  /** The calendar day the player is on (glossary.md 日 / 今日). No count of days is shown. */
+  today: "今日",
   /**
    * Island-wide shield after an outer hub is taken (作り順③).
    * 【元】（なし）／保護中（新規島） 【案】守り中 【理由】取られたあとの島全体の盾。新規保護と語を分けず「守り」に寄せる

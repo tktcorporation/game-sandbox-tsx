@@ -1411,7 +1411,7 @@ export class Hud {
    */
   private dayResult(s: State, settled?: Settlement): string {
     const holds = settled ? islandHolds(settled.profile) : s.nodes;
-    return `<canvas id="day-map"></canvas><div class="day-row"><small>${settled ? `${settled.day} 日目` : "今日"}</small><span id="day-bar">${nodeRow(holds)}</span><span id="day-beat"></span></div>`;
+    return `<canvas id="day-map"></canvas><div class="day-row"><small>${TERM.today}</small><span id="day-bar">${nodeRow(holds)}</span><span id="day-beat"></span></div>`;
   }
 
   /** Seconds after the results open at which the map turns to the day's end. */
@@ -1728,7 +1728,7 @@ export class Hud {
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s);
     const dayHead = settled
-      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, true)}</div>${tropLine}`
+      ? `<div id="island-news">${newsBlock(allNews, true)}</div>${tropLine}`
       : "";
     // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =

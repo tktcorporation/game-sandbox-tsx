@@ -138,7 +138,7 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
   // The game's own islands attack the holdings by the clock as in a browser with no island server
   // (meta/away-attacks.ts): a day of the month is a day of real time before each raid.
   const T0 = Date.UTC(2026, 10, 1);
-  p = { ...p, attackedAt: T0 };
+  p = { ...p, attackedAt: T0, since: T0 };
   for (let d = 1; d <= days; d++) {
     // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
     const gear = bestGear(p);

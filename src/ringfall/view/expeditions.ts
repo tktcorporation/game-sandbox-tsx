@@ -3,6 +3,7 @@
  *
  * 能動的な遠征送信・出ている遠征一覧は置かない。本パネルはお隣の偵察、トロフィー、島の番号の確認を担う（`#hub-exped`）。
  */
+import { islandDay } from "../meta/days";
 import { aiOvernight, aiSalt, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
@@ -263,7 +264,7 @@ export class ExpeditionPanel {
             const reach = open && (this.conn.t === "ok" || n.ai);
             // TKT-204 案 G: AI is 「名前 · AI」 same as map / news (span kept for style).
             const who = n.ai ? `${esc(n.name)}<span class="ai-tag">AI</span>` : esc(n.name);
-            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${who}</b>${trop}${held}${foot}${overnight(n, p.day)}</button>`;
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${who}</b>${trop}${held}${foot}${overnight(n, islandDay(p))}</button>`;
           })
           .join("")}</div>`
       : "";

@@ -13,6 +13,7 @@
  * `checkSortieSettle()` gives the sim gate's error, or null; run alone with
  * `npx tsx scripts/ringfall-sortie-settle.ts`.
  */
+import { islandDay } from "../src/ringfall/meta/days";
 import { NODES, nodeIndex } from "../src/ringfall/sim/map";
 import { FRONT, TICK } from "../src/ringfall/sim/config";
 import { useCore } from "../src/ringfall/sim/front";
@@ -26,7 +27,7 @@ import { TROPHY } from "../src/ringfall/meta/trophies";
 const SALT = 4242;
 const NOW = Date.UTC(2026, 10, 27, 3);
 
-const targets = (p: Profile, day = p.day): SortieTarget[] => sortieTargets(withAi([], SALT, day, NOW), SALT, day, p.trophies ?? TROPHY.start, p.raided);
+const targets = (p: Profile, day = islandDay(p)): SortieTarget[] => sortieTargets(withAi([], SALT, day, NOW), SALT, day, p.trophies ?? TROPHY.start, p.raided);
 
 /** A sortie to `t` played out: the defence cleared, the core taken if `take`, then idle until it ends (or wiped if `wipe`). */
 function play(t: SortieTarget, take: boolean, wipe = false): State {
@@ -99,18 +100,20 @@ function parts(): { name: string; err: string | null; line: string }[] {
                         ? "the holding is not recorded"
                         : p1.stash.length <= p0.stash.length
                           ? "nothing came home"
-                          : null;
-    out.push({ name: "win", err, line: `★${r.trophies?.stars} trophies +${trop}, stash ${p0.stash.length}→${p1.stash.length}, day ${p0.day}→${p1.day}` });
+                          : p1.since !== p0.since || islandDay(p1) !== islandDay(p0)
+                            ? "the sortie moved the island's day"
+                            : null;
+    out.push({ name: "win", err, line: `★${r.trophies?.stars} trophies +${trop}, stash ${p0.stash.length}→${p1.stash.length}, day ${islandDay(p0)}→${islandDay(p1)}` });
 
     // regrow
     const gone = targets(p1).some((x) => x.owner === t.owner && x.id === t.id);
-    const back = targets(p1, p0.day + SORTIE_META.regrow).some((x) => x.owner === t.owner && x.id === t.id);
-    out.push({ name: "regrow", err: gone ? "the holding taken is still a target" : !back ? `not a target again after ${SORTIE_META.regrow} days` : null, line: `gone the next day, back on day ${p0.day + SORTIE_META.regrow}` });
+    const back = targets(p1, islandDay(p0) + SORTIE_META.regrow).some((x) => x.owner === t.owner && x.id === t.id);
+    out.push({ name: "regrow", err: gone ? "the holding taken is still a target" : !back ? `not a target again after ${SORTIE_META.regrow} days` : null, line: `gone the next day, back on day ${islandDay(p0) + SORTIE_META.regrow}` });
 
     // saves
     const round = parseProfile(JSON.parse(JSON.stringify(p1)));
     const old = parseProfile({ ...JSON.parse(JSON.stringify(p0)), v: 48, raided: undefined });
-    const err2 = !round || round.v !== 51 || round.raided.length !== p1.raided.length ? "raided lost on a round trip" : !old || old.v !== 49 || old.raided.length ? "a v48 save does not load clean" : null;
+    const err2 = !round || round.v !== 52 || round.raided.length !== p1.raided.length ? "raided lost on a round trip" : !old || old.v !== 49 || old.raided.length ? "a v48 save does not load clean" : null;
     out.push({ name: "saves", err: err2, line: `v${round?.v}, raided ${round?.raided.length}` });
   }
   // home: the player's own 島の守り at the same POI stays home when the neighbour's holding is taken.

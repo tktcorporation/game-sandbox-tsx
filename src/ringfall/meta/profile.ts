@@ -3,7 +3,8 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, blankIsland, contestedOwned, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
+import { islandDay, sinceFor } from "./days";
+import { applyRaid, blankIsland, contestedOwned, raidChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
@@ -38,7 +39,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 51;
+  v: 52;
   cash: number;
   stash: Item[];
   raids: number;
@@ -62,8 +63,12 @@ export interface Profile {
   seen: string;
   /** The routes opened for good (`ROUTES` order): every raid's world has them open. */
   routes: RouteId[];
-  /** The island's day: the next raid is played on it, and each settled raid ends it. */
-  day: number;
+  /**
+   * When the island started (ms; 0 until the first camp sets it): its day is the calendar day
+   * counted from it (`islandDay()` in meta/days.ts). No raid moves it. v51 and older count their
+   * day back from the first look (`sinceFor()`).
+   */
+  since: number;
   /** Who holds each POI (meta/island.ts). */
   poiState: Island;
   /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
@@ -198,7 +203,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 51,
+    v: 52,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -213,7 +218,7 @@ export function newProfile(seed = 1): Profile {
     depotSent: {},
     seen: "",
     routes: [],
-    day: 1,
+    since: 0,
     poiState,
     known: [...MOD_START],
     threat: 0,
@@ -562,8 +567,6 @@ export interface Settlement {
   soldFor: number;
   /** Same items as `sold` after settle: the haul that waits for 倉庫の整理. */
   pending: Item[];
-  /** The island's day the raid was played on (the profile is on the next). */
-  day: number;
   /** Nodes that became the player's overnight (`DayChange.gained`). */
   gained: NodeId[];
   /** The nodes that turned the player's overnight, and those the enemy took, all told and in turn (`DayChange`). */
@@ -789,7 +792,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   }
   const day = awayRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
-  const change = dayChange(p, day);
+  const change = raidChange(p, day);
   const threat = s.threat ?? 0;
   const { profile, pending } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
   // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
@@ -822,9 +825,9 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
     ];
   }
-  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, p.day) } : {}) };
+  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, islandDay(p)) } : {}) };
   // Apply the same overnight pass once the raid's haul is on today's island.
-  const { profile: night } = advanceDay(settled, day);
+  const { profile: night } = applyRaid(settled, day);
   // Trophy (TKT-218): 「攻める」star score, then overnight / other contested moves (★★ remote).
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
@@ -897,7 +900,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     sold: pending,
     soldFor: 0,
     pending,
-    day: p.day,
     ...change,
     income,
     ...(spoils > 0 && { spoils }),
@@ -1090,12 +1092,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v49 and older may hold `team` / `teamBattle` (チーム・部隊戦); v50 drops them (glossary.md 決定 C).
  * v50 and older may hold other players' nodes on the player's own island; v51 makes them the enemy's
  * (only other players take holdings, and a holding taken goes back to the robots) and adds `attackedAt`.
+ * v51 and older count the island's day by raids (`day`); v52 keeps when it started (`since`) and counts calendar days.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1125,6 +1128,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
+  // v52: the island's day is the calendar's (meta/days.ts); an older save's count of raids is kept as days since it started.
+  const since = typeof o.v === "number" && o.v >= 52 ? (Number.isFinite(o.since) ? Math.max(0, o.since as number) : 0) : sinceFor(day);
   const v17 = typeof o.v === "number" && o.v >= 17;
   const v19 = typeof o.v === "number" && o.v >= 19;
   const v20 = typeof o.v === "number" && o.v >= 20;
@@ -1178,7 +1183,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 51,
+    v: 52,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1193,7 +1198,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     depotSent,
     seen: (typeof o.v === "number" && o.v >= 25) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
-    day,
+    since,
     poiState,
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,

@@ -16,6 +16,7 @@
  *
  * Run alone: `npx tsx scripts/ringfall-server.ts`; it ends with "server ok".
  */
+import { islandDay } from "../src/ringfall/meta/days";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { handleApi, MAX_BODY, parseIslandPost, type ApiEnv, type Db, type DbStatement, type IslandNamespace } from "../worker/api";
@@ -203,7 +204,7 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(parseIslandPost(JSON.parse(JSON.stringify(body))) !== null, "summary: the API's parser refuses a settled raid's summary");
   check(a.status === 200, `summary: a settled raid's summary answered ${a.status}`);
   check(i.held + i.enemy + i.rival === NODES.length, `summary: held ${i.held} + enemy ${i.enemy} + rival ${i.rival} is not the ${NODES.length} nodes`);
-  check(i.held >= 1 && i.day === settled.profile.day && body.raid.day === settled.day && body.raid.captured === 1, "summary: the summary's numbers are not the settled profile's");
+  check(i.held >= 1 && i.day === islandDay(settled.profile) && body.raid.day === islandDay(settled.profile) && body.raid.captured === 1, "summary: the summary's numbers are not the settled profile's");
   check(row.held === i.held && row.enemy === i.enemy && row.rival === i.rival && row.strength === i.strength && row.factory === i.factory && raid.captured === 1 && raid.outcome === "extracted", "summary: the rows are not the posted summary");
 }
 

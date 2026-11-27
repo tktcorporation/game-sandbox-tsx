@@ -12,6 +12,7 @@ import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
 import { aiByCode, aiChanges, aiRefresh, aiView, withAi } from "./meta/ai-islands";
 import { awayAttacks } from "./meta/away-attacks";
+import { islandDay } from "./meta/days";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import { pushNews } from "./view/copy";
@@ -123,7 +124,7 @@ export function aiSalt(): number {
 const serverSlots = () => cachedNeighbours().map((n) => n.slot);
 
 /** The neighbours as the camp's maps, the horizon and the factory's panel show them: the server's, and the game's own in the slots left free. */
-export const neighboursFor = (p: Pick<Profile, "day">): Neighbour[] => withAi(cachedNeighbours(), aiSalt(), p.day, Date.now());
+export const neighboursFor = (p: Pick<Profile, "since">): Neighbour[] => withAi(cachedNeighbours(), aiSalt(), islandDay(p), Date.now());
 
 /** The neighbours now, of the profile the page plays (`useAi()`); the server's alone before it is named. */
 export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSource()) : cachedNeighbours());
@@ -133,7 +134,7 @@ export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSour
  * Always shown from the first session — sea-route open/shut still gates expeditions (`routeOpen`),
  * but the islands themselves stay visible so multiplayer is not gated behind first outer ownership.
  */
-export function neighboursOnMap(p: Pick<Profile, "day" | "poiState">): Neighbour[] {
+export function neighboursOnMap(p: Pick<Profile, "since" | "poiState">): Neighbour[] {
   return neighboursFor(p);
 }
 
@@ -182,7 +183,7 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
   const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
   if (ai) {
     const p = aiSource!();
-    return { ok: true, body: aiView(ai, aiSalt(), p.day, p.expeditions, loadIdentity().code ?? "", Date.now(), []) };
+    return { ok: true, body: aiView(ai, aiSalt(), islandDay(p), p.expeditions, loadIdentity().code ?? "", Date.now(), []) };
   }
   const r = await call(`/api/islands/${encodeURIComponent(code)}`, {}, timeout);
   if (!r.ok) return r;
@@ -303,7 +304,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         holds: reportHolds(p),
         retaken,
         factory: p.factory,
-        day: p.day,
+        day: islandDay(p),
         ...(raid?.lent.length ? { lent: raid.lent } : {}),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),

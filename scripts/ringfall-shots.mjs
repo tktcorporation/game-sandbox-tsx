@@ -1662,7 +1662,7 @@ const islandDay = {
   const own = async (sel) => Number((await pg.locator(`${sel} .tug-n.own`).first().textContent().catch(() => "-1")) ?? -1);
   // The nodes a profile holds: the day's battle, reckoned to its end, may have taken some back.
   const mine = (p) => Object.entries(p.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
-  if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "freed" || (await own("#camp-row")) !== 3) errors.push(`island: the camp reads day ${c.profile.day}, the quarry ${c.profile.poiState.quarry.state}, ${await own("#camp-row")} of the row filled`);
+  if (c.profile.poiState.quarry.state !== "freed" || (await own("#camp-row")) !== 3) errors.push(`island: the camp reads day ${c.profile.day}, the quarry ${c.profile.poiState.quarry.state}, ${await own("#camp-row")} of the row filled`);
   await pg.evaluate(() => window.ringfallCamp.toGate());
   await pg.evaluate(() => window.advanceTime(100));
   await pg.screenshot({ path: `${out}/70-island-camp-row.png` });
@@ -1701,7 +1701,7 @@ const islandDay = {
   await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
   const r = await readOf(pg);
   await pg.waitForFunction(() => document.getElementById("day-beat")?.dataset.beat === "done", null, { timeout: 15000 }).catch(() => undefined);
-  if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || (await own("#day-result")) !== mine(r.profile) || !(await pg.locator("#day-map").count())) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, ${await own("#day-result")} of the row filled for ${mine(r.profile)} nodes held`);
+  if (r.screen !== "results" || (await own("#day-result")) !== mine(r.profile) || !(await pg.locator("#day-map").count())) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, ${await own("#day-result")} of the row filled for ${mine(r.profile)} nodes held`);
   await pg.waitForTimeout(1200);
   await pg.screenshot({ path: `${out}/74-island-results.png` });
   await pg.setViewportSize({ width: 740, height: 360 });

@@ -3,6 +3,7 @@
  * the body /api/island takes (`IslandPost` in worker/api.ts). Pure, so the server's gate
  * (scripts/ringfall-server.ts) can build one from a settled raid and post it.
  */
+import { islandDay } from "./days";
 import type { Identity } from "./identity";
 import { islandHolds, playerNodes } from "./island";
 import type { Settlement } from "./profile";
@@ -22,7 +23,7 @@ export function islandPost(player: Identity, settlement: Settlement, s: Pick<Sta
   return {
     player: { id: player.id, name: player.name },
     island: {
-      day: p.day,
+      day: islandDay(p),
       held: playerNodes(p).length,
       enemy,
       rival: holds.filter((h) => rivalOf(h) !== null).length,
@@ -30,6 +31,6 @@ export function islandPost(player: Identity, settlement: Settlement, s: Pick<Sta
       strength: strengthFor(playerNodes(p).length),
       trophies: p.trophies ?? TROPHY.start,
     },
-    raid: { day: settlement.day, outcome: s.outcome === "extracted" ? "extracted" : "dead", captured: capturedIds(s).length },
+    raid: { day: islandDay(settlement.profile), outcome: s.outcome === "extracted" ? "extracted" : "dead", captured: capturedIds(s).length },
   };
 }

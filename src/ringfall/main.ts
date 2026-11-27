@@ -1,4 +1,5 @@
 import { spawnEnemy } from "./sim/enemies";
+import { islandDay } from "./meta/days";
 import { AWARE, CONQUEST, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { collide, dist2d, groundAt } from "./sim/geom";
@@ -582,7 +583,8 @@ let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const loaded = loadProfile();
 const salt0 = aiSalt();
-const loadedHub = { ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) };
+// The island starts its calendar the first time it is opened (meta/days.ts): no raid moves it.
+const loadedHub = { ...loaded, since: loaded.since || Date.now(), expeditions: dropStale(loaded.expeditions, Date.now()) };
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub(loadedHub, () => {
   // 地図で見る: goal already set in the hub; open the departure framed on that POI / nearest start.
@@ -1347,13 +1349,13 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt({ ...p.pos, yaw: p.yaw })?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: islandDay(hub.profile), poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     strength: s.strength,
     threat: s.threat,
     mods: p.mods,
     modsAround: s.loot.filter((l) => l.kind === "mod").map((l) => ({ mod: l.mod, x: +l.pos.x.toFixed(1), y: +l.pos.y.toFixed(1), z: +l.pos.z.toFixed(1) })),
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, day: settlement.day, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,

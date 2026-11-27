@@ -19,6 +19,7 @@ import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
+import { islandDay } from "../meta/days";
 import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
@@ -47,13 +48,13 @@ export function teachFrontCapture(p: Profile): boolean {
 
 /** The holding the camp suggests attacking: the first on the 攻める list (nearest trophies), or null. */
 export function sortieTopFor(p: Profile): SortieTarget | null {
-  return sortieTargets(neighboursFor(p), aiSalt(), p.day, p.trophies ?? TROPHY.start, p.raided ?? [])[0] ?? null;
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [])[0] ?? null;
 }
 
 /** The holding of whoever took one of the player's in this 島の知らせ line, to attack back (やり返す), or null. */
 export function revengeFor(p: Profile, line: string): SortieTarget | null {
   if (!line.includes("取られた")) return null;
-  return sortieTargets(neighboursFor(p), aiSalt(), p.day, p.trophies ?? TROPHY.start, p.raided ?? []).find((t) => line.startsWith(`${t.ownerName}に`)) ?? null;
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? []).find((t) => line.startsWith(`${t.ownerName}に`)) ?? null;
 }
 
 /**
@@ -997,7 +998,7 @@ export class Hub {
    */
   sortieTargets(): SortieTarget[] {
     const p = this.profile;
-    return sortieTargets(neighboursFor(p), aiSalt(), p.day, p.trophies ?? TROPHY.start, p.raided ?? []);
+    return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? []);
   }
 
   /** The holding chosen for a sortie, while it is still on the list. */
@@ -1410,8 +1411,8 @@ export class Hub {
     const now = Date.now();
     const remain = shieldRemainingMs(p.outerGuard, now);
     const guard = guardOn(p.outerGuard, now);
-    // 作り順③: day line shows island shield timer and/or today's outer-hub loss cap.
-    const headParts = [`${p.day} 日目`];
+    // The island shield's timer and/or today's loss (no count of days: a day is the calendar's).
+    const headParts: string[] = [];
     if (remain > 0) headParts.push(shieldLine(remain));
     else if (guard.lost > 0) headParts.push(lostTodayLine(guard.lost, OUTER_GUARD.lossCap));
     const head = headParts.join(" · ");
