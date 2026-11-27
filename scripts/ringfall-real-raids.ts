@@ -20,11 +20,13 @@ import { NODES } from "../src/ringfall/sim/map";
 const A = { id: "00000000-0000-4000-8000-00000000000a", name: "アオ", code: "AAAAA1" };
 const B = { code: "BBBBB2", name: "ベニ" };
 const T0 = Date.UTC(2026, 10, 2, 3);
+// Islands claimed a month before, past a new island's protection.
+const OLD = T0 - 30 * 86_400_000;
 const holdsWith = (own: string[]) => NODE_IDS.map((id) => (own.includes(id) ? "own" : "foe")) as IslandState["holds"];
 const op = (s: IslandState | null, o: IslandOp, t: number) => islandOp(s, o, t);
 
 // The island: A holds supply and quarry, with a parcel at supply.
-let s = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, T0).state!;
+let s = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, OLD).state!;
 s = op(s, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply", "quarry"]), factory: 1, day: 1, parcels: [{ poi: "supply", kind: "board", from: { code: A.code, name: A.name } }] }, T0).state!;
 
 // Not captured: 守りきった, nothing changes hands.
@@ -60,7 +62,7 @@ assert.equal(back.holds[NODE_IDS.indexOf("supply")], "own");
 // A contested shore shielded for the day is not taken by a sortie.
 {
   const wi = NODE_IDS.indexOf("wreck");
-  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, T0).state!;
+  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, OLD).state!;
   w = op(w, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["wreck"]), factory: 1, day: 1 }, T0).state!;
   shieldNode(w, wi, T0);
   const hit = op(w, { t: "raid", from: B, target: "wreck", captured: true }, T0 + 1000);
@@ -78,7 +80,7 @@ assert.ok(synced.notes.some((l) => l.includes("取られた −") && l.includes(
 
 // Stars travel with the report: the owner loses what the attacker won.
 {
-  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, T0).state!;
+  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, OLD).state!;
   w = op(w, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply", "quarry"]), factory: 1, day: 1 }, T0).state!;
   const two = op(structuredClone(w), { t: "raid", from: B, target: "supply", captured: true, stars: 2 }, T0 + 1000).state!;
   assert.equal(two.log.at(-1)?.stars, 2);
@@ -111,5 +113,12 @@ assert.equal(real[0]!.owner, B.code);
   const h = { [B.code]: { held: ["quarry"], guard: {}, until: T0 + 1000 } };
   assert.deepEqual(attackable(h, T0)[B.code]!.held, [], "a shielded island's holdings were offered");
   assert.deepEqual(attackable(h, T0 + 2000)[B.code]!.held, ["quarry"]);
+}
+// A new island's protection: a sortie in its first days takes nothing.
+{
+  const fresh = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, T0).state!;
+  const rep = op(fresh, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply"]), factory: 1, day: 1 }, T0).state!;
+  const hit = op(structuredClone(rep), { t: "raid", from: B, target: "supply", captured: true, stars: 3 }, T0 + 1000);
+  assert.equal(hit.status, 403, "a protected island was raided");
 }
 console.log("real raids ok", real.map((t) => t.title).join(" | "));
