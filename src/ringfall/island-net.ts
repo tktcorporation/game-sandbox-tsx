@@ -105,12 +105,16 @@ export async function readNeighbours(): Promise<Neighbour[]> {
 
 /** Where the browser keeps the other players' holdings as their islands last showed them. */
 const HOLDINGS_KEY = "ringfall.holdings.v1";
-/** Each other player's island (by code): the nodes they hold and the 島の守り at each. */
-export type Holdings = Record<string, { held: string[]; guard: Record<string, number> }>;
+/** Each other player's island (by code): the nodes they hold and the 島の守り at each, and until when the island is shielded (0, none). */
+export type Holdings = Record<string, { held: string[]; guard: Record<string, number>; until?: number }>;
 let lastHoldings: Holdings | null = null;
 
-/** The other players' holdings as last read (the 攻める list's real players). */
-export function cachedHoldings(): Holdings {
+/** The other players' holdings as last read (the 攻める list's real players); an island shielded at `now` offers none. */
+export function cachedHoldings(now = Date.now()): Holdings {
+  return attackable(storedHoldings(), now);
+}
+
+function storedHoldings(): Holdings {
   if (lastHoldings) return lastHoldings;
   try {
     const raw = JSON.parse(localStorage.getItem(HOLDINGS_KEY) ?? "null");
@@ -119,6 +123,10 @@ export function cachedHoldings(): Holdings {
     return {};
   }
 }
+
+/** The holdings a sortie can take at `now`: none on an island under its day's shield (a capture there would not take). */
+export const attackable = (h: Holdings, now: number): Holdings =>
+  Object.fromEntries(Object.entries(h).map(([code, x]) => [code, (x.until ?? 0) > now ? { ...x, held: [] } : x]));
 
 /** Reads each real neighbour's island for the nodes it holds (a sortie's targets). */
 async function readHoldings(list: readonly Neighbour[]) {
@@ -129,7 +137,7 @@ async function readHoldings(list: readonly Neighbour[]) {
     const held = v.body.nodes.filter((x) => x.hold === "own").map((x) => x.id);
     const guard: Record<string, number> = {};
     for (const q of v.body.parcels ?? []) guard[q.poi] = (guard[q.poi] ?? 0) + 1;
-    out[n.code] = { held, guard };
+    out[n.code] = { held, guard, ...(v.body.shieldUntil > 0 ? { until: v.body.shieldUntil } : {}) };
   }
   lastHoldings = out;
   try {

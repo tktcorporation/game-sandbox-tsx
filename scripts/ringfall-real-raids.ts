@@ -13,6 +13,7 @@ import { applySync, parseLog, type IslandLogEntry } from "../src/ringfall/meta/e
 import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies";
 import { newProfile } from "../src/ringfall/meta/profile";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
+import { attackable } from "../src/ringfall/island-net";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
 import { NODES } from "../src/ringfall/sim/map";
 
@@ -105,4 +106,10 @@ assert.deepEqual(real.map((t) => t.id).sort(), ["quarry", "relay"]);
 assert.equal(real.find((t) => t.id === "relay")?.guard, 1);
 assert.equal(real[0]!.owner, B.code);
 
+// An island under its day's shield offers no holding to attack until the shield ends.
+{
+  const h = { [B.code]: { held: ["quarry"], guard: {}, until: T0 + 1000 } };
+  assert.deepEqual(attackable(h, T0)[B.code]!.held, [], "a shielded island's holdings were offered");
+  assert.deepEqual(attackable(h, T0 + 2000)[B.code]!.held, ["quarry"]);
+}
 console.log("real raids ok", real.map((t) => t.title).join(" | "));
