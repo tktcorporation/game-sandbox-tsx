@@ -26,7 +26,7 @@ import { shopRarity } from "../src/ringfall/meta/island";
 import { FACTORY, FACTORY_TOP, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
 import { awayAttacks } from "../src/ringfall/meta/away-attacks";
-import { collect } from "../src/ringfall/meta/income";
+import { accrue, collect, emptyStores } from "../src/ringfall/meta/income";
 import { isAiOwner, rivalOf } from "../src/ringfall/sim/holds";
 import { fork } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -139,7 +139,8 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
   // The game's own islands attack the holdings by the clock as in a browser with no island server
   // (meta/away-attacks.ts): a day of the month is a day of real time before each raid.
   const T0 = Date.UTC(2026, 10, 1);
-  p = { ...p, attackedAt: T0, since: T0, stores: { at: {}, since: T0 } };
+  // The starting holdings make from the first day on, as a browser's first camp starts them.
+  p = { ...p, attackedAt: T0, since: T0, stores: accrue(emptyStores(), p.poiState, T0) };
   for (let d = 1; d <= days; d++) {
     // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
     const gear = bestGear(p);
@@ -160,7 +161,9 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
     const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
     const settled = settle(p, s);
-    p = spend(settled.profile);
+    // As a browser collects coming home: the holdings the raid took start making from now.
+    const home = collect(settled.profile.stores, settled.profile.poiState, T0 + d * 86_400_000);
+    p = spend({ ...settled.profile, stores: home.stores, cash: settled.profile.cash + home.credits });
     const h = islandHolds(p);
     const mine = NODES.filter((_, i) => h[i] === "own");
     out.days.push({
