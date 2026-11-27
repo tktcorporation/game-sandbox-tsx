@@ -1618,75 +1618,152 @@ function control(): Floors {
  * The control centre's grounds on the plateau (`CONTROL.yard`, docs/ringfall/field-design.md): a
  * wall a little over head height round the yard, opened on four sides (the east gate from the
  * depot's road, the south gate toward the assembly building, the west gate toward the pads and a
- * breach in the north wall for going round), and inside it four outbuildings that part the yard
- * into lanes: a garage hall in the north-east, a two-storey barracks in the north-west, the
- * antenna huts round a mast in the south-west and a vehicle shed with a roof reached by stairs
- * in the south-east. Cover stands in groups of two to five by the gates and along the lanes, no
- * piece alone, so no stretch of the yard is open from wall to wall.
+ * breach in the north wall for going round). Inside it four large pieces of a launch control
+ * centre, each a shape of its own that gives cover by what it is rather than by boxes set round
+ * it: the blast-proof bunker under its stepped mound in the north-west (`bunker()`), the water
+ * tower and its pipe run in the north-east, the tracking dish on its pedestal ringed by equipment
+ * cabinets in the south-west, and the propellant trucks' canopy in the south-east. What loose
+ * cover remains is of the place: a barrier chicane at the east gate, blast deflectors in the west
+ * yard, cable drums by the ramp's top, and outside the wall a theme to each side (`CONTROL_APPROACH`).
  */
 function controlGrounds(): Box[] {
   const { x0, x1, z0, z1, h } = CONTROL.yard;
-  return [
+  const out: Box[] = [
     ...compound((x0 + x1) / 2, (z0 + z1) / 2, x1 - x0, z1 - z0, h, [
       { side: "e", at: -(z0 + z1) / 2, w: 10 },
       { side: "s", at: 6, w: 12 },
       { side: "w", at: -20 - (z0 + z1) / 2, w: 8 },
       { side: "n", at: -30, w: 6 },
     ]),
-    // The breach: the north wall's broken ends fallen outward and in, waist-high rubble.
-    box(-30, z0 - 2.5, 7, 2, 1.2, "rock", 0),
-    box(-24, z0 + 2, 3, 2.2, 1.6, "rock", 0),
-    // North-east: the garage hall, a roller door on its south and a door on its west.
-    ...hall(46, -44, 22, 14, 6, { doors: [{ side: "s", at: 2, w: 6 }], hatches: [{ side: "w" }], scale: WORKS }),
-    // North-west: the barracks, two storeys, its doors on the east and south.
-    ...tower(-50, -44, 14, 9, 2, { doors: [["e", "s"], ["e"]], windows: [["w", "s"], ["w", "s", "n"]], scale: HOUSE }),
-    // South-west: the antenna huts round a lattice mast, a cable trench's cover between them.
-    ...building(-54, 42, 8, 6, 3.2, { doors: ["e"], windows: ["n"], scale: HOME }),
-    ...building(-36, 52, 7, 5, 3.2, { doors: ["n"], windows: ["w"], scale: HOME }),
-    ...lattice(-46, 54, 3, 3, 2, 14),
-    box(-44, 36, 4, 1.2, 1.6, "wall", 1),
-    // South-east: the vehicle shed, its roof 4.2 m up reached by stairs on its east, a truck by it.
-    ...building(48, 38, 14, 9, 4.2, { doors: ["w"], windows: ["s"], roof: "e", scale: WORKS }),
-    box(36, 32, 2.5, 7.3, 3, "steel", 3),
-    // The east gate's forecourt: containers either side of the lane in and a crate stack in front.
-    box(56, -11, 6.1, 2.5, 2.6, "container", 1),
-    box(56, 11, 6.1, 2.5, 2.6, "container", 2),
-    box(46, 13.5, 2.5, 6.1, 2.6, "container", 3),
-    box(48, -4, 1.2, 1.2, 1.8, "crate"),
-    box(49.3, -4, 1.2, 1.2, 1.8, "crate"),
-    // North of the sunk yard: a cable tray's concrete housing in lengths with gaps to cross.
-    box(-8, -36, 10, 1.4, 1.6, "wall", 1),
-    box(10, -36, 10, 1.4, 1.6, "wall", 1),
-    box(22, -48, 1.2, 1.2, 1.8, "crate"),
-    box(23.3, -48, 1.2, 1.2, 1.8, "crate"),
-    box(-14, -52, 6.1, 2.5, 2.6, "container", 2),
-    // The west yard off the footbridge: a broken barrier line and a pallet stack.
-    box(-52, -6, 1, 7, 1.6, "wall", 1),
-    box(-52, 9, 1, 6, 1.6, "wall", 1),
-    box(-62, -24, 1.2, 1.2, 1.8, "crate"),
-    box(-62, -22.8, 1.2, 1.2, 1.8, "crate"),
-    // Either side of the ramp's top: crate groups.
-    box(-12, 34, 1.2, 1.2, 1.8, "crate"),
-    box(-12, 35.3, 1.2, 1.2, 1.8, "crate"),
-    box(-13.3, 34.6, 1.2, 1.2, 1.8, "crate"),
-    box(24, 26, 6.1, 2.5, 2.6, "container", 3),
-    // The approaches outside the wall: rock and wreck groups 15 to 35 m out, the last cover
-    // before a gate on each side and a stop every 40 m or so on the way round.
-    ...CONTROL_APPROACH.flatMap(([x, z, along]) => approachGroup(x, z, along)),
+    // The breach: the north wall's broken ends fallen outward and in.
+    box(-30, z0 - 2.5, 7, 2, 1.2, "prop", PROP.rubble),
+    box(-24, z0 + 2.5, 3, 2.4, 1.6, "prop", PROP.rubble),
+    // North-west: the bunker the launch was run from, under its mound.
+    ...bunker(-52, -46),
+    // North-east: the water tower, a tank on an open steel tower climbed inside to a platform
+    // under it, and its pipes on sleepers along the lane west to the bunker, broken where the lane crosses.
+    ...lattice(48, -46, 6, 6, 3, 13),
+    ...tank(48, -46, 5.5, 7, "s", 2, 13),
+    ...pipeRun(-34, 40, -38, 4),
+    // South-west: the tracking dish on its pedestal, looking west up the sky, and its cabinets round it.
+    rect(-48.5, 42.5, -43.5, 47.5, 0, 7, "wall", 0),
+    ...dish(-46, 8.5, 45, { r: 9, f: 6.5, tilt: Math.PI / 4, face: "w", cell: 1.25, thick: 0.35, rim: 0.9, feed: 0.6 }),
+    ...[[-54, 38], [-54, 52], [-38, 38], [-38, 52], [-46, 56]].map(([x, z]) => box(x, z, 3.2, 1.4, 2, "steel", 1)),
+    // South-east: the canopy the propellant trucks were loaded under, its roof reached by stairs
+    // on its east or from a tanker's back; two tankers under it, one pulled half out.
+    ...[36.5, 46, 55.5].flatMap((x) => [box(x, 35.5, 0.6, 0.6, 5, "steel", 2), box(x, 44.5, 0.6, 0.6, 5, "steel", 2)]),
+    box(46, 40, 21, 11, 5.5, "slab", 0, 5),
+    ...stairs(56.5, 42, "e", 1.4, 5.5),
+    ...tanker(41, 40),
+    ...tanker(52, 49),
+    // The east gate: a chicane of road barriers and the guard's car across the lane.
+    box(58, -5, 0.65, 7, 1.1, "prop", PROP.barrier),
+    box(52, 5, 0.65, 7, 1.1, "prop", PROP.barrier),
+    box(46, -6, 1.9, 4.5, 1.5, "prop", PROP.car),
+    // The west yard off the footbridge: blast deflectors, concrete in an L, against the pads' side.
+    ...deflector(-56, -2, "w"),
+    ...deflector(-60, 18, "w"),
+    // Either side of the ramp's top: cable drums stood on end.
+    ...[[-12, 34], [-14.6, 35], [-12.6, 36.8], [24, 27], [26.6, 28]].flatMap(([x, z]) => cableDrum(x, z)),
+    // The approaches outside the wall, a theme to each side.
+    ...CONTROL_APPROACH.flatMap(([x, z, along, kind]) => approachGroup(x, z, along, kind)),
   ];
+  return out;
 }
 
-/** Where `approachGroup()`s stand round the control centre's wall, and whether each lies along x. */
-const CONTROL_APPROACH: [number, number, boolean][] = [
-  [98, -24, false], [100, 26, false], [-22, 94, true], [36, 98, true], [-98, -34, false], [-100, 22, false],
-  [-8, -92, true], [42, -90, true], [88, -78, true], [-86, 84, true], [88, 82, true], [-88, -80, true],
+/**
+ * The blast-proof bunker, its middle at (cx, cz): a concrete room 10 by 8 m under an earth mound
+ * stepped in three tiers 1.4 m apart (30 by 26 m at its foot), its roof slab at the top tier's
+ * height. A trench 3 m wide runs out of the room's east door through the mound, its sides
+ * stepping down a tier at a time toward its mouth, and a blast wall stands across the mouth so
+ * the way in turns. Periscope housings stand on the top.
+ */
+function bunker(cx: number, cz: number): Box[] {
+  const out: Box[] = [];
+  const [rw, rd, ch] = [5, 4, 1.5];
+  for (const [W, D, top] of [[15, 13, 1.4], [13, 11, 2.8], [11, 9, 4.2]]) {
+    out.push(
+      rect(cx - W, cz - D, cx - rw, cz + D, 0, top, "rock", 0),
+      rect(cx - rw, cz - D, cx + rw, cz - rd, 0, top, "rock", 0),
+      rect(cx - rw, cz + rd, cx + rw, cz + D, 0, top, "rock", 0),
+      rect(cx + rw, cz - D, cx + W, cz - ch, 0, top, "rock", 0),
+      rect(cx + rw, cz + ch, cx + W, cz + D, 0, top, "rock", 0),
+    );
+  }
+  // The room's roof (concrete), its consoles, and the blast wall across the trench's mouth.
+  out.push(rect(cx - rw, cz - rd, cx + rw, cz + rd, 2.9, 4.2, "slab", 1));
+  out.push(box(cx - 3.5, cz, 1, 5, 1.1, "prop", PROP.counter), box(cx, cz - 3, 5, 1, 1.1, "prop", PROP.counter));
+  out.push(box(cx + 18, cz + 1, 0.8, 6, 2.4, "wall", 1));
+  for (const [x, z] of [[-2, -2], [2, 2], [-3, 3]]) out.push(box(cx + x, cz + z, 0.8, 0.8, 5.2, "steel", 1, 4.2));
+  return out;
+}
+
+/** Pipes along x from x0 to x1 at z: the bundle 1.6 m high on sleepers every 3 m, broken every 12 m for a way across. */
+function pipeRun(x0: number, x1: number, z: number, tint: number): Box[] {
+  const out: Box[] = [];
+  for (let x = x0; x < x1; x += 12) {
+    const end = Math.min(x + 9, x1);
+    out.push(rect(x, z - 0.7, end, z + 0.7, 0.5, 1.6, "steel", tint));
+    for (let k = x + 0.5; k < end; k += 3) out.push(rect(k, z - 1, k + 0.4, z + 1, 0, 0.5, "wall", 1));
+  }
+  return out;
+}
+
+/** A propellant tanker, its cab facing +x: cab, bed and the tank on it (3 m to the tank's top). */
+function tanker(cx: number, cz: number): Box[] {
+  return [box(cx + 3.9, cz, 2.3, 2.5, 3.0, "prop", PROP.cab), box(cx - 0.5, cz, 6.5, 2.5, 1.3, "prop", PROP.bed), box(cx - 0.5, cz, 6, 2.2, 3, "steel", 2, 1.3)];
+}
+
+/** A blast deflector: a concrete wall 6 m long and 2 m high with a 3 m return on the `back` side. */
+function deflector(cx: number, cz: number, back: Side): Box[] {
+  const dx = back === "w" ? -1 : 1;
+  return [box(cx, cz, 0.7, 6, 2, "wall", 1), box(cx + dx * 1.5, cz - 2.65, 3, 0.7, 2, "wall", 1)];
+}
+
+/** A cable drum stood on end, 2.4 m across and 1.7 m high. */
+function cableDrum(cx: number, cz: number): Box[] {
+  return tank(cx, cz, 1.2, 1.7, "n", 1).slice(0, 3);
+}
+
+/**
+ * The control centre's approaches, 15 to 35 m out from its wall (`approachGroup()`): at each its
+ * middle, whether it lies along x, and its theme: the road's wrecks east, cable drums south toward
+ * the assembly building, blast walls west toward the pads, rock and rubble north.
+ */
+type Approach = "wreck" | "drums" | "blast" | "rock";
+const CONTROL_APPROACH: [number, number, boolean, Approach][] = [
+  [98, -24, false, "wreck"], [100, 26, false, "wreck"], [88, -78, true, "wreck"], [88, 82, true, "drums"],
+  [-22, 94, true, "drums"], [36, 98, true, "drums"], [-86, 84, true, "blast"],
+  [-98, -34, false, "blast"], [-100, 22, false, "blast"],
+  [-8, -92, true, "rock"], [42, -90, true, "rock"], [-88, -80, true, "rock"],
 ];
 
-/** A rock outcrop with a crate pair in its lee: cover for two, `along` x or z. */
-function approachGroup(x: number, z: number, along: boolean): Box[] {
-  const [w, d] = along ? [7, 2.6] : [2.6, 7];
-  const [ox, oz] = along ? [0, 2.6] : [2.6, 0];
-  return [box(x, z, w, d, 1.9, "rock", 0), box(x + (along ? 4.6 : 0), z + (along ? 0 : 4.6), 2.4, 2.4, 1.6, "rock", 0), box(x - 2 + ox, z - 2 + oz, 1.2, 1.2, 1.8, "crate")];
+/** A cover group for two of the approach's theme, `along` x or z. */
+function approachGroup(x: number, z: number, along: boolean, kind: Approach): Box[] {
+  const at = (u: number, v: number): [number, number] => (along ? [x + u, z + v] : [x + v, z + u]);
+  switch (kind) {
+    case "wreck": {
+      const [cx, cz] = at(0, 0);
+      const [bx, bz] = at(4.8, 0);
+      const [kx, kz] = at(-1, 3.4);
+      const [w, d] = along ? [2.3, 2.5] : [2.5, 2.3];
+      const [bw, bd] = along ? [5, 2.5] : [2.5, 5];
+      return [box(cx, cz, w, d, 3.0, "prop", PROP.cab), box(bx, bz, bw, bd, 2.3, "prop", PROP.bed), box(kx, kz, along ? 4.5 : 1.9, along ? 1.9 : 4.5, 1.5, "prop", PROP.car)];
+    }
+    case "drums":
+      return [[0, 0], [2.6, 0.6], [5.2, -0.2], [1.3, 2.6]].flatMap(([u, v]) => cableDrum(...at(u, v)));
+    case "blast": {
+      const [cx, cz] = at(0, 0);
+      const [rx, rz] = at(-2.65, 1.5);
+      return [box(cx, cz, along ? 6 : 0.7, along ? 0.7 : 6, 2, "wall", 1), box(rx, rz, along ? 0.7 : 3, along ? 3 : 0.7, 2, "wall", 1)];
+    }
+    case "rock": {
+      const [cx, cz] = at(0, 0);
+      const [sx, sz] = at(4.6, 0.4);
+      const [rx, rz] = at(-1.5, 2.6);
+      return [box(cx, cz, along ? 7 : 2.6, along ? 2.6 : 7, 1.9, "rock", 0), box(sx, sz, 2.4, 2.4, 1.6, "rock", 0), box(rx, rz, 3, 2.2, 1.1, "prop", PROP.rubble)];
+    }
+  }
 }
 
 /**
