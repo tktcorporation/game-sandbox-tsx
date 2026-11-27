@@ -1515,7 +1515,7 @@ export class Hub {
         : st === "factory"
           ? PHRASE.sideFactory
           : st === "signal"
-            ? TERM.seaIslands
+            ? TERM.otherPlayers
             : TERM.loadout;
     $("hub-side-title").textContent = sideTitle;
     // Narrow tabs: 倉庫 / 右列の見出し。One-column stations hide the tab bar.

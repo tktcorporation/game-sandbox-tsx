@@ -64,6 +64,6 @@ export class MpHowto {
     $("mp-howto-title").textContent = card.title;
     $("mp-howto-body").textContent = card.body;
     ($("mp-howto-next") as HTMLButtonElement).textContent = mpHowtoNext(this.i >= n - 1);
-    $("mp-howto").setAttribute("aria-label", `${TERM.seaIslands} ${this.i + 1}`);
+    $("mp-howto").setAttribute("aria-label", `${TERM.otherPlayers} ${this.i + 1}`);
   }
 }

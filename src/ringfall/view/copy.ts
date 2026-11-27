@@ -52,7 +52,7 @@ export type TermId =
   | "islandNews"
   | "wares"
   | "loadout"
-  | "seaIslands"
+  | "otherPlayers"
   | "island"
   | "trophy"
   | "league"
@@ -147,10 +147,10 @@ export const TERM = {
   wares: "売り物",
   loadout: "持っていく物",
   /**
-   * 信号所の側見出し。カード見出し「お隣の島」と同じ語に揃える。
-   * 【元】海の向こうの島 【案】お隣の島 【理由】同じパネルで別名をやめる
+   * 信号所の側見出し・カード見出し（glossary.md 別プレイヤー）。
+   * 【元】お隣の島 【案】別プレイヤー 【理由】隣り合っている必要はなく、「お隣」では何の相手か分からない
    */
-  seaIslands: "お隣の島",
+  otherPlayers: "別プレイヤー",
   island: "島",
   /** Ranking T1 — signal station / results. */
   trophy: "トロフィー",
@@ -497,12 +497,12 @@ export function raidStarsLine(stars: number, delta: number): string {
  */
 export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   {
-    title: TERM.seaIslands,
+    title: TERM.otherPlayers,
     // 【元】お隣の島は最初から外側の拠点を攻めてくる。
     // 【案】地図にも最初から出る、を足す 【理由】初日可視化：隣島の存在を地図で先に見せる
     // 【元】…外側の拠点を攻めてくる。
     // 【案】島で占領した拠点を攻めてくる 【理由】攻められる場所＝占領した陣地（holdings-raid.md）
-    body: `${TERM.seaIslands}は地図に最初から出る。留守のあいだ、島で占領した拠点を攻めてくる。`,
+    body: `${TERM.otherPlayers}の島は地図に最初から出る。留守のあいだ、島で占領した拠点を攻めてくる。`,
   },
   {
     title: TERM.attack,
@@ -566,6 +566,7 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
   { bad: "仕返し", keep: "revenge", note: "やり返す（TKT-204 案 F）。旧・遠征送りは廃止" },
   { bad: "取り返す", keep: "attack", note: "攻めるに統合（E4）" },
+  { bad: "お隣", keep: "otherPlayers", note: "別プレイヤー（隣り合っている必要はない）" },
   /**
    * Exact match only in lint (送る ⊂ 倉庫へ送る). 中継ボックスの「倉庫へ送る」は別 TERM.
    */
