@@ -240,7 +240,7 @@ player's front (`capturable()`), no siege comes to it, and its stars are scored 
 (`State.attack`). It ends alive when `SORTIE.time` runs out (`sortieUp`) or the player walks
 `SORTIE.leave` metres past the depot's distance from the core (`sortieLeft`, `stepSortie()` in
 `world.ts`), or by the depot; a tick runs only the sortie's systems (`SORTIE_AFTER` in `step.ts`), and
-the objective is the core, then the depot (`sortieSteps()`). `npx tsx scripts/ringfall-sortie.ts`
+the objective is the core, then the depot (`sortieSteps()`). It keeps its record (攻めの記録, `State.replay`, `sim/replay.ts`: the path every few seconds and marks for the core, defenders down and the end; no rule reads it), sent with its report and kept on the latest `EXPEDITION.replayMax` lines of the island's log. `npx tsx scripts/ringfall-sortie.ts`
 checks it (`checkSortie()` in the sim gate); a raid without `sortie` plays as before.
 `meta/sortie.ts` holds the sorties' meta: `sortieTargets()` lists the holdings of the islands next
 door the player may attack (the game's own islands', `aiNodes()`, and other players' as their islands last showed them, `cachedHoldings()` in `island-net.ts`, read with the neighbours; within the trophy band,
