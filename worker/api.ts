@@ -605,7 +605,8 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (sub === "raids") {
     if (typeof raw.target !== "string" || typeof raw.captured !== "boolean") return fail(400, "bad-request");
     const stars = typeof raw.stars === "number" && Number.isInteger(raw.stars) && raw.stars >= 0 && raw.stars <= 3 ? raw.stars : undefined;
-    return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured, ...(stars !== undefined ? { stars } : {}) }, now);
+    const won = typeof raw.won === "number" && Number.isInteger(raw.won) && raw.won > 0 ? raw.won : undefined;
+    return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured, ...(stars !== undefined ? { stars } : {}), ...(won !== undefined ? { won } : {}) }, now);
   }
   // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
   if (sub === "assault") {

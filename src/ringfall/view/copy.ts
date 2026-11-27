@@ -519,6 +519,16 @@ export function incomeLine(credits: number): string {
   return `拠点の収入 +${credits.toLocaleString("ja-JP")} クレジット`;
 }
 
+/** 島の守り of holdings lost, back in the stash (決定 B: a holding taken never takes its owner's things). */
+export function parcelsBackLine(n: number): string {
+  return `${TERM.islandGuard} ×${n} · 倉庫へ戻った`;
+}
+
+/** 拠点の収入 already collected at holdings another player had taken before, given back to them. */
+export function clawBackLine(credits: number): string {
+  return `取られた陣地の収入 −${credits.toLocaleString("ja-JP")} クレジット`;
+}
+
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;
 }

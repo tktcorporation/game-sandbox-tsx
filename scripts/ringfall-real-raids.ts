@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { islandOp, NODE_IDS, shieldNode, type IslandOp, type IslandState } from "../worker/island";
 import { applySync, parseLog, parseView, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
 import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies";
-import { newProfile } from "../src/ringfall/meta/profile";
+import { keepParcels, newProfile } from "../src/ringfall/meta/profile";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
 import { attackable } from "../src/ringfall/island-net";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
@@ -35,10 +35,11 @@ assert.equal(r.status, 200);
 assert.equal(r.state!.holds[NODE_IDS.indexOf("quarry")], "own");
 assert.equal(r.state!.log.at(-1)?.t, "wiped");
 
-// Captured: back to the robots, its 島の守り with the attacker, 取られた in the log.
-r = op(r.state, { t: "raid", from: B, target: "supply", captured: true }, T0 + 2000);
+// Captured: back to the robots, its 島の守り off the island (never the attacker's: the owner keeps their things), 取られた in the log.
+r = op(r.state, { t: "raid", from: B, target: "supply", captured: true, stars: 3, won: 31 }, T0 + 2000);
 assert.equal(r.status, 200);
-assert.deepEqual((r.body as { taken: boolean; parcels: string[] }).parcels, ["board"]);
+assert.equal((r.body as { parcels?: string[] }).parcels, undefined, "the attacker was handed the owner's 島の守り");
+assert.equal(r.state!.log.at(-1)?.won, 31);
 assert.equal(r.state!.holds[NODE_IDS.indexOf("supply")], "foe");
 assert.equal((r.state!.parcels ?? []).filter((q) => q.poi === "supply").length, 0);
 assert.equal(r.state!.log.at(-1)?.t, "taken");
@@ -122,5 +123,39 @@ assert.equal(real[0]!.owner, B.code);
   const rep = op(fresh, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply"]), factory: 1, day: 1 }, T0).state!;
   const hit = op(structuredClone(rep), { t: "raid", from: B, target: "supply", captured: true, stars: 3 }, T0 + 1000);
   assert.equal(hit.status, 403, "a protected island was raided");
+}
+// The owner loses what the attacker's settle counted, not what today's standings would give.
+{
+  const own = { ...newProfile(5), trophies: 1000, poiState: { ...newProfile(5).poiState, supply: { state: "own" as const } } };
+  const e: IslandLogEntry = { seq: 1, at: T0, t: "taken", node: "supply", by: B, stars: 3, won: 31 };
+  const r2 = applySync(own, { log: { entries: [e], next: 1 }, holds: NODE_IDS.map((id) => ({ id, hold: "foe" as const })) });
+  assert.equal(1000 - r2.profile.trophies!, 31);
+}
+// A holding taken whose log line has scrolled away is lost all the same, from the view's list.
+{
+  const own = { ...newProfile(5), logSeq: 500, poiState: { ...newProfile(5).poiState, supply: { state: "own" as const } } };
+  const r3 = applySync(own, { log: { entries: [], next: 500 }, holds: NODE_IDS.map((id) => ({ id, hold: id === "supply" ? ("foe" as const) : ("foe" as const) })), raided: ["supply"] });
+  assert.equal(r3.profile.poiState.supply.state, "foe", "a holding taken stayed the owner's once its log line was gone");
+}
+// The island's report drops 島の守り at a node its owner reports lost (an AI player's attack).
+{
+  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, OLD).state!;
+  w = op(w, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply"]), factory: 1, day: 1, parcels: [{ poi: "supply", kind: "board", from: { code: A.code, name: A.name } }] }, T0).state!;
+  w = op(w, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith([]), factory: 1, day: 1 }, T0 + 1000).state!;
+  assert.equal((w.parcels ?? []).length, 0, "島の守り stood at a node its owner lost");
+}
+// A holding lost: its 島の守り come back to the owner's stash; those at holdings still held stay.
+{
+  const base = newProfile(5);
+  const before = { ...base, poiState: { ...base.poiState, supply: { state: "own" as const }, quarry: { state: "own" as const } }, parcels: [
+    { id: 1, poi: "supply" as const, kind: "board" as const, from: B, at: T0 },
+    { id: 2, poi: "quarry" as const, kind: "fuse" as const, from: B, at: T0 },
+  ] };
+  const after = { ...before, poiState: { ...before.poiState, supply: { state: "foe" as const } }, parcels: before.parcels.filter((q) => q.poi !== "supply") };
+  const r = keepParcels(before, after);
+  assert.deepEqual(r.back.map((q) => q.id), [1]);
+  assert.equal(r.profile.stash.filter((i) => i.t === "valuable" && i.kind === "board").length - before.stash.filter((i) => i.t === "valuable" && i.kind === "board").length + (r.profile.pending.length - before.pending.length), 1, "the 島の守り of the holding lost did not come home");
+  assert.deepEqual(r.profile.parcels.map((q) => q.id), [2]);
+  assert.equal(keepParcels(r.profile, r.profile).back.length, 0, "came home twice");
 }
 console.log("real raids ok", real.map((t) => t.title).join(" | "));

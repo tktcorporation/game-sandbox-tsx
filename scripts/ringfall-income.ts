@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { accrue, collect, emptyStores, INCOME, parseStores, storeCap } from "../src/ringfall/meta/income";
+import { accrue, collect, emptyStores, INCOME, parseStores, storeCap, clawBack } from "../src/ringfall/meta/income";
 import { newProfile } from "../src/ringfall/meta/profile";
 const p = newProfile(3);
 const H = 3_600_000, T = Date.UTC(2026, 10, 1);
@@ -33,3 +33,18 @@ console.log("income round trip ok");
   assert.ok(Math.abs(paid - once) <= own, `collected often ${paid}, once ${once}`);
 }
 console.log("income often ok");
+// A holding another player took before the last collection: what it paid then goes back out of the cash.
+{
+  const st = accrue(emptyStores(), p.poiState, T);
+  const after = collect(st, p.poiState, T + 2 * H);
+  const node = Object.keys(after.stores.paid ?? {})[0] as keyof NonNullable<typeof after.stores.paid>;
+  assert.ok(node, "a collection recorded nothing paid");
+  const paid = after.stores.paid![node]!.n;
+  const took = clawBack(after.stores, 10_000, [{ node, at: T + H }]);
+  assert.equal(took.back, paid, "the income of a holding taken before it was collected stayed paid");
+  assert.equal(clawBack(after.stores, 10_000, [{ node, at: T + 3 * H }]).back, 0, "income collected before the holding was taken came back");
+  assert.equal(clawBack(after.stores, 5, [{ node, at: T + H }]).back, 5, "more taken back than the cash held");
+  assert.equal(clawBack(took.stores, 10_000, [{ node, at: T + H }]).back, 0, "taken back twice");
+  assert.deepEqual(parseStores(JSON.parse(JSON.stringify(after.stores))).paid, after.stores.paid);
+}
+console.log("income claw-back ok");

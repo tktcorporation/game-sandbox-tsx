@@ -67,6 +67,8 @@ export interface IslandView {
   pings: { id: number; x: number; z: number; by: string; until: number }[];
   /** Parcels at depots (ux-design C2). */
   parcels: Parcel[];
+  /** Holdings sorties took that the owner's reports have not shown lost yet (outlives the bounded log). */
+  raided: string[];
 }
 
 /**
@@ -93,6 +95,8 @@ export interface IslandLogEntry {
   by: { code: string; name: string };
   /** A sortie's stars (0–3): what its attacker won, and so what this island's owner loses. */
   stars?: number;
+  /** The trophies the sortie's attacker won, as their settle counted them: what this island's owner loses. */
+  won?: number;
 }
 
 const STATES: readonly ServerState[] = ["coming", "attacking", "waiting", "holding"];
@@ -126,6 +130,7 @@ export function parseView(raw: unknown): IslandView | null {
     nodes,
     expeditions,
     pings: parsePings(raw.pings),
+    raided: Array.isArray(raw.raided) ? raw.raided.filter((x): x is string => typeof x === "string") : [],
     parcels: parseParcels(raw.parcels),
   };
 }
@@ -137,7 +142,8 @@ export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: numbe
     const by = isObj(e) ? attacker(e.by) : null;
     if (!(isObj(e) && by && count(e.seq) && typeof e.at === "number" && LOG_KINDS.includes(e.t as never) && typeof e.node === "string")) return [];
     const stars = count(e.stars) && e.stars <= 3 ? { stars: e.stars } : {};
-    return [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by, ...stars }];
+    const won = count(e.won) && e.won > 0 ? { won: e.won } : {};
+    return [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by, ...stars, ...won }];
   });
   return { entries, next: raw.next };
 }
@@ -213,6 +219,8 @@ export interface Synced {
   parcels?: readonly Parcel[];
   /** Server's outer-guard snapshot from the island view (作り順③). */
   outerGuard?: OuterGuard;
+  /** Holdings sorties took that the island still waits for the owner to see lost (`IslandView.raided`). */
+  raided?: readonly string[];
 }
 
 /**
@@ -240,13 +248,18 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   let poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   // Another player's sortie took a holding (glossary.md 攻め): it went back to the robots on the server; so here.
-  const raidedBy: { code: string; stars: number }[] = [];
+  const raidedBy: { code: string; stars: number; won?: number }[] = [];
   for (const e of news) {
     if (e.t !== "taken" || isAiOwner(e.by.code) || poiState[e.node as NodeId]?.state !== "own") continue;
     const srv = s.holds?.find((h) => h.id === e.node)?.hold;
     if (srv === "own") continue;
     poiState = { ...poiState, [e.node]: { state: "foe" } };
-    raidedBy.push({ code: e.by.code, stars: e.stars ?? 3 });
+    raidedBy.push({ code: e.by.code, stars: e.stars ?? 3, ...(e.won ? { won: e.won } : {}) });
+  }
+  // A holding a sortie took whose log line has already scrolled away: lost all the same (its trophies are past knowing).
+  for (const id of s.raided ?? []) {
+    if (poiState[id as NodeId]?.state !== "own" || s.holds?.find((h) => h.id === id)?.hold === "own") continue;
+    poiState = { ...poiState, [id]: { state: "foe" } };
   }
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
@@ -282,7 +295,8 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
     // A holding another player's sortie took costs what their stars won (starGain of raidOdds N).
     for (const r of raidedBy) {
       const foe = rivalTrop ? rivalTrop(r.code) : rivalTrophies(r.code, p.trophies!);
-      const n = starGain(raidOdds(foe, p.trophies!).N, r.stars);
+      // What the attacker's settle counted, when it says; else what their stars win at today's standings.
+      const n = r.won ?? starGain(raidOdds(foe, p.trophies!).N, r.stars);
       lost += n;
       next = clampTrophies(next - n);
     }
@@ -291,7 +305,7 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
     for (const e of news.filter((n) => n.t === "wiped")) {
       const foe = rivalTrop ? rivalTrop(e.by.code) : rivalTrophies(e.by.code, p.trophies!);
       if (e.stars) {
-        const n = starGain(raidOdds(foe, p.trophies!).N, e.stars);
+        const n = e.won ?? starGain(raidOdds(foe, p.trophies!).N, e.stars);
         lost += n;
         next = clampTrophies(next - n);
       } else defended += defenceWin(foe, p.trophies!);

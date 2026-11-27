@@ -17,7 +17,8 @@ import { islandDay } from "./meta/days";
 import { playerNodes } from "./meta/island";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
-import { pushNews } from "./view/copy";
+import { clawBackLine, pushNews } from "./view/copy";
+import { clawBack } from "./meta/income";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import type { NodeId } from "./sim/map";
 
@@ -155,12 +156,12 @@ async function readHoldings(list: readonly Neighbour[]) {
  * A sortie on another player's holding has ended (docs/ringfall/glossary.md 攻め): tell their island
  * whether its core was taken. Best effort: the attacker's own settle never waits on it.
  */
-export async function reportRaid(code: string, target: string, captured: boolean, stars?: number): Promise<void> {
+export async function reportRaid(code: string, target: string, captured: boolean, stars?: number, won?: number): Promise<void> {
   const who = loadIdentity();
   if (!who.code) return;
   await call(`/api/islands/${encodeURIComponent(code)}/raids`, {
     method: "POST",
-    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}) }),
+    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}), ...(won ? { won } : {}) }),
   });
 }
 
@@ -399,6 +400,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
     synced.holds = view.body.nodes;
     synced.incoming = incomingOf(view.body);
     synced.parcels = view.body.parcels;
+    synced.raided = view.body.raided;
     synced.outerGuard = outerGuardFromView(view.body);
   }
   if (!log.ok && !view.ok && !report) return view;
@@ -422,9 +424,24 @@ const tropLookup = (p: Profile) => rivalTrophiesLookup(p.trophies ?? TROPHY.star
 
 export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }, tropLookup(p)).profile;
 
+/**
+ * The holdings the sync found another player took (`before` held them, `after` does not): the income
+ * collected from them since they were taken goes back out of the cash (meta/income.ts `clawBack()`).
+ */
+export function takenBack(before: Profile, after: Profile, news: readonly IslandLogEntry[]): Profile {
+  const lost = news.flatMap((e) =>
+    e.t === "taken" && before.poiState[e.node as NodeId]?.state === "own" && after.poiState[e.node as NodeId]?.state !== "own" ? [{ node: e.node as NodeId, at: e.at }] : [],
+  );
+  if (!lost.length) return after;
+  const { stores, back } = clawBack(after.stores, after.cash, lost);
+  return { ...after, stores, cash: after.cash - back };
+}
+
 export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[]; notes: string[] } {
   const lookup = tropLookup(p);
-  const r = s.ticket < applied ? applySync(p, { reported: s.synced.reported }, lookup) : ((applied = s.ticket), applySync(p, s.synced, lookup));
+  const synced = s.ticket < applied ? applySync(p, { reported: s.synced.reported }, lookup) : ((applied = s.ticket), applySync(p, s.synced, lookup));
+  const r = { ...synced, profile: takenBack(p, synced.profile, synced.news), notes: [...synced.notes] };
+  if (r.profile.cash < synced.profile.cash) r.notes.push(clawBackLine(synced.profile.cash - r.profile.cash));
   // トロフィーの増減は必ず知らせの一行と一緒に Profile.news へ残す.
   if (!r.notes.length) return { profile: r.profile, news: r.news, notes: r.notes };
   return { profile: { ...r.profile, news: pushNews(r.profile.news ?? [], r.notes) }, news: r.news, notes: r.notes };

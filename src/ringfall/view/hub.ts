@@ -7,7 +7,7 @@ import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, 
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+import { armed, build, keepParcels, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 // buyPrice / canStartIn / onSale used by sourceGuide
 import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
@@ -21,7 +21,7 @@ import { sfx } from "./sfx";
 import { rarityText } from "./palette";
 import { islandDay } from "../meta/days";
 import { collect } from "../meta/income";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
@@ -670,15 +670,23 @@ export class Hub {
     if (tell) this.closed();
   }
 
-  private set(p: Profile) {
+  private set(given: Profile) {
+    const p = this.parcelsBack(given);
     const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
     this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
     saveProfile(this.profile);
     this.load = this.fit(this.load);
   }
 
+  /** A holding lost since the profile last stood: its 島の守り come back to the stash, with a line in 島の知らせ (決定 B: the owner's things are never taken). */
+  private parcelsBack(p: Profile): Profile {
+    const r = keepParcels(this.profile, p);
+    return r.back.length ? { ...r.profile, news: pushNews(r.profile.news ?? [], [parcelsBackLine(r.back.length)]) } : r.profile;
+  }
+
   /** Takes a profile settled after a raid: the last loadout picked again from the stash, the start kept where the profile allows it. */
-  reload(p: Profile) {
+  reload(given: Profile) {
+    const p = this.parcelsBack(given);
     const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
     this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
     if (extra.length) saveProfile(this.profile);

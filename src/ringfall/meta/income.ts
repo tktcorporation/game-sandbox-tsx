@@ -2,6 +2,7 @@
  * 拠点の収入（docs/ringfall/glossary.md 決定 A）: 陣地ごとに現実の時間で溜まり、野営地で受け取る。
  * レイドの回数では増えない。一つの陣地に溜まるのは `INCOME.cap` 時間分まで（取りに来ないと止まる）。
  * 陣地を攻められて取られると、そこに溜まっていた分は攻め手が持っていく（meta/away-attacks.ts）。
+ * 取られたと分かる前に受け取ってしまった分は、分かった時点でお金から引く（`clawBack()`）。
  */
 import { NODES, type NodeId } from "../sim/map";
 import { playerNodes, type Island } from "./island";
@@ -21,6 +22,8 @@ export interface Stores {
   at: Partial<Record<NodeId, number>>;
   /** When `at` was last brought up to date (ms; 0 before the first look). */
   since: number;
+  /** What each holding paid at its last collection, and when: taken back if the holding turns out to have been taken before then. */
+  paid?: Partial<Record<NodeId, { at: number; n: number }>>;
 }
 
 export const emptyStores = (): Stores => ({ at: {}, since: 0 });
@@ -47,8 +50,31 @@ export function collect(s: Stores, poiState: Island, now: number): { credits: nu
   const up = accrue(s, poiState, now);
   const credits = waiting(up);
   const at: Partial<Record<NodeId, number>> = {};
-  for (const id of Object.keys(up.at) as NodeId[]) at[id] = (up.at[id] ?? 0) - Math.floor(up.at[id] ?? 0);
-  return { credits, stores: { at, since: up.since } };
+  const paid: Partial<Record<NodeId, { at: number; n: number }>> = { ...(s.paid ?? {}) };
+  for (const id of Object.keys(up.at) as NodeId[]) {
+    const v = up.at[id] ?? 0;
+    at[id] = v - Math.floor(v);
+    if (Math.floor(v) > 0) paid[id] = { at: now, n: Math.floor(v) };
+  }
+  return { credits, stores: { at, since: up.since, paid } };
+}
+
+/**
+ * The holdings another player took (`lost`: which, and when) whose last collection came after: what
+ * they paid then was the taker's (carried off as a holding taken carries what it made), so it comes
+ * out of `cash` again, as far as there is cash. The credits taken back and the stores without those records.
+ */
+export function clawBack(s: Stores, cash: number, lost: readonly { node: NodeId; at: number }[]): { stores: Stores; back: number } {
+  const paid = { ...(s.paid ?? {}) };
+  let back = 0;
+  for (const l of lost) {
+    const p = paid[l.node];
+    if (!p || p.at <= l.at) continue;
+    back += p.n;
+    delete paid[l.node];
+  }
+  back = Math.min(back, Math.max(0, cash));
+  return { stores: { ...s, paid }, back };
 }
 
 /** Saved stores, or empty when missing / unreadable. */
@@ -62,5 +88,11 @@ export function parseStores(raw: unknown): Stores {
       if (typeof v === "number" && Number.isFinite(v) && v >= 0) at[n.id] = Math.min(storeCap(), v);
     }
   const since = typeof o.since === "number" && Number.isFinite(o.since) ? Math.max(0, o.since) : 0;
-  return { at, since };
+  const paid: Partial<Record<NodeId, { at: number; n: number }>> = {};
+  if (o.paid && typeof o.paid === "object")
+    for (const n of NODES) {
+      const v = (o.paid as Record<string, unknown>)[n.id] as { at?: unknown; n?: unknown } | undefined;
+      if (v && typeof v.at === "number" && Number.isFinite(v.at) && typeof v.n === "number" && Number.isFinite(v.n) && v.n > 0) paid[n.id] = { at: v.at, n: Math.floor(v.n) };
+    }
+  return Object.keys(paid).length ? { at, since, paid } : { at, since };
 }

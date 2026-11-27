@@ -735,6 +735,21 @@ function store(p: Profile, items: Item[]): { profile: Profile; pending: Item[] }
 }
 
 /**
+ * The holdings `before` held that `after` no longer does: the 島の守り waiting at them go back into
+ * the stash (what does not fit waits for 倉庫の整理) and leave the island. A holding taken costs its
+ * owner what it had made, never their things (glossary.md 決定 B). The profile, and what came back.
+ */
+export function keepParcels(before: Pick<Profile, "poiState" | "parcels">, after: Profile): { profile: Profile; back: Parcel[] } {
+  const lost = new Set(NODES.filter((n) => before.poiState[n.id]?.state === "own" && after.poiState[n.id]?.state !== "own").map((n) => n.id as string));
+  if (!lost.size) return { profile: after, back: [] };
+  const seen = new Set<number>();
+  const back = [...(before.parcels ?? []), ...(after.parcels ?? [])].filter((q) => lost.has(q.poi) && !seen.has(q.id) && (seen.add(q.id), true));
+  if (!back.length) return { profile: after, back };
+  const kept = { ...after, parcels: (after.parcels ?? []).filter((q) => !lost.has(q.poi)) };
+  return { profile: store(kept, back.map((q) => ({ t: "valuable" as const, kind: q.kind }))).profile, back };
+}
+
+/**
  * Puts what came off the island into the stash.
  * What was sent home from a depot arrives however the raid ended; the depots switched on
  * and the map explored are kept too. The ways in walked to are learned only when the player got

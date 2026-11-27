@@ -136,6 +136,8 @@ export interface LogEntry {
   by: Attacker;
   /** A sortie's stars (0–3, `raid`): what the attacker won, and so what the owner loses. Left out elsewhere. */
   stars?: number;
+  /** The trophies the sortie's attacker won (`raid`), as their settle counted them: what the owner loses. */
+  won?: number;
 }
 
 /** An expedition as the owner's raid takes it in (`lease`): the island's number for it, whose, its node, its members' kinds, and how it stood. */
@@ -250,7 +252,7 @@ export type IslandOp =
    * the attacker when it ends. Captured, the holding goes back to the robots with its 島の守り;
    * else the owner is told it held (守りきった). The island's day shield and loss cap still hold.
    */
-  | { t: "raid"; from: Attacker; target: string; captured: boolean; stars?: number };
+  | { t: "raid"; from: Attacker; target: string; captured: boolean; stars?: number; won?: number };
 
 /** The answer to an op: the HTTP status and body, and the island as it is after it (null while nobody has claimed it). */
 export interface OpResult {
@@ -346,14 +348,14 @@ export function recordOuterTaken(s: IslandState, at: number) {
   markIslandShield(s, at);
 }
 
-function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, by: Attacker, stars?: number) {
+function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, by: Attacker, stars?: number, won?: number) {
   if (t === "taken") {
     s.taken = { day: utcDay(at), n: takenOn(s, at) + 1 };
     // Hold still shows the pre-flip owner here (caller updates holds after / separately).
     if (isContestedShore(NODE_IDS[node]) && s.holds[node] === "own") recordOuterTaken(s, at);
   }
   if (t === "taken" || t === "retaken") shieldNode(s, node, at);
-  s.log.push(stars === undefined ? { seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by } } : { seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by }, stars });
+  s.log.push({ seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by }, ...(stars !== undefined ? { stars } : {}), ...(won !== undefined ? { won } : {}) });
   if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);
 }
 
@@ -403,6 +405,8 @@ export function publicView(s: IslandState, now: number) {
     outerLossCap: OUTER_GUARD.lossCap,
     // `shielded`: no sortie takes it today (its own day's shield, `raid`'s check).
     nodes: NODE_IDS.map((id, i) => ({ id, hold: s.holds[i], open: expeditionRefusal(s, i, now) === null, ...(isShielded(s, i, now) ? { shielded: true } : {}) })),
+    // Holdings sorties took that the owner's reports have not shown lost yet, outliving the bounded log.
+    raided: (s.raided ?? []).map((i) => NODE_IDS[i]),
     expeditions: s.expeditions.map((e) => ({
       id: e.id,
       by: { ...e.by },
@@ -778,6 +782,8 @@ function report(
     s.parcels ??= [];
     s.parcels.push({ id: s.nextId++, poi: p.poi, kind: p.kind, from: { ...p.from }, at: now });
   }
+  // A node the owner reports lost (an AI player's attack while away) holds no 島の守り: the owner's copy sent them back to the stash.
+  if (s.parcels?.length) s.parcels = s.parcels.filter((p) => { const k = NODE_IDS.indexOf(p.poi); return k < 0 || s.holds[k] === "own"; });
   if (s.parcels && s.parcels.length > EXPEDITION.parcelMax) s.parcels = s.parcels.slice(s.parcels.length - EXPEDITION.parcelMax);
   s.guards = NODE_IDS.map(() => null);
   s.meter = NODE_IDS.map(() => null);
@@ -995,19 +1001,22 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     const guarded = isShielded(s, i, now) || isIslandShielded(s, now) || outerLossCapReached(s, now);
     // The stars the attacker won (a report before stars were sent: ★★★ for a capture, none otherwise).
     const stars = Math.max(0, Math.min(3, Math.round(Number.isFinite(op.stars) ? op.stars! : op.captured ? 3 : 0)));
+    // What the attacker's settle counted as won, capped as one sortie can win (TROPHY.base + its gap bonus).
+    const won = Number.isFinite(op.won) && op.won! > 0 ? Math.min(60, Math.round(op.won!)) : undefined;
     if (!op.captured || guarded) {
-      appendLog(s, now, "wiped", i, op.from, guarded && op.captured ? 0 : Math.min(stars, 1));
+      const star = guarded && op.captured ? 0 : Math.min(stars, 1);
+      appendLog(s, now, "wiped", i, op.from, star, star ? won : undefined);
       return done(200, { ok: true, taken: false }, true);
     }
+    // The holding's 島の守り leave it: its owner's copy sends them back to their stash (決定 B: things are never taken).
     const poi = NODE_IDS[i];
-    const seized = (s.parcels ?? []).filter((q) => q.poi === poi);
     s.parcels = (s.parcels ?? []).filter((q) => q.poi !== poi);
     // Back to the robots first, so the log counts the day's loss once (here, not as a contested shore's).
     s.holds[i] = "foe";
     s.raided = [...(s.raided ?? []).filter((k) => k !== i), i];
-    appendLog(s, now, "taken", i, op.from, Math.max(2, stars));
+    appendLog(s, now, "taken", i, op.from, Math.max(2, stars), won);
     recordOuterTaken(s, now);
-    return done(200, { ok: true, taken: true, parcels: seized.map((q) => q.kind) }, true);
+    return done(200, { ok: true, taken: true }, true);
   }
   // An expedition (optional `x2`: short-raid notice, settled later by `assault`).
   if (op.from.code === s.owner.code) return done(403, fail("own-island"));
