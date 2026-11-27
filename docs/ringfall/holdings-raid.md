@@ -3,6 +3,8 @@
 状態: **方針として採用**。実装はスタック PR で進行中（下の「作り順」）。  
 関連: [design-direction.md](design-direction.md)（判断基準）、[multiplayer-experience.md](multiplayer-experience.md)・[pvp-clarity.md](pvp-clarity.md)（この方針で置き換わる部分がある）、[raid-loot.md](raid-loot.md)（星・トロフィー・制圧の戦利品はここから流用）、[glossary.md](glossary.md)。
 
+**追記（2026-11-27）:** 大枠を三つ決めた（[glossary.md](glossary.md)「決めたこと」）。この文書の「お隣」は**別プレイヤー**（AI を含む）と読む。陣地を取りうるのは別プレイヤーだけで、島のロボットは陣地を取らない。拠点の収入は現実の時間で溜まり、攻められると持っていかれる。チーム・部隊戦（作り順④⑤⑥）は消す。日は現実の暦の日で、出撃で進まない。
+
 ---
 
 ## なぜ変えるか
