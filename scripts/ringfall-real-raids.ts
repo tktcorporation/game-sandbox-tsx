@@ -13,7 +13,7 @@ import { applySync, parseLog, parseView, type IslandLogEntry } from "../src/ring
 import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies";
 import { keepParcels, newProfile } from "../src/ringfall/meta/profile";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
-import { attackable } from "../src/ringfall/island-net";
+import { attackable, takenBack } from "../src/ringfall/island-net";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
 import { NODES } from "../src/ringfall/sim/map";
 
@@ -171,5 +171,14 @@ assert.equal(real[0]!.owner, B.code);
   assert.deepEqual(read?.entries.at(-1)?.replay, rec(9), "the owner's log lost the record");
   // One naming another node than its line's does not read.
   assert.equal(parseLog({ entries: [{ ...read!.entries.at(-1)!, replay: { ...rec(1), node: "quarry" } }], next: 1 })?.entries[0].replay, undefined);
+}
+// The log comes a sync after the holds showed the holding lost: its income still comes back, once.
+{
+  const base = newProfile(5);
+  const gone = { ...base, cash: 1000, poiState: { ...base.poiState, supply: { state: "foe" as const } }, stores: { at: {}, since: T0, paid: { supply: [{ at: T0 + 7_200_000, n: 120 }] } } };
+  const line: IslandLogEntry = { seq: 5, at: T0 + 3_600_000, t: "taken", node: "supply", by: B, stars: 3 };
+  const once = takenBack(gone, gone, [line]);
+  assert.equal(once.cash, 880, "the income of a holding lost a sync earlier stayed paid");
+  assert.equal(takenBack(once, once, [line]).cash, 880, "taken back twice");
 }
 console.log("real raids ok", real.map((t) => t.title).join(" | "));
