@@ -2,7 +2,7 @@
 
 この文書は、RINGFALL の体験をどう組み立てるかの判断基準である。機能仕様（brief・island・multiplayer）や画面の細部（ui・ux-design）より先に読む。迷ったときはここへ戻る。
 
-関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[glossary.md](glossary.md)（プレイヤー向け用語の正本）、[multiplayer-experience.md](multiplayer-experience.md)（マルチ体験の一本化）、[game-design-review.md](game-design-review.md)（楽しさ・進行・動機の点検・実装前）、[simplify-candidates.md](simplify-candidates.md)（簡素化の候補と決定・依頼板／反応型守り／島の出来事／夜の襲撃削除）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[warehouse.md](warehouse.md)（倉庫のレベル）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
+関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[glossary.md](glossary.md)（ドメイン用語の正本・一語一義）、[multiplayer-experience.md](multiplayer-experience.md)（マルチ体験の一本化）、[game-design-review.md](game-design-review.md)（楽しさ・進行・動機の点検・実装前）、[simplify-candidates.md](simplify-candidates.md)（簡素化の候補と決定・依頼板／反応型守り／島の出来事／夜の襲撃削除）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[warehouse.md](warehouse.md)（倉庫のレベル）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
 
 **島で漁り、お隣の陣地を攻める（方針・2026-11-27）:** 一回の出撃に目的が三つ重なり、育てる場所と攻められる場所が分かれていて、体験が流れとして成立していない。そこで、自分の島はロボット相手に漁って拠点を占領し、**占領した陣地が他の人から攻められる場所**になる。対人の攻めはお隣の島の陣地へ短く出撃する（自分の島にお隣の拠点は立たない）。外側の拠点の取り合い（作り順②）と荒地の戦場（作り順⑤）は置き換えたうえで削除する予定。この節より下の対人の決定のうち、外側の取り合いと部隊戦の場に関わるものは、置き換えが済むまでの現状の記録として読む。詳細は [holdings-raid.md](holdings-raid.md)。
 
