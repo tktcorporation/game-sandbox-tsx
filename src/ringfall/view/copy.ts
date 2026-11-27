@@ -404,52 +404,11 @@ export function nextAttack(name: string): string {
 }
 
 /**
- * Map label under a rival-held contested hub.
- * 【元】ツバキ 【案】ツバキ · 攻める 【理由】取るのが攻めだと分かる（TKT-204 案 A）
- */
-export function attackOwner(who: string): string {
-  return `${who} · ${TERM.attack}`;
-}
-
-/**
- * Map label under a robot-held contested hub facing a neighbour (2026-11-26).
- * 【元】カゲウツ · AIと取り合う 【案】ロボット · トロフィーなし 【理由】ロボット拠点はトロフィーが動かないと分かる
- */
-export function contestOwner(_who?: string): string {
-  return `ロボット · ${TERM.trophy}なし`;
-}
-
-/**
- * Toast after seizing a robot-held outer hub (2026-11-26).
- * 【元】制圧した · {拠点} · {誰}が攻めてくる 【案】制圧した · {拠点} · トロフィーなし
- * 【理由】お隣は最初から来る。ロボット拠点を取っても海路ゲートではない
- */
-export function robotHubSeized(hub: string, _who?: string): string {
-  return `制圧した · ${hub} · ${TERM.trophy}なし`;
-}
-
-/**
- * Results note when only robot hubs were taken this raid (2026-11-26).
- * 【元】（トロフィー行のみ／無し） 【案】ロボットの拠点 · トロフィーは動かない 【理由】ライバル攻めと混ぜない
- */
-export function robotHubTropNote(): string {
-  return `ロボットの拠点 · ${TERM.trophy}は動かない`;
-}
-
-/**
  * Goal / 今日の作戦 / 出撃の目的 for a rival hub (TKT-204 案 D).
  * 【元】前線：浄水場 【案】ツバキの浄水場を攻める 【理由】野営と出撃を同じ言い方に
  */
 export function attackGoal(whoHub: string): string {
   return `${whoHub}を${TERM.attack}`;
-}
-
-/**
- * Depart hint when a rival hub is held but not yet on the front (not a sea-route gate).
- * 【元】先に{拠点}を取ると攻められる 【案】前線に出すには先に{拠点} 【理由】海路開放と混同しない。前線の隣接だけ
- */
-export function contestGateHint(gate: string): string {
-  return `前線に出すには先に${gate}`;
 }
 
 /**
@@ -527,7 +486,7 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
     // 【案】地図にも最初から出る、を足す 【理由】初日可視化：隣島の存在を地図で先に見せる
     // 【元】…外側の拠点を攻めてくる。
     // 【案】島で占領した拠点を攻めてくる 【理由】攻められる場所＝占領した陣地（holdings-raid.md）
-    body: `${TERM.seaIslands}は地図に最初から出る。島で占領した拠点を攻めてくる。`,
+    body: `${TERM.seaIslands}は地図に最初から出る。留守のあいだ、島で占領した拠点を攻めてくる。`,
   },
   {
     title: TERM.attack,
@@ -535,7 +494,7 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
     // 【案】門の一覧を先に言う 【理由】攻めるリストが初日の入口だと分かる
     // 【元】門の「攻める」に相手の拠点が一覧で出る。取れば…
     // 【案】選ぶとその拠点へ短く攻めに行く、を足す 【理由】攻めは相手の島への短い出撃（holdings-raid.md）
-    body: `門の「${TERM.attack}」にお隣の拠点が一覧で出る。選ぶとその拠点へ短く攻めに行く。取れば${TERM.trophy}が増える。`,
+    body: `門の「${TERM.attack}」に別プレイヤーの陣地が一覧で出る。選ぶとその拠点へ短く攻めに行く。取れば${TERM.trophy}が増える。`,
   },
   {
     title: TERM.captureCore,

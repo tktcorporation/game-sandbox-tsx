@@ -3,7 +3,6 @@ import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIn
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { realignStartingFootholds, withStartingFootholds } from "./ai-islands";
 import { advanceDay, blankIsland, contestedOwned, dayChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
@@ -39,7 +38,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 50;
+  v: 51;
   cash: number;
   stash: Item[];
   raids: number;
@@ -132,6 +131,11 @@ export interface Profile {
    * `SORTIE_META.regrow` days, so it is no target until then. v48 and older saves have none.
    */
   raided: Raided[];
+  /**
+   * When the AI players' attacks on the holdings were last reckoned (ms, `awayAttacks()`). 0 on a
+   * profile not yet looked at: the first look starts the clock. v50 and older start at 0.
+   */
+  attackedAt: number;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -192,9 +196,9 @@ export function newProfile(seed = 1): Profile {
   for (const k of HEAL_KINDS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
   const s = seed & 0xffff;
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
-  const poiState = withStartingFootholds(newIsland(), s);
+  const poiState = newIsland();
   return {
-    v: 50,
+    v: 51,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -228,16 +232,8 @@ export function newProfile(seed = 1): Profile {
     goal: null,
     outerGuard: emptyOuterGuard(),
     raided: [],
+    attackedAt: 0,
   };
-}
-
-/**
- * Align day-1 AI foothold owners with the browser's neighbour salt (`aiSalt`).
- * Call on load so 「攻める」 names match the map's AI islands.
- */
-export function bindStartingFootholds(p: Profile, salt: number): Profile {
-  const poiState = realignStartingFootholds(p.poiState, salt);
-  return poiState === p.poiState ? p : { ...p, poiState };
 }
 
 
@@ -1092,12 +1088,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v46 and older have no `teamBattle`; v47 adds 部隊戦 on the field (作り順⑤).
  * v47 and older may lack war-power hooks / team `score` on `teamBattle`; v48 fills them (作り順⑥).
  * v49 and older may hold `team` / `teamBattle` (チーム・部隊戦); v50 drops them (glossary.md 決定 C).
+ * v50 and older may hold other players' nodes on the player's own island; v51 makes them the enemy's
+ * (only other players take holdings, and a holding taken goes back to the robots) and adds `attackedAt`.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1123,7 +1121,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
-  const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, o.v >= 26) : blankIsland();
+  const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, false) : blankIsland();
   const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
@@ -1180,7 +1178,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 50,
+    v: 51,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1213,6 +1211,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     goal,
     outerGuard,
     raided,
+    attackedAt: typeof o.v === "number" && o.v >= 51 && Number.isFinite(o.attackedAt) ? Math.max(0, o.attackedAt as number) : 0,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,

@@ -4,14 +4,13 @@
  * hold sea-route shores from day 1, so the gate is open immediately. Seen flag is
  * local only (no Profile.v bump).
  */
-import { CONTESTED_SHORES } from "./neighbours";
 import type { Island } from "./island";
 
 const KEY = "ringfall.mpHowto.v1";
 
-/** Whether any contested coastal hub is the player's. */
+/** Whether the player holds any node (a holding other players may attack). */
 export function holdsContested(poiState: Island): boolean {
-  return CONTESTED_SHORES.some((id) => poiState[id]?.state === "own");
+  return Object.values(poiState).some((x) => x?.state === "own");
 }
 
 /** Already dismissed the three cards on this browser. */

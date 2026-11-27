@@ -11,7 +11,7 @@ import { POI_AT } from "./sim/areas";
 import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, bindStartingFootholds, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { leagueChanged, rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
@@ -21,14 +21,12 @@ import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { postRaidSummary } from "./post-raid-summary";
-import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiSalt, awayFor, incomingFor, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
-import { aiRaidNews, aiRivals } from "./meta/ai-islands";
-import { contestedDefence, contestedParcels } from "./meta/contested-defence";
 import { isIslandProtected } from "./meta/outer-guard";
 import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
-import { Hub, type Launch } from "./view/hub";
+import { Hub, revengeFor, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
 import { MpHowto } from "./view/mp-howto";
@@ -43,7 +41,7 @@ import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
 import { aiLabel, attackGoal, awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
-import { Hud } from "./view/hud";
+import { Hud, setRevenge } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
@@ -300,43 +298,28 @@ function onEvent(e: GameEvent, s: State) {
     // 実プレイヤーのお隣への短いレイド: 保留中の勝敗報告を同期時に送信（失敗時は再試行）。
     postRaidSummary(settled, s);
     syncIsland(settled.profile, s);
-    // The game's own islands' part in the raid, as their log would tell it: on the results and the signal station.
-    if (raidAi) {
-      const news = aiRaidNews(before, settlement.profile, aiSalt(), raidAi.slots, Date.now(), raidAi.scouted);
-      // The first scout has come once an island's expedition was in a raid: it does not come again.
-      if (!raidAi.scouted && raidAi.lent.some((l) => l.state === "coming")) markScouted();
-      raidAi = null;
-      if (news.length) {
-        const shown = news.filter(newsVisible);
-        hub.takeNews(news);
-        // 守りきった → トロフィー少し増（知らせとセット。applySync 経路とは別）。
-        const wipes = shown.filter((e) => e.t === "wiped");
-        const def = wipes.length ? hub.awardDefence(wipes) : null;
-        if (def && settlement) {
-          const t = settlement.trophies;
-          const beforeTrop = t?.before ?? def.before;
-          const afterTrop = def.after;
-          // Recompute league from the totals shown on results (Codex P2 / TKT-219).
-          const league = leagueChanged(beforeTrop, afterTrop);
-          settlement = {
-            ...settlement,
-            profile: hub.profile,
-            trophies: {
-              before: beforeTrop,
-              after: afterTrop,
-              gained: t?.gained ?? 0,
-              lost: t?.lost ?? 0,
-              defended: (t?.defended ?? 0) + def.defended,
-              // Keep 「攻める」star count so the results' star line still draws.
-              ...(t?.stars !== undefined ? { stars: t.stars } : {}),
-            },
-            ...(league ? { league } : { league: undefined }),
-          };
-        }
-        aiNews = shown.map(logLine);
-        islandNews = [...aiNews];
-      }
+    // The AI players' attacks on the holdings while the raid ran (real time): on the results and the signal station.
+    const away = hub.takeAway(awayFor(hub.profile));
+    if (away && settlement) {
+      const t = settlement.trophies;
+      const beforeTrop = t?.before ?? away.before;
+      const league = leagueChanged(beforeTrop, away.after);
+      settlement = {
+        ...settlement,
+        profile: hub.profile,
+        trophies: {
+          before: beforeTrop,
+          after: away.after,
+          gained: t?.gained ?? 0,
+          lost: (t?.lost ?? 0) + away.lost,
+          defended: (t?.defended ?? 0) + away.defended,
+          ...(t?.stars !== undefined ? { stars: t.stars } : {}),
+        },
+        ...(league ? { league } : { league: undefined }),
+      };
     }
+    aiNews = away?.lines ?? [];
+    islandNews = [...aiNews];
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
 }
@@ -363,7 +346,6 @@ const leaseLasts = (l: Lease, s: State | null) => l.until - Date.now() > (CONQUE
 /** The expeditions the raid under way took in: its report says what became of them. */
 let raidLent: LentIn[] = [];
 /** What the game's own islands brought to the raid under way, and the slots they stood in as it started (meta/ai-islands.ts); null with none. */
-let raidAi: { lent: LentIn[]; slots: number[]; scouted: boolean } | null = null;
 /** The game's own islands' news from the raid just settled, before the server's. */
 let aiNews: string[] = [];
 /**
@@ -599,9 +581,8 @@ let profileBefore: Profile | null = null;
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const loaded = loadProfile();
-// Early-MP: realign day-1 AI footholds to aiSalt() so 「攻める」 names match map neighbours.
 const salt0 = aiSalt();
-const loadedHub = bindStartingFootholds({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, salt0);
+const loadedHub = { ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) };
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub(loadedHub, () => {
   // 地図で見る: goal already set in the hub; open the departure framed on that POI / nearest start.
@@ -622,6 +603,7 @@ const hub = new Hub(loadedHub, () => {
   }
   lock();
 });
+setRevenge((line) => revengeFor(hub.profile, line));
 organize.bind((p) => {
   hub.reload(p);
   saveProfile(hub.profile);
@@ -752,7 +734,9 @@ function openCamp() {
   // タイトルから野営に立ったときだけ、留守中の対人を一度同期して一枚で出す。
   if (!awayBooted) {
     awayBooted = true;
-    void deliverAwayNews(beforeSnap);
+    // The AI players' attacks on the holdings since the last session (real time).
+    const away = hub.takeAway(awayFor(hub.profile));
+    void deliverAwayNews(beforeSnap, away?.lines ?? []);
   }
   // Reload with pending: open 整理 over the camp (not the title). Leave the pointer free so the buttons work.
   // Early-MP: show the three howto cards at first camp, before free roam (depart keeps a fallback).
@@ -769,21 +753,24 @@ function openCamp() {
  * 野営起動時: 島を同期し、留守中に届いた対人の結果があればリザルトと同じ文の一枚を出す。
  * 控えは takeSync / hub.update ですでに Profile.news へ入る。一枚はセッションで一度だけ。
  */
-function deliverAwayNews(before: Profile) {
+function deliverAwayNews(before: Profile, awayLines: readonly string[] = []) {
   void syncOwn(before, false).then((r) => {
     void flushRecalls(
       () => hub.profile,
       (q) => hub.update(q),
     );
-    if (!r.ok || !camping || running || awaySheetOpen || !$("results").hidden) return;
-    const { profile, news, notes } = takeSync(hub.profile, r.body);
-    if (profile !== hub.profile) hub.update(profile);
-    world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
-    if (news.length) hub.takeNews(news);
-    saveProfile(hub.profile);
-    // 同期で届いた行＋トロフィー行をそのまま一枚に（文の一致だけに頼らない）。
-    const shown = news.filter(newsVisible).map(logLine);
-    const fromSync = awaySheetParts([], [...shown, ...notes]);
+    if (!camping || running || awaySheetOpen || !$("results").hidden) return;
+    let fromSync: ReturnType<typeof awaySheetParts> = null;
+    if (r.ok) {
+      const { profile, news, notes } = takeSync(hub.profile, r.body);
+      if (profile !== hub.profile) hub.update(profile);
+      world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
+      if (news.length) hub.takeNews(news);
+      saveProfile(hub.profile);
+      // 同期で届いた行＋トロフィー行をそのまま一枚に（文の一致だけに頼らない）。
+      const shown = news.filter(newsVisible).map(logLine);
+      fromSync = shown.length || notes.length ? awaySheetParts([], [...awayLines, ...shown, ...notes]) : null;
+    }
     const parts = fromSync ?? awaySheetParts(before.news ?? [], hub.profile.news ?? []);
     if (!parts) return;
     // 同期のあいだに出撃やリザルトが開いていたら重ねない。
@@ -967,16 +954,9 @@ function start(go: Launch, from?: State) {
   // The expeditions on the game's own islands brought up to the clock: one that has ended gives its squad back to this raid.
   const fresh = refreshAi(hub.profile);
   if (fresh !== hub.profile) hub.update(fresh);
-  // The game's own islands' expedition of the day and their squads holding nodes here join it as the server's do.
-  const aiLent = go.sortie ? [] : aiLentFor(hub.profile);
   // The names of the islands whose squads come or stand in this raid, for its banners.
-  hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
-  // A sortie fights no defence of the island: the game's islands' expedition of the day is no win or loss of it.
-  raidAi = go.sortie ? null : { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
+  hud.setRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
   lease = null;
-  const neigh = neighboursFor(hub.profile);
-  const defence = contestedDefence(hub.profile.poiState, hub.profile.day, neigh, aiSalt());
-  const defenceParcels = contestedParcels(hub.profile.parcels ?? []);
   state = go.sortie
     ? // A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): played there alone, no battle of the island.
       newRun(go.seed, kit, region, {
@@ -1007,12 +987,8 @@ function start(go: Launch, from?: State) {
         battle: {
           factory: hub.profile.factory,
           away: squadsAway(hub.profile),
-          rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
+          rivals: lentRivals(raidLent),
         },
-        // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
-        ...(defence.length ? { defence } : {}),
-        ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
-        ...(go.attack ? { attack: go.attack } : {}),
       });
   hud.setContract();
   // A lease still on its way joins this raid if it comes in its first seconds.
@@ -1026,7 +1002,7 @@ function start(go: Launch, from?: State) {
   }
   hud.setRaidsDone(hub.profile.raids);
   // Passive traces only: rivals / incoming, no legend or new noun (ux-design M5).
-  const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
+  const owners = [...new Set(raidLent.map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
   hud.setTraces(raidTraces(go.seed, state.bins, owners));
   hud.setRemotePings([]);
   world.campMode = false;
@@ -1159,8 +1135,8 @@ $("restart").addEventListener("click", () => {
 // やり返す (TKT-204 案 F): 取られた行 → 攻める一覧でその拠点を選んだ出撃.
 $("results").addEventListener("click", (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act=revenge]");
-  if (!el?.dataset.node) return;
-  if (!hub.revenge(el.dataset.node as NodeId)) return;
+  if (!el?.dataset.arg) return;
+  if (!hub.revenge(el.dataset.arg)) return;
   sfx.click();
   if (awaySheetOpen) {
     awaySheetOpen = false;

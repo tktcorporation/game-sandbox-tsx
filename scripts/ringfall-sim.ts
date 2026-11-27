@@ -49,7 +49,6 @@ import { squadsAway } from "../src/ringfall/meta/expeditions";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { START_FOOTHOLDS } from "../src/ringfall/meta/ai-islands";
 import { blankIsland, heldIncome, islandHolds, advanceDay, holds, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
@@ -2027,15 +2026,13 @@ function checkIsland(): string | null {
     return s;
   };
   let p = newProfile();
-  // 2026-11-26: sea-route shores start own; early-MP footholds are rival; every other POI is foe.
+  // 2026-11-26: sea-route shores start own; every other POI is foe.
   const startOwn = new Set(ROUTE_SHORES as readonly string[]);
-  const startRival = new Set(START_FOOTHOLDS.map((f) => f.id as string));
   if (
     p.day !== 1 ||
     POIS.some((o) => {
       const st = p.poiState[o.id].state;
       if (startOwn.has(o.id)) return st !== "own";
-      if (startRival.has(o.id)) return typeof st !== "string" || !st.startsWith("rival:");
       return st !== "foe";
     })
   )
@@ -2094,7 +2091,7 @@ function checkIsland(): string | null {
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
   if (
     !v12 ||
-    v12.v !== 50 ||
+    v12.v !== 51 ||
     v12.day !== 7 ||
     POIS.some((o) => (startOwn.has(o.id) ? v12.poiState[o.id].state !== "own" : v12.poiState[o.id].state !== "foe"))
   )

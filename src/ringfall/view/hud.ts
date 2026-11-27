@@ -3,9 +3,8 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNowOnMap } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, leagueChangeLine, PHRASE, TERM, moduleRaiseReady, newsIncursion, raidStarsLine, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine, winBonusMark } from "./copy";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, leagueChangeLine, PHRASE, TERM, moduleRaiseReady, newsIncursion, raidStarsLine, relayOf, trophyHead, trophyLine, winBonusMark } from "./copy";
 import { raidTrophyDelta } from "../meta/trophies";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { capturedIds } from "../sim/front";
@@ -53,14 +52,17 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /**
  * The island's news as the results / 起動時の一枚 show it.
- * 「取られた」行に やり返す (TKT-204 案 F) when that hub is still rival-held.
+ * 「取られた」行に やり返す (TKT-204 案 F) when the one who took it has a holding to attack (`setRevenge()`).
  */
-const newsBlock = (news: readonly string[], poiState?: Island) => {
+let revengeOf: (line: string) => { owner: string; id: string } | null = () => null;
+/** How a 島の知らせ line names the holding to attack back (the hub's `revengeFor()`). */
+export const setRevenge = (f: typeof revengeOf) => (revengeOf = f);
+const newsBlock = (news: readonly string[], revenge = false) => {
   if (!news.length) return "";
   const rows = news.map((n) => {
-    const node = poiState ? revengeNodeFromLine(poiState, n) : null;
-    const btn = node
-      ? `<button type="button" class="revenge" data-act="revenge" data-node="${node}">${TERM.revenge}</button>`
+    const t = revenge ? revengeOf(n) : null;
+    const btn = t
+      ? `<button type="button" class="revenge" data-act="revenge" data-arg="${esc(`${t.owner}|${t.id}`)}">${TERM.revenge}</button>`
       : "";
     return `<span class="news-line">${esc(n)}${btn}</span>`;
   });
@@ -602,10 +604,7 @@ export class Hud {
           this.toast(`${coreIcon(SIDE.own)}${esc(attackSeized(whoHub))}<span class="toast-sub">倉庫へ届く</span>`, 1, 5000);
           break;
         }
-        // Robot-held outer hub: trophies do not move (neighbours already raid from day 1).
-        const robotToast =
-          isContestedShore(hub.id) && startHold === "foe" ? robotHubSeized(hub.name) : `制圧した · ${hub.name}`;
-        this.toast(`${coreIcon(SIDE.own)}${esc(robotToast)}`, 1, 5000);
+        this.toast(`${coreIcon(SIDE.own)}${esc(`制圧した · ${hub.name}`)}`, 1, 5000);
         break;
       }
       case "counter":
@@ -1612,7 +1611,7 @@ export class Hud {
     if (statsBox) (statsBox as HTMLElement).hidden = true;
     $("stats").innerHTML = "";
     const tropLine = trop ? `<p class="trop-line">${trop}</p>` : "";
-    $("home").innerHTML = `<div id="island-news">${newsBlock(lines, after.poiState)}</div>` + tropLine;
+    $("home").innerHTML = `<div id="island-news">${newsBlock(lines, true)}</div>` + tropLine;
     const tip = next || nextHandFor(after);
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1705,15 +1704,6 @@ export class Hud {
       : [];
     this.newsKeep = [...expNews, ...takeLines];
     const allNews = [...this.newsKeep, ...news];
-    // 2026-11-26: robot outer hubs taken → note that those captures do not move trophies.
-    // Keep any real trophy breakdown (defence awards / overnight losses can coexist).
-    const tookRobotHub =
-      !!settled &&
-      !(settled.takenRival?.length) &&
-      capturedIds(s).some((id) => {
-        const i = poiIndex(id);
-        return isContestedShore(id) && (s.hold?.[i] ?? "foe") === "foe";
-      });
     const trop = settled?.trophies;
     const tropMoved =
       !!trop &&
@@ -1734,12 +1724,11 @@ export class Hud {
       settled?.winBonus && settled.winBonus > 0
         ? `<p class="trop-line">${esc(winBonusMark(settled.winBonus))}</p>`
         : "";
-    const robotNote = tookRobotHub ? `<p class="trop-line">${esc(robotHubTropNote())}</p>` : "";
-    const tropLine = `${starLine}${tropBreakdown}${leagueLine}${bonusLine}${robotNote}`;
+    const tropLine = `${starLine}${tropBreakdown}${leagueLine}${bonusLine}`;
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s);
     const dayHead = settled
-      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
+      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, true)}</div>${tropLine}`
       : "";
     // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =

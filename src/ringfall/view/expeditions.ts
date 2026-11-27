@@ -9,7 +9,7 @@ import { playerNodes } from "../meta/island";
 import { expeditionsOut, numbered, dropStale, recallAll, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
-import { bindStartingFootholds, type Profile } from "../meta/profile";
+import { type Profile } from "../meta/profile";
 import { NODES, nodeIndex } from "../sim/map";
 import { lostTodayLine, shieldLine, TERM, trophyHead } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
@@ -83,8 +83,8 @@ export class ExpeditionPanel {
     const p0 = refreshAi(this.get());
     // Codex / PR6: 出ている遠征 UI 削除後もセーブやセッションに残る遠征は引き上げ → flushRecalls が DELETE。
     const retired = recallAll(dropStale(p0.expeditions, Date.now()).filter((e) => e.state !== "sending" && e.id > 0));
-    const footholds = bindStartingFootholds({ ...p0, expeditions: retired }, aiSalt());
-    if (footholds !== this.get()) this.put(footholds);
+    const fresh = { ...p0, expeditions: retired };
+    if (JSON.stringify(fresh) !== JSON.stringify(this.get())) this.put(fresh);
     // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
     this.neighbours = neighboursFor(this.get());
     if (this.conn.t !== "ok") this.conn = { t: "wait" };

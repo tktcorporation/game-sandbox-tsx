@@ -10,7 +10,8 @@ import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
-import { aiByCode, aiChanges, aiIncoming, aiLent, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { aiByCode, aiChanges, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { awayAttacks } from "./meta/away-attacks";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import { pushNews } from "./view/copy";
@@ -139,36 +140,11 @@ export function neighboursOnMap(p: Pick<Profile, "day" | "poiState">): Neighbour
 /** Raid / live map neighbours for the page's profile (`useAi`), gated like `neighboursOnMap`. */
 export const neighboursNowOnMap = (): Neighbour[] => (aiSource ? neighboursOnMap(aiSource()) : []);
 
-/** The expeditions coming at this island: the server's warnings, and the game's islands' for the next raid. */
-export const incomingFor = (p: Profile): Incoming[] => [...p.incoming, ...aiIncoming(p, aiSalt(), serverSlots(), aiScouted())];
+/** The expeditions coming at this island: the server's warnings. */
+export const incomingFor = (p: Profile): Incoming[] => p.incoming;
 
-/** What the game's islands bring to the next raid of `p` (their expedition, their squads holding nodes of this island). */
-export const aiLentFor = (p: Profile): LentIn[] => aiLent(p, aiSalt(), serverSlots(), aiScouted());
-
-/** Where the browser keeps that the game's first scout has come (meta/ai-islands.ts `AI.scout`): it comes once a browser. */
-const SCOUTED_KEY = "ringfall.ai.scouted.v1";
-/** Whether this page has seen it, for storage that is blocked. */
-let scoutedHere = false;
-
-/** Whether the first scout of the game's islands has come in a raid of this browser. */
-export function aiScouted(): boolean {
-  if (scoutedHere) return true;
-  try {
-    return localStorage.getItem(SCOUTED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/** The first scout came in the raid just settled: it does not come again. */
-export function markScouted() {
-  scoutedHere = true;
-  try {
-    localStorage.setItem(SCOUTED_KEY, "1");
-  } catch {
-    // Storage blocked: kept for this page.
-  }
-}
+/** The AI players' attacks on the holdings since the profile last looked, up to `now` (meta/away-attacks.ts). */
+export const awayFor = (p: Profile, now = Date.now()) => awayAttacks(p, aiSalt(), now, serverSlots());
 
 /** The expeditions with those on the game's islands brought up to now: the profile itself when none changes. */
 export function refreshAi(p: Profile): Profile {

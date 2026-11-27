@@ -25,7 +25,7 @@ import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile
 import { shopRarity } from "../src/ringfall/meta/island";
 import { FACTORY, FACTORY_TOP, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
-import { aiLent, aiRaidNews, aiRivals } from "../src/ringfall/meta/ai-islands";
+import { awayAttacks } from "../src/ringfall/meta/away-attacks";
 import { isAiOwner, rivalOf } from "../src/ringfall/sim/holds";
 import { fork } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -135,9 +135,10 @@ function spend(p: Profile): Profile {
 export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
   let p: Profile = spend({ ...newProfile(seed), entries: ENTRIES.map((e) => e.id) });
   const out: Campaign = { skill, days: [], errors: [] };
-  // The game's own islands play the month as they would in a browser with no island server
-  // (meta/ai-islands.ts): every slot theirs, their first scout once, from the profile's own salt.
-  let scouted = false;
+  // The game's own islands attack the holdings by the clock as in a browser with no island server
+  // (meta/away-attacks.ts): a day of the month is a day of real time before each raid.
+  const T0 = Date.UTC(2026, 10, 1);
+  p = { ...p, attackedAt: T0 };
   for (let d = 1; d <= days; d++) {
     // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
     const gear = bestGear(p);
@@ -146,15 +147,15 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     const ways = regionOf(region).entries;
     const taken = takeKit(p, { ...emptyLoadout(), weapons: gear.weapons.filter((n) => n >= 0), armor: gear.armor >= 0 ? gear.armor : null });
     p = taken.profile;
-    const lent = aiLent(p, seed, [], scouted);
-    const came = lent.some((l) => l.state === "coming");
-    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory, rivals: aiRivals(lent) }, threat: raidThreat(p) });
+    const away = awayAttacks(p, seed, T0 + d * 86_400_000);
+    p = away.profile;
+    const came = away.news.length > 0;
+    const aiTook = away.news.filter((e) => e.t === "taken").length;
+    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory }, threat: raidThreat(p) });
     const res = playState(s, skill, 500 + d);
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
     const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
     const settled = settle(p, s);
-    const aiTook = aiRaidNews(p, settled.profile, seed, [], 0, scouted).filter((e) => e.t === "taken").length;
-    if (came) scouted = true;
     p = spend(settled.profile);
     const h = islandHolds(p);
     const mine = NODES.filter((_, i) => h[i] === "own");
