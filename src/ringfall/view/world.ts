@@ -167,8 +167,17 @@ interface Particle {
   gravity: number;
 }
 
+/** A robot's model in another player's colours: purple armour, a violet eye's halo. Its armour materials are its own. */
+function tintPurple(m: EnemyModel) {
+  m.mats[0].color.setHex(PAL.rivalArmor);
+  m.mats[1]?.color.setHex(PAL.rivalArmorLight);
+  (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rivalEye);
+}
+
 interface EnemyView {
   m: EnemyModel;
+  /** Drawn in another player's colour (`Enemy.rival` or `Enemy.by`). */
+  purple?: boolean;
   kind: EnemyKind;
   flash: number;
   /** 0..1: how hard the last hits rocked it; the lean falls away in a fraction of a second. */
@@ -1482,11 +1491,7 @@ export class World {
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rogueEye);
         }
         // Another player's (an AI player's too, `Enemy.by`): the same robot in purple, its eye violet (sim/battle.ts side 3).
-        if (e.rival !== undefined || e.by !== undefined) {
-          m.mats[0].color.setHex(PAL.rivalArmor);
-          m.mats[1]?.color.setHex(PAL.rivalArmorLight);
-          (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rivalEye);
-        }
+        if (e.rival !== undefined || e.by !== undefined) tintPurple(m);
         // One of the player's own: the same robot in blue, its eye cyan (sim/battle.ts).
         if (e.friend) {
           m.mats[0].color.setHex(PAL.friendArmor);
@@ -1503,8 +1508,13 @@ export class World {
         beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
         m.body.rotation.order = "YXZ";
-        v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null, plates };
+        v = { m, purple: e.rival !== undefined || e.by !== undefined, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null, plates };
         this.enemies.set(e.id, v);
+      }
+      // A squad named an AI player's after its robots were drawn (sim/battle.ts `nameRaiders()`) turns purple then.
+      if (!v.purple && e.by !== undefined) {
+        tintPurple(v.m);
+        v.purple = true;
       }
       const k = ENEMIES[e.kind];
       const m = v.m;

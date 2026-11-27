@@ -58,11 +58,13 @@ for (const seed of [3, 11, 29]) {
   const lost = lostToRaiders(named.battle!, named.nodes);
   lostAll += lost.length;
   // The news: each lost holding an AI player's attack, trophies down as one while away.
-  const r = battleLosses({ ...p, poiState: { ...p.poiState } }, SALT, lost, Date.UTC(2026, 10, 27));
+  const r = battleLosses({ ...p, poiState: { ...p.poiState } }, aiIslands(SALT), lost, Date.UTC(2026, 10, 27));
   assert.equal(r.news.length, lost.length);
   assert.ok(r.news.every((e) => e.t === "taken" && e.by.name.length > 0));
   if (lost.length) assert.ok((r.profile.trophies ?? TROPHY.start) < (p.trophies ?? TROPHY.start), "a holding lost cost no trophies");
   console.log(`seed ${seed}: taken from the player ${fromPlayer.length}, lost at the end ${lost.length}`);
 }
+// Every slot at sea a real player's: the game's own islands still lend the enemy's squads their names.
+assert.ok(aiIslands(SALT, [0, 1, 2, 3]).length === 0 && aiIslands(SALT).length > 0);
 assert.ok(lostAll > 0, "no battle took a holding: the check proves nothing");
 console.log("raiders ok");

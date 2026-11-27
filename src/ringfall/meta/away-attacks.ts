@@ -111,10 +111,9 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
  * The holdings a raid's battle lost to the enemy's squads, which go by AI players' names in the
  * raid (`BattleSquad.by`, 決定 B): told as those players' attacks, each costing trophies as one
  * while away does and counting toward the day's loss cap. The battle has already given the node
- * back to the robots; an owner no longer next door is left out.
+ * back to the robots; an owner not among `islands` (the raid's raiders) is left out.
  */
-export function battleLosses<P extends Seen>(p: P, salt: number, lost: readonly { node: NodeId; by: string }[], now: number, taken: readonly number[] = []): AwayResult<P> {
-  const islands = aiIslands(salt, taken);
+export function battleLosses<P extends Seen>(p: P, islands: readonly AiIsland[], lost: readonly { node: NodeId; by: string }[], now: number): AwayResult<P> {
   const news: IslandLogEntry[] = [];
   let trophies = p.trophies ?? TROPHY.start;
   let guard = p.outerGuard ?? emptyOuterGuard();
