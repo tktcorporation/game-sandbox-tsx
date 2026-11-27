@@ -9,7 +9,8 @@
  */
 import assert from "node:assert/strict";
 import { islandOp, NODE_IDS, shieldNode, type IslandOp, type IslandState } from "../worker/island";
-import { applySync, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
+import { applySync, parseLog, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
+import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies";
 import { newProfile } from "../src/ringfall/meta/profile";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
@@ -73,6 +74,28 @@ const synced = applySync(p, { log: { entries: log, next: r.state!.seq }, holds: 
 assert.equal(synced.profile.poiState.supply.state, "foe", "the owner still holds the holding taken");
 assert.equal(synced.profile.poiState.quarry.state, "own");
 assert.ok(synced.notes.some((l) => l.includes("取られた −") && l.includes("守りきった +")), `the trophy line was ${synced.notes.join()}`);
+
+// Stars travel with the report: the owner loses what the attacker won.
+{
+  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, T0).state!;
+  w = op(w, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply", "quarry"]), factory: 1, day: 1 }, T0).state!;
+  const two = op(structuredClone(w), { t: "raid", from: B, target: "supply", captured: true, stars: 2 }, T0 + 1000).state!;
+  assert.equal(two.log.at(-1)?.stars, 2);
+  const one = op(structuredClone(w), { t: "raid", from: B, target: "supply", captured: false, stars: 1 }, T0 + 1000).state!;
+  assert.equal(one.log.at(-1)?.t, "wiped");
+  assert.equal(one.log.at(-1)?.stars, 1);
+  const legacy = op(structuredClone(w), { t: "raid", from: B, target: "supply", captured: true }, T0 + 1000).state!;
+  assert.equal(legacy.log.at(-1)?.stars, 3, "a report with no stars counts a capture as ★★★");
+  const own = { ...newProfile(5), trophies: 1000, poiState: { ...newProfile(5).poiState, supply: { state: "own" as const } } };
+  const sync = (st: IslandState) =>
+    applySync(own, {
+      log: { entries: parseLog({ entries: st.log, next: st.seq })!.entries, next: st.seq },
+      holds: NODE_IDS.map((id, i) => ({ id, hold: st.holds[i] })),
+    }).profile.trophies!;
+  const { N } = raidOdds(rivalTrophies(B.code, 1000), 1000);
+  assert.equal(1000 - sync(two), starGain(N, 2), "a ★★ capture cost the owner more than the attacker won");
+  assert.equal(1000 - sync(one), starGain(N, 1), "a ★ without the core paid the owner a defence");
+}
 
 // The 攻める list: a real neighbour's holdings.
 const n: Neighbour = { code: B.code, name: B.name, held: 2, total: NODES.length, day: 3, slot: 1, trophies: 1000, factory: 2 };

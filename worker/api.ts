@@ -604,7 +604,8 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   // A sortie's end on one of this island's holdings (glossary.md 攻め): the attacker reports whether it took the core.
   if (sub === "raids") {
     if (typeof raw.target !== "string" || typeof raw.captured !== "boolean") return fail(400, "bad-request");
-    return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured }, now);
+    const stars = typeof raw.stars === "number" && Number.isInteger(raw.stars) && raw.stars >= 0 && raw.stars <= 3 ? raw.stars : undefined;
+    return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured, ...(stars !== undefined ? { stars } : {}) }, now);
   }
   // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
   if (sub === "assault") {
