@@ -145,6 +145,9 @@ assert.equal(real[0]!.owner, B.code);
   const own = { ...newProfile(5), logSeq: 500, poiState: { ...newProfile(5).poiState, supply: { state: "own" as const } } };
   const r3 = applySync(own, { log: { entries: [], next: 500 }, holds: NODE_IDS.map((id) => ({ id, hold: id === "supply" ? ("foe" as const) : ("foe" as const) })), raided: ["supply"] });
   assert.equal(r3.profile.poiState.supply.state, "foe", "a holding taken stayed the owner's once its log line was gone");
+  // Taken back in a raid whose report has not reached the island: a sync that does not report keeps it the player's.
+  const r5 = applySync({ ...own, retaken: ["supply" as const] }, { log: { entries: [], next: 500 }, holds: NODE_IDS.map((id) => ({ id, hold: "foe" as const })), raided: ["supply"] });
+  assert.equal(r5.profile.poiState.supply.state, "own", "a holding taken back went to the robots before its report reached the island");
 }
 // The island's report drops 島の守り at a node its owner reports lost (an AI player's attack).
 {
