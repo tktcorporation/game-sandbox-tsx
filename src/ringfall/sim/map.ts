@@ -1643,7 +1643,7 @@ function controlGrounds(): Box[] {
     // North-east: the water tower, a tank on an open steel tower climbed inside to a platform
     // under it, and its pipes on sleepers along the lane west to the bunker, broken where the lane crosses.
     ...lattice(48, -46, 6, 6, 3, 13),
-    ...tank(48, -46, 5.5, 7, "s", 2, 13),
+    ...tank(48, -46, 5.5, 20, "s", 2, 13),
     ...pipeRun(-34, 40, -38, 4),
     // South-west: the tracking dish on its pedestal, looking west up the sky, and its cabinets round it.
     rect(-48.5, 42.5, -43.5, 47.5, 0, 7, "wall", 0),
