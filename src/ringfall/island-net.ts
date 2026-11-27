@@ -134,7 +134,8 @@ async function readHoldings(list: readonly Neighbour[]) {
   for (const n of list.filter((x) => !x.ai)) {
     const v = await readView(n.code, 4000);
     if (!v.ok) continue;
-    const held = v.body.nodes.filter((x) => x.hold === "own").map((x) => x.id);
+    // A holding under its own day's shield is no target either.
+    const held = v.body.nodes.filter((x) => x.hold === "own" && !x.shielded).map((x) => x.id);
     const guard: Record<string, number> = {};
     for (const q of v.body.parcels ?? []) guard[q.poi] = (guard[q.poi] ?? 0) + 1;
     // Shielded for the day or still under a new island's protection: nothing to attack until then.
