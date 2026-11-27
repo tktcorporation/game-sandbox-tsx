@@ -73,9 +73,15 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
   let lost = 0;
   let stolen = 0;
   let stores = p.stores ?? emptyStores();
+  let checked = now;
   for (let h = first; h <= last; h++) {
     if (!islands.length || unit(salt, h, 3) >= AWAY.chance) continue;
     const at = h * AWAY.hour + (hash(salt, h, 5) % AWAY.hour);
+    // An attack not due yet waits for the next look: the clock stops just before its hour.
+    if (at > now) {
+      checked = h * AWAY.hour - 1;
+      break;
+    }
     const own = playerNodes({ poiState }).filter((id) => !POIS[nodeIndex(id)]?.boss);
     if (!own.length) continue;
     const node: NodeId = own[hash(salt, h, 7) % own.length]!;
@@ -98,5 +104,5 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
       news.push({ seq: 0, at, t: "taken", node, by });
     } else news.push({ seq: 0, at, t: "wiped", node, by });
   }
-  return { profile: { ...p, poiState, parcels, outerGuard: guard, trophies, attackedAt: now, stores }, news, lost, stolen };
+  return { profile: { ...p, poiState, parcels, outerGuard: guard, trophies, attackedAt: checked, stores }, news, lost, stolen };
 }
