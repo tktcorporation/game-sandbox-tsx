@@ -61,6 +61,16 @@ assert.deepEqual(awayAttacks(first.profile, salt, T0 + 3 * DAY_MS).news, awayAtt
 const bare = { ...first.profile, poiState: parseIsland(undefined) };
 assert.equal(playerNodes(bare).length, 0);
 assert.equal(awayAttacks(bare, salt, T0 + 2 * DAY_MS).news.length, 0, "an attack on an island holding nothing");
+// A holding taken in a raid since the hours began is not among those attacked in them.
+{
+  const before = playerNodes(first.profile);
+  const won = { ...first.profile, poiState: { ...first.profile.poiState, quarry: { state: "own" as const } } };
+  assert.ok(!before.includes("quarry"));
+  const all = awayAttacks(won, salt, T0 + 30 * DAY_MS);
+  const r = awayAttacks(won, salt, T0 + 30 * DAY_MS, [], before);
+  assert.ok(all.news.some((e) => e.node === "quarry"), "the check proves nothing: no attack picked the new holding");
+  assert.ok(r.news.every((e) => e.node !== "quarry"), "an attack before the raid took a node the raid captured");
+}
 // v50 saves: other players' nodes on the player's island go back to the robots.
 const v50 = parseProfile({ ...p, v: 50, poiState: { ...p.poiState, fuel: { state: "rival:ai-ABC123" } } });
 assert.equal(v50?.poiState.fuel.state, "foe", "a v50 save kept another player's node on the player's island");
