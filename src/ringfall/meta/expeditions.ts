@@ -60,7 +60,7 @@ export interface IslandView {
   outerLost: number;
   /** Loss cap for outer hubs (作り順③). Older servers omit → OUTER_GUARD.lossCap. */
   outerLossCap: number;
-  nodes: { id: string; hold: PoiHold; open: boolean }[];
+  nodes: { id: string; hold: PoiHold; open: boolean; shielded?: boolean }[];
   /** The expeditions on the island; `id` is the number the island gave each when it took it. */
   expeditions: { id: number; by: { code: string; name: string }; target: string; units: number; state: ServerState; arriveAt: number }[];
   /** Live look-pings (ux-design M6). */
@@ -107,7 +107,7 @@ export function parseView(raw: unknown): IslandView | null {
   if (!isObj(raw) || !isIslandCode(raw.code) || typeof raw.owner !== "string" || !Array.isArray(raw.nodes) || !Array.isArray(raw.expeditions)) return null;
   const nodes = raw.nodes.flatMap((n) => {
     const hold = isObj(n) ? parseHold(n.hold) : null;
-    return isObj(n) && typeof n.id === "string" && hold ? [{ id: n.id, hold, open: n.open === true }] : [];
+    return isObj(n) && typeof n.id === "string" && hold ? [{ id: n.id, hold, open: n.open === true, ...(n.shielded === true ? { shielded: true } : {}) }] : [];
   });
   const expeditions = raw.expeditions.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;

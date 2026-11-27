@@ -511,34 +511,36 @@ level          beginner       casual         good
 
 どの腕前も、30 日のうちに拠点を取る日と失う日がある。21 拠点すべてを持つ日が続くのは長くて数日。
 
+下の 30 日の表は、拠点の収入を現実の時間で溜め（決定 A）、AI プレイヤーが留守中に陣地を攻め、受け取りをブラウザと同じに精算のあとにもした後のもの（2026-11-27、`npx tsx scripts/ringfall-campaign.ts` を単体で、2 コアの機械で 8 分 12 秒）。
+
 ```
 island campaign: a month on one profile per skill, the network carried (scripts/ringfall-campaign.ts)
 30 consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the 21 the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of 8)
-skill     day 5      day 10     day 20     day 30     alive  n(mean)  n(max)  tier 0-3: first day held days in                                 events d/s/c  crews in/out
-beginner  n4 s0 f2   n3 s0 f2   n14 s2 f4  n11 s2 f4  70%    5.9      16      1/1/12/17                reservoir 12 harbor 9 city 6 launch 3   6/3/3         3/0
-casual    n1 s0 f1   n2 s0 f2   n12 s2 f4  n6 s1 f3   67%    4.9      16      1/3/14/19                reservoir 17 harbor 8 city 3 launch 2   6/3/3         3/0
-good      n5 s1 f2   n5 s1 f2   n16 s2 f4  n0 s0 f2   53%    6.6      16      1/1/8/18                 reservoir 14 harbor 10 city 5 launch 1  6/3/3         3/1
+skill     day 5      day 10     day 20     day 30     alive  n(mean)  n(max)  tier 0-3: first day held days in                                
+beginner  n7 s1 f3   n11 s2 f4  n21 s2 f5  n21 s2 f5  90%    16.0     21      1/1/1/1                  reservoir 20 harbor 1 city 5 launch 4  
+casual    n5 s1 f2   n12 s2 f4  n21 s2 f7  n21 s2 f7  80%    16.0     21      1/1/1/1                  reservoir 18 harbor 3 city 5 launch 4  
+good      n14 s2 f4  n21 s2 f6  n21 s2 f6  n21 s2 f6  97%    18.8     21      1/1/1/1                  reservoir 25 harbor 1 city 2 launch 2  
 front     nodes gained / lost overnight  raid min (med)
-beginner  41 / 12                        5.7
-casual    36 / 13                        5.3
-good      51 / 15                        9.0
-push-pull changed hands raid / after leaving / night days gained / lost  all held (longest run)
-beginner  29 / 40 / 4                                20 / 4              0
-casual    26 / 46 / 5                                19 / 4              0
-good      48 / 40 / 4                                19 / 7              0
-nodes by day (base 36: a 10, b 11...): beginner 345444534345666889aeg0234457ab / casual 11221232223456689aaceg01235446 / good 24345434455424468beg0358bdffg0
-harbor nodes by day: beginner 000000000001211322266000001365 / casual 000000000000011345555600002111 / good 000000011331002236660003666660
-city nodes by day: beginner 000000000000011122335000000002 / casual 000000000000000000133400000000 / good 000000000000000000350000024340
-launch nodes by day: beginner 001111111111111111111000000000 / casual 000000000000001111111100000000 / good 000000000000000000000000000110
-deepest tier by day: beginner 111111111112222233333-11112233 / casual 0011111111111222223333-0112222 / good 11111112222211222333-11233333-
-best gun carried by day (0 common to 3 legendary): beginner 012220222222232233333331122033 / casual 001122222222021233330333333230 / good 010200022233012223331333333232
-strength by day: beginner 001000100001111111122000001112 / casual 000000000000111111122200001001 / good 000010000110000112220011222220
-factory by day: beginner 111222222223333333444333334444 / casual 111111222223333333344423333333 / good 111122222222223333442333344442
-front on day 30 (beginner): smelter waterworks robotworks highrise powerplant control fuel
-front on day 30 (casual): yard smelter carpark control fuel
-front on day 30 (good): supply
-ai islands (came days, first day / nodes taken / most held): beginner 7, 2 / 3 / 2 / casual 8, 4 / 1 / 1 / good 8, 2 / 6 / 2
-ai islands by day (. none, o came, X took): beginner .o...XoX.o..........o......X.. / casual ...o.ooX.o....o.....o.o....... / good .o...XX..X....X.....X.o....X..
+beginner  37 / 2                         5.4
+casual    30 / 0                         3.5
+good      32 / 0                         3.1
+push-pull changed hands raid / after leaving         days gained / lost  all held (longest run)
+beginner  19 / 28                                    10 / 2              16
+casual    14 / 16                                    9 / 1               17
+good      18 / 14                                    6 / 0               23
+nodes by day (base 36: a 10, b 11...): beginner 678877667bfhjkllllllllllllllll / casual 66665688acegjlllllllllllllllll / good 7779ehjlllllllllllllllllllllll
+harbor nodes by day: beginner 000000000356666666666666666666 / casual 000000000244666666666666666666 / good 000056666666666666666666666666
+city nodes by day: beginner 134443333334445555555555555555 / casual 122213333335555555555555555555 / good 111443555555555555555555555555
+launch nodes by day: beginner 111111111133555555555555555555 / casual 111111113333355555555555555555 / good 111003355555555555555555555555
+deepest tier by day: beginner 333333333333333333333333333333 / casual 333222222233333333333333333333 / good 333333333333333333333333333333
+best gun carried by day (0 common to 3 legendary): beginner 022221112233333333333333333333 / casual 022222222233330000000011111111 / good 000223333333333333333333333333
+strength by day: beginner 111111111222222222222222222222 / casual 111111111222222222222222222222 / good 111122222222222222222222222222
+factory by day: beginner 122333444444555555555555555555 / casual 122223333455566777777777777777 / good 233444556666666666666666666666
+front on day 30 (beginner): -
+front on day 30 (casual): -
+front on day 30 (good): -
+ai islands (came days, first day / nodes taken / most held): beginner 23, 1 / 18 / 0 / casual 23, 1 / 13 / 0 / good 23, 1 / 15 / 0
+ai islands by day (. none, o came, X took): beginner oXoXXXo.oo.X.XXX.X.XXXXXX..XXX / casual oXoXXXo.oo.o.XXX.X.XoXXoo..XoX / good oXoXXXX.Xo.X.oXX.X.XoXXoo..XoX
 rounds: beginner fought the titan on 1 days, freed the island on day 22 (22 days) / casual fought the titan on 1 days, freed the island on day 23 (23 days) / good fought the titan on 2 days, freed the island on day 21 (21 days), on day 30 (9 days)
 （島の出来事・回収部隊の列は削除済み。下のキャンペーン表に残る events／crews 表記は削除前の記録。）
 ```

@@ -401,7 +401,8 @@ export function publicView(s: IslandState, now: number) {
     /** Own outer hubs lost this UTC day / loss cap (作り順③). */
     outerLost: outerTakenOn(s, now),
     outerLossCap: OUTER_GUARD.lossCap,
-    nodes: NODE_IDS.map((id, i) => ({ id, hold: s.holds[i], open: expeditionRefusal(s, i, now) === null })),
+    // `shielded`: no sortie takes it today (its own day's shield, `raid`'s check).
+    nodes: NODE_IDS.map((id, i) => ({ id, hold: s.holds[i], open: expeditionRefusal(s, i, now) === null, ...(isShielded(s, i, now) ? { shielded: true } : {}) })),
     expeditions: s.expeditions.map((e) => ({
       id: e.id,
       by: { ...e.by },

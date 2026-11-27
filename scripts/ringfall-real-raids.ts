@@ -9,7 +9,7 @@
  */
 import assert from "node:assert/strict";
 import { islandOp, NODE_IDS, shieldNode, type IslandOp, type IslandState } from "../worker/island";
-import { applySync, parseLog, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
+import { applySync, parseLog, parseView, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
 import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies";
 import { newProfile } from "../src/ringfall/meta/profile";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
@@ -67,6 +67,8 @@ assert.equal(back.holds[NODE_IDS.indexOf("supply")], "own");
   shieldNode(w, wi, T0);
   const hit = op(w, { t: "raid", from: B, target: "wreck", captured: true }, T0 + 1000);
   assert.equal(hit.state!.holds[wi], "own", "a shielded holding was taken");
+  const seen = parseView(op(w, { t: "view" }, T0 + 1000).body);
+  assert.equal(seen?.nodes.find((n) => n.id === "wreck")?.shielded, true, "the island's view hides a holding's own shield");
   assert.equal((hit.body as { taken: boolean }).taken, false);
 }
 
