@@ -9,7 +9,8 @@ import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, ty
 import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type NodeId, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
-import { contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
+import { capturedIds, contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
+import { isAiOwner } from "./sim/holds";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
@@ -22,7 +23,7 @@ import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { postRaidSummary } from "./post-raid-summary";
-import { aiSalt, awayFor, incomingFor, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiSalt, awayFor, incomingFor, reportRaid, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { isIslandProtected } from "./meta/outer-guard";
@@ -298,6 +299,8 @@ function onEvent(e: GameEvent, s: State) {
     saveProfile(hub.profile);
     // 実プレイヤーのお隣への短いレイド: 保留中の勝敗報告を同期時に送信（失敗時は再試行）。
     postRaidSummary(settled, s);
+    // A sortie on another player's holding tells their island how it ended (they hear of it in 島の知らせ).
+    if (s.sortie && !isAiOwner(s.sortie.owner)) void reportRaid(s.sortie.owner, NODES[s.sortie.node].id, capturedIds(s).includes(NODES[s.sortie.node].id));
     syncIsland(settled.profile, s);
     // The AI players' attacks on the holdings while the raid ran (real time): on the results and the signal station.
     const away = hub.takeAway(awayFor(hub.profile));

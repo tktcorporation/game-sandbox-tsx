@@ -509,7 +509,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   // …/expeditions/<n> names one expedition by the number the island gave it (a recall).
   const recalledExpeditionId = parts.length === 3 && parts[1] === "expeditions" && /^[1-9]\d{0,8}$/.test(parts[2]) ? Number(parts[2]) : null;
   const sub = recalledExpeditionId !== null ? "expedition" : parts.slice(1).join("/");
-  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid" && sub !== "assault")) return fail(404, "not-found");
+  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid" && sub !== "assault" && sub !== "raids")) return fail(404, "not-found");
   const method = request.method;
   const allow =
     sub === ""
@@ -600,6 +600,11 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     if (typeof raw.kind !== "string" || !raw.kind || typeof raw.poi !== "string") return fail(400, "bad-request");
     if (!attackers?.includes(code) && (await isNeighbourRouteShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
     return ask(ns, code, { t: "aid", from: { code: fromCode, name }, poi: raw.poi, kind: raw.kind }, now);
+  }
+  // A sortie's end on one of this island's holdings (glossary.md 攻め): the attacker reports whether it took the core.
+  if (sub === "raids") {
+    if (typeof raw.target !== "string" || typeof raw.captured !== "boolean") return fail(400, "bad-request");
+    return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured }, now);
   }
   // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
   if (sub === "assault") {

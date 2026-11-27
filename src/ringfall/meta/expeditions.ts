@@ -15,7 +15,7 @@ import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
-import { clampTrophies, defenceWin, rivalTrophies, trophyDelta } from "./trophies";
+import { clampTrophies, defenceWin, raidOdds, rivalTrophies, trophyDelta } from "./trophies";
 import { emptyOuterGuard, guardOn, mergeOuterGuard, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
 
@@ -233,8 +233,17 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   rivalTrop?: (owner: string) => number,
 ): { profile: P; news: IslandLogEntry[]; notes: string[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
-  const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
+  let poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
+  // Another player's sortie took a holding (glossary.md 攻め): it went back to the robots on the server; so here.
+  const raidedBy: string[] = [];
+  for (const e of news) {
+    if (e.t !== "taken" || isAiOwner(e.by.code) || poiState[e.node as NodeId]?.state !== "own") continue;
+    const srv = s.holds?.find((h) => h.id === e.node)?.hold;
+    if (srv === "own") continue;
+    poiState = { ...poiState, [e.node]: { state: "foe" } };
+    raidedBy.push(e.by.code);
+  }
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
   // 島の守り stand only at the player's holdings: stock the server still lists at a node lost since (an AI player's attack) stays gone.
@@ -265,6 +274,13 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       gained = d.gained;
       lost = d.lost;
       next = d.next;
+    }
+    // A holding taken by another player's sortie costs what their ★★★ won (raidOdds N).
+    for (const code of raidedBy) {
+      const foe = rivalTrop ? rivalTrop(code) : rivalTrophies(code, p.trophies!);
+      const n = raidOdds(foe, p.trophies!).N;
+      lost += n;
+      next = clampTrophies(next - n);
     }
     // 守りきった → +M of each attacker (TKT-218). AI / remote takes already ★★ via trophyDelta.
     let defended = 0;

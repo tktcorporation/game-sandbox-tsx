@@ -243,8 +243,8 @@ player's front (`capturable()`), no siege comes to it, and its stars are scored 
 the objective is the core, then the depot (`sortieSteps()`). `npx tsx scripts/ringfall-sortie.ts`
 checks it (`checkSortie()` in the sim gate); a raid without `sortie` plays as before.
 `meta/sortie.ts` holds the sorties' meta: `sortieTargets()` lists the holdings of the islands next
-door the player may attack (for now the game's own islands, `aiNodes()`, within the trophy band,
-nearest trophies first), `sortieStart()` gives the raid's `Start.sortie`, and `settle()` treats a
+door the player may attack (the game's own islands', `aiNodes()`, and other players' as their islands last showed them, `cachedHoldings()` in `island-net.ts`, read with the neighbours; within the trophy band,
+nearest trophies first); a sortie on another player's holding reports how it ended to their island (`reportRaid()`, `POST /api/islands/:code/raids`, the island's `raid` op in `worker/island.ts`: captured, the holding goes back to the robots with its 島の守り and the owner's log says 取られた, under the island's day shield and loss cap; else 守りきった), and the owner's next sync makes it the robots' and moves the trophies (`applySync()`); nothing holds the holding while the sortie is played (`scripts/ringfall-real-raids.ts`), `sortieStart()` gives the raid's `Start.sortie`, and `settle()` treats a
 sortie as away from home (as a field raid): the player's island, depots, ways in, explored map and
 nodes taken back stay as they were, the stars move the trophies and 核 · 制圧 seizes the holding's
 島の守り as a rival hub's, and a holding taken is recorded (`Profile.raided`, v49) and is no target

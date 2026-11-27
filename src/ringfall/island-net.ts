@@ -98,7 +98,57 @@ export async function readNeighbours(): Promise<Neighbour[]> {
   } catch {
     // Storage blocked: the list lasts for this page.
   }
+  void readHoldings(list);
   return list;
+}
+
+/** Where the browser keeps the other players' holdings as their islands last showed them. */
+const HOLDINGS_KEY = "ringfall.holdings.v1";
+/** Each other player's island (by code): the nodes they hold and the 島の守り at each. */
+export type Holdings = Record<string, { held: string[]; guard: Record<string, number> }>;
+let lastHoldings: Holdings | null = null;
+
+/** The other players' holdings as last read (the 攻める list's real players). */
+export function cachedHoldings(): Holdings {
+  if (lastHoldings) return lastHoldings;
+  try {
+    const raw = JSON.parse(localStorage.getItem(HOLDINGS_KEY) ?? "null");
+    return raw && typeof raw === "object" ? (raw as Holdings) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Reads each real neighbour's island for the nodes it holds (a sortie's targets). */
+async function readHoldings(list: readonly Neighbour[]) {
+  const out: Holdings = {};
+  for (const n of list.filter((x) => !x.ai)) {
+    const v = await readView(n.code, 4000);
+    if (!v.ok) continue;
+    const held = v.body.nodes.filter((x) => x.hold === "own").map((x) => x.id);
+    const guard: Record<string, number> = {};
+    for (const q of v.body.parcels ?? []) guard[q.poi] = (guard[q.poi] ?? 0) + 1;
+    out[n.code] = { held, guard };
+  }
+  lastHoldings = out;
+  try {
+    localStorage.setItem(HOLDINGS_KEY, JSON.stringify(out));
+  } catch {
+    // Storage blocked: kept for this page.
+  }
+}
+
+/**
+ * A sortie on another player's holding has ended (docs/ringfall/glossary.md 攻め): tell their island
+ * whether its core was taken. Best effort: the attacker's own settle never waits on it.
+ */
+export async function reportRaid(code: string, target: string, captured: boolean): Promise<void> {
+  const who = loadIdentity();
+  if (!who.code) return;
+  await call(`/api/islands/${encodeURIComponent(code)}/raids`, {
+    method: "POST",
+    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured }),
+  });
 }
 
 /**

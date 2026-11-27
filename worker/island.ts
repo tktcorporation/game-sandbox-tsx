@@ -235,7 +235,13 @@ export type IslandOp =
   /** Failed contested attack on this island's shore (TKT-201): log 守りきった for the defender. */
   | { t: "contestedDefend"; shore: string; from: Attacker; at: number }
   | { t: "ping"; player: string; name: string; x: number; z: number }
-  | { t: "aid"; from: Attacker; poi: string; kind: string };
+  | { t: "aid"; from: Attacker; poi: string; kind: string }
+  /**
+   * Another player's sortie on a holding of this island (docs/ringfall/glossary.md 攻め): reported by
+   * the attacker when it ends. Captured, the holding goes back to the robots with its 島の守り;
+   * else the owner is told it held (守りきった). The island's day shield and loss cap still hold.
+   */
+  | { t: "raid"; from: Attacker; target: string; captured: boolean };
 
 /** The answer to an op: the HTTP status and body, and the island as it is after it (null while nobody has claimed it). */
 export interface OpResult {
@@ -962,6 +968,26 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     s.parcels.push({ id: s.nextId++, poi: op.poi, kind: op.kind, from: { ...op.from }, at: now });
     if (s.parcels.length > EXPEDITION.parcelMax) s.parcels = s.parcels.slice(s.parcels.length - EXPEDITION.parcelMax);
     return done(200, { ok: true }, true);
+  }
+  if (op.t === "raid") {
+    if (op.from.code === s.owner.code) return done(403, fail("own-island"));
+    const i = NODE_IDS.indexOf(op.target);
+    if (i < 0) return done(400, fail("bad-request"));
+    // Only a holding is attacked; one already gone is no news for its owner.
+    if (s.holds[i] !== "own") return done(409, fail("node-not-open"));
+    const guarded = isIslandShielded(s, now) || outerLossCapReached(s, now);
+    if (!op.captured || guarded) {
+      appendLog(s, now, "wiped", i, op.from);
+      return done(200, { ok: true, taken: false }, true);
+    }
+    const poi = NODE_IDS[i];
+    const seized = (s.parcels ?? []).filter((q) => q.poi === poi);
+    s.parcels = (s.parcels ?? []).filter((q) => q.poi !== poi);
+    // Back to the robots first, so the log counts the day's loss once (here, not as a contested shore's).
+    s.holds[i] = "foe";
+    appendLog(s, now, "taken", i, op.from);
+    recordOuterTaken(s, now);
+    return done(200, { ok: true, taken: true, parcels: seized.map((q) => q.kind) }, true);
   }
   // An expedition (optional `x2`: short-raid notice, settled later by `assault`).
   if (op.from.code === s.owner.code) return done(403, fail("own-island"));

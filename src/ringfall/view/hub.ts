@@ -1,5 +1,5 @@
 import { PLAYER } from "../sim/config";
-import { aiSalt, neighboursFor } from "../island-net";
+import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
 import type { Start } from "../sim/state";
@@ -49,13 +49,13 @@ export function teachFrontCapture(p: Profile): boolean {
 
 /** The holding the camp suggests attacking: the first on the 攻める list (nearest trophies), or null. */
 export function sortieTopFor(p: Profile): SortieTarget | null {
-  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [])[0] ?? null;
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings())[0] ?? null;
 }
 
 /** The holding of whoever took one of the player's in this 島の知らせ line, to attack back (やり返す), or null. */
 export function revengeFor(p: Profile, line: string): SortieTarget | null {
   if (!line.includes("取られた")) return null;
-  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? []).find((t) => line.startsWith(`${t.ownerName}に`)) ?? null;
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings()).find((t) => line.startsWith(`${t.ownerName}に`)) ?? null;
 }
 
 /**
@@ -1007,7 +1007,7 @@ export class Hub {
    */
   sortieTargets(): SortieTarget[] {
     const p = this.profile;
-    return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? []);
+    return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings());
   }
 
   /** The holding chosen for a sortie, while it is still on the list. */

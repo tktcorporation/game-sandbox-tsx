@@ -83,7 +83,14 @@ export interface SortieTarget {
  * (`neighbours` marked `ai`) holds on its own island, but those taken lately (`raided`), within the
  * trophy band, nearest trophies first, then by island and the front's order.
  */
-export function sortieTargets(neighbours: readonly Neighbour[], salt: number, day: number, selfTrop: number, raided: readonly Raided[] = []): SortieTarget[] {
+export function sortieTargets(
+  neighbours: readonly Neighbour[],
+  salt: number,
+  day: number,
+  selfTrop: number,
+  raided: readonly Raided[] = [],
+  real: Readonly<Record<string, { held: readonly string[]; guard: Readonly<Record<string, number>> }>> = {},
+): SortieTarget[] {
   const table = trophiesTable(neighbours);
   const taken = neighbours.filter((n) => !n.ai && n.slot !== undefined).map((n) => n.slot!);
   const rows: (SortieTarget & { gap: number; slot: number; order: number })[] = [];
@@ -118,6 +125,38 @@ export function sortieTargets(neighbours: readonly Neighbour[], salt: number, da
         gap: Math.abs(rivalTrop - selfTrop),
         slot: a.slot,
         order: nodeIndex(id),
+      });
+    }
+  }
+  // Other players: the holdings their islands last showed (island-net.ts `cachedHoldings()`), their owner id their code.
+  for (const n of neighbours) {
+    const h = real[n.code];
+    if (n.ai || !h) continue;
+    const owner = n.code;
+    const rivalTrop = n.trophies ?? rivalTrophies(owner, selfTrop, table);
+    if (!canRaidOwner(owner, selfTrop, rivalTrop)) continue;
+    const { N, M } = raidOdds(selfTrop, rivalTrop);
+    for (const id of h.held) {
+      const i = nodeIndex(id as NodeId);
+      if (i < 0 || regrowing(raided, owner, id as NodeId, day)) continue;
+      const node = NODES[i];
+      rows.push({
+        id: node.id,
+        title: `${n.name}の${node.name}`,
+        owner,
+        ownerName: n.name,
+        hubName: node.name,
+        code: n.code,
+        ai: false,
+        factory: Math.max(0, Math.round(n.factory ?? 0)),
+        guard: Math.min(DEFENCE_AID, h.guard[id] ?? 0),
+        win: N,
+        lose: M,
+        loot: SEIZE.emptyReserve + SEIZE.bonus,
+        winBonus: winBonusBase(selfTrop),
+        gap: Math.abs(rivalTrop - selfTrop),
+        slot: n.slot ?? 9,
+        order: i,
       });
     }
   }
