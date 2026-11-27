@@ -93,7 +93,7 @@ assert.equal(leagueOf(3400).name, "伝説");
 assert.equal(LEAGUE.length, 7);
 assert.equal(trophyHead(TROPHY.start), `${TERM.trophy} · 銅`);
 
-assert.equal(MP_HOWTO_CARDS[0]!.title, TERM.seaIslands);
+assert.equal(MP_HOWTO_CARDS[0]!.title, TERM.otherPlayers);
 assert.equal(MP_HOWTO_CARDS[1]!.title, TERM.attack);
 assert.ok(MP_HOWTO_CARDS[0]!.body.includes("地図"));
 
