@@ -257,6 +257,8 @@ export interface Enemy {
   rival?: string;
   /** A robot of a battle squad (`BattleSquad.id`, sim/battle.ts): it walks onto the player's nodes, and the garrisons fight it. */
   battle?: number;
+  /** The AI player an enemy's battle robot is shown as (`BattleSquad.by`): drawn in another player's colour; no rule reads it. */
+  by?: string;
   /** A turret: it never leaves the core it stands at. */
   post?: boolean;
 }
@@ -360,6 +362,8 @@ export interface Orb {
   friend?: boolean;
   /** Fired by one of another player's robots. */
   rival?: boolean;
+  /** Fired by a robot shown as an AI player's (`Enemy.by`): drawn in another player's colour; no rule reads it. */
+  ai?: true;
 }
 
 export interface Shockwave {
@@ -473,7 +477,7 @@ export type GameEvent =
   | { t: "healStart"; kind: HealKind }
   | { t: "healDone"; kind: HealKind }
   | { t: "telegraph"; id: number }
-  | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean; /** One of the player's own robots. */ friend?: boolean; /** One of another player's robots. */ rival?: boolean }
+  | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean; /** One of the player's own robots. */ friend?: boolean; /** One of another player's robots. */ rival?: boolean; /** Shown as an AI player's (`Enemy.by`). */ ai?: true }
   /** A robot hit by the other faction's fire, and one destroyed by it (see FACTION). */
   | { t: "robotHit"; id: number; pos: Vec3 }
   | { t: "fall"; id: number; kind: EnemyKind; pos: Vec3; rogue: boolean; friend?: boolean; /** One of another player's robots. */ rival?: true; fromX: number; fromZ: number }
@@ -522,7 +526,7 @@ export type GameEvent =
    * gate or a node's depot at (x, z); a dropship or a boat set off to land the enemy's squad at (x, z);
    * the enemy's robots came to a core of the player's; and the battle's time ran out with the player still out.
    */
-  | { t: "nodeTaken"; node: number; side: Side }
+  | { t: "nodeTaken"; node: number; side: Side; /** The AI player a holding of the player's went to (`BattleSquad.by`). */ by?: string }
   | { t: "squadOut"; side: Side; node: number; x: number; z: number; gate: boolean }
   | { t: "landing"; boat: boolean; x: number; z: number }
   | { t: "nodeThreat"; node: number }

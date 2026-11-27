@@ -1240,7 +1240,7 @@ export class World {
           this.shake = Math.max(this.shake, 0.5);
           break;
         case "enemyFire": {
-          const hue = e.friend ? PAL.friendOrb : e.rival ? PAL.rivalOrb : e.rogue ? PAL.rogueOrb : PAL.orb;
+          const hue = e.friend ? PAL.friendOrb : e.rival || e.ai ? PAL.rivalOrb : e.rogue ? PAL.rogueOrb : PAL.orb;
           this.burst(e.pos, hue, 3, 2, 0.06, 0, 0.25);
           if (e.foe) {
             // Fire between the factions: a tracer and a flash that read from far off, thicker with distance (see FACTION).
@@ -1481,8 +1481,8 @@ export class World {
           m.mats[1]?.color.setHex(PAL.rogueArmorLight);
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rogueEye);
         }
-        // Another player's: the same robot in purple, its eye violet (sim/battle.ts side 3).
-        if (e.rival !== undefined) {
+        // Another player's (an AI player's too, `Enemy.by`): the same robot in purple, its eye violet (sim/battle.ts side 3).
+        if (e.rival !== undefined || e.by !== undefined) {
           m.mats[0].color.setHex(PAL.rivalArmor);
           m.mats[1]?.color.setHex(PAL.rivalArmorLight);
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rivalEye);
@@ -1567,7 +1567,7 @@ export class World {
       m.eye.scale.setScalar(tele);
       m.eyeHalo.scale.setScalar(k.weakR * (winding ? 9 : 4));
       (m.eyeHalo.material as THREE.SpriteMaterial).opacity = winding ? 0.95 : 0.55;
-      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.friend ? PAL.friendEye : e.rival !== undefined ? PAL.rivalEye : e.rogue ? PAL.rogueEye : PAL.eye);
+      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.friend ? PAL.friendEye : e.rival !== undefined || e.by !== undefined ? PAL.rivalEye : e.rogue ? PAL.rogueEye : PAL.eye);
       v.flash = Math.max(0, v.flash - dt);
       for (const mat of m.mats) mat.emissive.setHex(v.flash > 0 ? 0xffffff : e.mode === "stunned" ? 0x1f4b5c : 0x000000);
       v.shieldFlash = Math.max(0, v.shieldFlash - dt);
@@ -1624,7 +1624,7 @@ export class World {
       }
       g.visible = true;
       // The rogues' bolts burn yellow, the network's magenta.
-      const hue = o.friend ? PAL.friendOrb : o.rival ? PAL.rivalOrb : o.rogue ? PAL.rogueOrb : PAL.orb;
+      const hue = o.friend ? PAL.friendOrb : o.rival || o.ai ? PAL.rivalOrb : o.rogue ? PAL.rogueOrb : PAL.orb;
       ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(hue);
       ((g.children[2] as THREE.Sprite).material as THREE.SpriteMaterial).color.setHex(hue);
       g.position.set(o.pos.x, o.pos.y, o.pos.z);

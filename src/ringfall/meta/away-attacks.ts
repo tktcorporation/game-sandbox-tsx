@@ -106,3 +106,30 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
   }
   return { profile: { ...p, poiState, parcels, outerGuard: guard, trophies, attackedAt: checked, stores }, news, lost, stolen };
 }
+
+/**
+ * The holdings a raid's battle lost to the enemy's squads, which go by AI players' names in the
+ * raid (`BattleSquad.by`, 決定 B): told as those players' attacks, each costing trophies as one
+ * while away does and counting toward the day's loss cap. The battle has already given the node
+ * back to the robots; an owner no longer next door is left out.
+ */
+export function battleLosses<P extends Seen>(p: P, salt: number, lost: readonly { node: NodeId; by: string }[], now: number, taken: readonly number[] = []): AwayResult<P> {
+  const islands = aiIslands(salt, taken);
+  const news: IslandLogEntry[] = [];
+  let trophies = p.trophies ?? TROPHY.start;
+  let guard = p.outerGuard ?? emptyOuterGuard();
+  let parcels = [...p.parcels];
+  let n = 0;
+  for (const l of lost) {
+    const a = islands.find((x) => x.code === l.by);
+    if (!a) continue;
+    const { N } = raidOdds(trophies, trophies);
+    n += N;
+    trophies = clampTrophies(trophies - N);
+    guard = recordOuterLoss(guard, now);
+    parcels = parcels.filter((q) => q.poi !== l.node);
+    news.push({ seq: 0, at: now, t: "taken", node: l.node, by: { code: a.code, name: aiLabel(a.name) } });
+  }
+  if (!news.length) return { profile: p, news, lost: 0, stolen: 0 };
+  return { profile: { ...p, trophies, outerGuard: guard, parcels }, news, lost: n, stolen: 0 };
+}

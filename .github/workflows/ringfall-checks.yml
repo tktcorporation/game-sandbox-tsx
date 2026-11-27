@@ -28,3 +28,4 @@ jobs:
       - run: node --import tsx scripts/ringfall-early-mp.ts
       - run: node --import tsx scripts/ringfall-income.ts
       - run: node --import tsx scripts/ringfall-real-raids.ts
+      - run: node --import tsx scripts/ringfall-raiders.ts

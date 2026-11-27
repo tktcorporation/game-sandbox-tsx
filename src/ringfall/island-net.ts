@@ -10,8 +10,9 @@ import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
-import { aiByCode, aiChanges, aiRefresh, aiView, withAi } from "./meta/ai-islands";
-import { awayAttacks } from "./meta/away-attacks";
+import { aiByCode, aiChanges, aiIslands, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { awayAttacks, battleLosses } from "./meta/away-attacks";
+import { aiLabel } from "./meta/neighbours";
 import { islandDay } from "./meta/days";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
@@ -196,6 +197,10 @@ export const incomingFor = (p: Profile): Incoming[] => p.incoming;
 
 /** The AI players' attacks on the holdings since the profile last looked, up to `now` (meta/away-attacks.ts). */
 export const awayFor = (p: Profile, now = Date.now()) => awayAttacks(p, aiSalt(), now, serverSlots());
+/** The AI players next door, whose names the enemy's squads at the player's holdings go by in a raid (決定 B). */
+export const raidersFor = (): { code: string; name: string }[] => aiIslands(aiSalt(), serverSlots()).map((a) => ({ code: a.code, name: aiLabel(a.name) }));
+/** The holdings a raid's battle lost, as the AI players' attacks (`battleLosses()`). */
+export const lossesFor = (p: Profile, lost: readonly { node: NodeId; by: string }[], now = Date.now()) => battleLosses(p, aiSalt(), lost, now, serverSlots());
 
 /** The expeditions with those on the game's islands brought up to now: the profile itself when none changes. */
 export function refreshAi(p: Profile): Profile {

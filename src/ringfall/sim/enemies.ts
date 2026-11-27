@@ -225,8 +225,9 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy, wi
     rogue: e.rogue || undefined,
     friend: e.friend || undefined,
     ...(e.rival !== undefined && { rival: true }),
+    ...(e.by !== undefined && { ai: true as const }),
   });
-  s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue, friend: e.friend || undefined, ...(e.rival !== undefined && { rival: true }) } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined, ...(e.rival !== undefined && { rival: true }) });
+  s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue, friend: e.friend || undefined, ...(e.rival !== undefined && { rival: true }), ...(e.by !== undefined && { ai: true as const }) } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined, ...(e.rival !== undefined && { rival: true }), ...(e.by !== undefined && { ai: true as const }) });
 }
 
 function lockAim(e: Enemy, at: Vec3) {

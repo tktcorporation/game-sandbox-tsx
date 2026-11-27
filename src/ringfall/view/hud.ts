@@ -623,7 +623,9 @@ export class Hud {
       case "nodeTaken": {
         const name = NODES[e.node].name;
         const owner = rivalOf(s.nodes[e.node] ?? "foe");
-        if (e.side === 3) this.toast(`${coreIcon(SIDE.rival)}${name}<span class="toast-sub">${esc(owner !== null ? (this.rivalNames.get(owner) ?? "他のプレイヤー") : "他のプレイヤー")}が制圧</span>`, 0, 4000);
+        // A holding of the player's the enemy took goes by an AI player's name (決定 B: only other players take holdings).
+        if (e.by !== undefined) this.toast(`${coreIcon(SIDE.rival)}${name}<span class="toast-sub">${esc(this.rivalNames.get(e.by) ?? "他のプレイヤー")}が制圧</span>`, 0, 4000);
+        else if (e.side === 3) this.toast(`${coreIcon(SIDE.rival)}${name}<span class="toast-sub">${esc(owner !== null ? (this.rivalNames.get(owner) ?? "他のプレイヤー") : "他のプレイヤー")}が制圧</span>`, 0, 4000);
         else this.toast(`${coreIcon(e.side === 0 ? SIDE.own : SIDE.enemy)}${name}`, e.side === 0 ? 1 : 0, 4000);
         break;
       }

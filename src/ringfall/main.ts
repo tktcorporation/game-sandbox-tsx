@@ -11,7 +11,7 @@ import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { capturedIds, contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { isAiOwner } from "./sim/holds";
-import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
+import { atRisk, battleMarks, departNow, landNow, lostToRaiders, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { leagueChanged, rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
@@ -23,7 +23,7 @@ import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { postRaidSummary } from "./post-raid-summary";
-import { aiSalt, awayFor, incomingFor, reportRaid, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiSalt, awayFor, incomingFor, lossesFor, raidersFor, reportRaid, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { isIslandProtected } from "./meta/outer-guard";
@@ -303,7 +303,10 @@ function onEvent(e: GameEvent, s: State) {
     if (s.sortie && !isAiOwner(s.sortie.owner)) void reportRaid(s.sortie.owner, NODES[s.sortie.node].id, capturedIds(s).includes(NODES[s.sortie.node].id));
     syncIsland(settled.profile, s);
     // The AI players' attacks on the holdings while the raid ran (real time): on the results and the signal station.
-    const away = hub.takeAway(awayFor(hub.profile));
+    // The holdings the raid's battle lost went to AI players (決定 B), then their attacks while the raid ran (real time).
+    const inRaid = s.battle ? lossesFor(hub.profile, lostToRaiders(s.battle, s.nodes)) : null;
+    const meanwhile = awayFor(inRaid?.profile ?? hub.profile);
+    const away = hub.takeAway({ ...meanwhile, news: [...(inRaid?.news ?? []), ...meanwhile.news], lost: (inRaid?.lost ?? 0) + meanwhile.lost });
     if (away && settlement) {
       const t = settlement.trophies;
       const beforeTrop = t?.before ?? away.before;
@@ -967,7 +970,9 @@ function start(go: Launch, from?: State) {
   const fresh = refreshAi(hub.profile);
   if (fresh !== hub.profile) hub.update(fresh);
   // The names of the islands whose squads come or stand in this raid, for its banners.
-  hud.setRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
+  // The AI players next door: the enemy's squads that come at the player's holdings go by their names (決定 B).
+  const raiders = go.sortie ? [] : raidersFor();
+  hud.setRivalNames([...raiders.map((r) => [r.code, r.name] as [string, string]), ...raidLent.map((l) => [l.by.code, l.by.name] as [string, string])]);
   lease = null;
   state = go.sortie
     ? // A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): played there alone, no battle of the island.
@@ -1000,6 +1005,7 @@ function start(go: Launch, from?: State) {
           factory: hub.profile.factory,
           away: squadsAway(hub.profile),
           rivals: lentRivals(raidLent),
+          raiders: raiders.map((r) => r.code),
         },
       });
   hud.setContract();
