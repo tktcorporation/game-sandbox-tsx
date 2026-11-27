@@ -132,6 +132,14 @@ assert.equal(real[0]!.owner, B.code);
   const r2 = applySync(own, { log: { entries: [e], next: 1 }, holds: NODE_IDS.map((id) => ({ id, hold: "foe" as const })) });
   assert.equal(1000 - r2.profile.trophies!, 31);
 }
+// A report that does not say what it won: the line comes back with what the sync took off, for the record.
+{
+  const own = { ...newProfile(5), trophies: 1000, poiState: { ...newProfile(5).poiState, supply: { state: "own" as const } } };
+  const e: IslandLogEntry = { seq: 1, at: T0, t: "taken", node: "supply", by: B, stars: 2 };
+  const r4 = applySync(own, { log: { entries: [e], next: 1 }, holds: NODE_IDS.map((id) => ({ id, hold: "foe" as const })) });
+  assert.ok(r4.news[0].won, "the line came back without its cost");
+  assert.equal(r4.news[0].won, 1000 - r4.profile.trophies!, "the record's cost is not what was taken off");
+}
 // A holding taken whose log line has scrolled away is lost all the same, from the view's list.
 {
   const own = { ...newProfile(5), logSeq: 500, poiState: { ...newProfile(5).poiState, supply: { state: "own" as const } } };

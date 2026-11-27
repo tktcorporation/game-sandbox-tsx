@@ -255,13 +255,15 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   let poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   // Another player's sortie took a holding (glossary.md 攻め): it went back to the robots on the server; so here.
-  const raidedBy: { code: string; stars: number; won?: number }[] = [];
+  const raidedBy: { seq: number; code: string; stars: number; won?: number }[] = [];
+  // What each sortie's line cost the trophies, as reckoned here: the record of it (meta/attacks.ts) shows the same.
+  const costs = new Map<number, number>();
   for (const e of news) {
     if (e.t !== "taken" || isAiOwner(e.by.code) || poiState[e.node as NodeId]?.state !== "own") continue;
     const srv = s.holds?.find((h) => h.id === e.node)?.hold;
     if (srv === "own") continue;
     poiState = { ...poiState, [e.node]: { state: "foe" } };
-    raidedBy.push({ code: e.by.code, stars: e.stars ?? 3, ...(e.won ? { won: e.won } : {}) });
+    raidedBy.push({ seq: e.seq, code: e.by.code, stars: e.stars ?? 3, ...(e.won ? { won: e.won } : {}) });
   }
   // A holding a sortie took whose log line has already scrolled away: lost all the same (its trophies are past knowing).
   for (const id of s.raided ?? []) {
@@ -304,6 +306,7 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       const foe = rivalTrop ? rivalTrop(r.code) : rivalTrophies(r.code, p.trophies!);
       // What the attacker's settle counted, when it says; else what their stars win at today's standings.
       const n = r.won ?? starGain(raidOdds(foe, p.trophies!).N, r.stars);
+      costs.set(r.seq, n);
       lost += n;
       next = clampTrophies(next - n);
     }
@@ -313,6 +316,7 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       const foe = rivalTrop ? rivalTrop(e.by.code) : rivalTrophies(e.by.code, p.trophies!);
       if (e.stars) {
         const n = e.won ?? starGain(raidOdds(foe, p.trophies!).N, e.stars);
+        costs.set(e.seq, n);
         lost += n;
         next = clampTrophies(next - n);
       } else defended += defenceWin(foe, p.trophies!);
@@ -323,9 +327,11 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       notes.push(trophyLine(p.trophies, next, gained, lost, defended));
     }
   }
+  // The lines with what they cost, where the report did not say (`won`).
+  const told = costs.size ? news.map((e) => (!e.won && costs.get(e.seq) ? { ...e, won: costs.get(e.seq)! } : e)) : news;
   const guardChanged = JSON.stringify(outerGuard) !== JSON.stringify(p.outerGuard ?? emptyOuterGuard());
   if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies && !guardChanged)
-    return { profile: p, news, notes };
+    return { profile: p, news: told, notes };
   return {
     profile: {
       ...p,
@@ -337,7 +343,7 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       ...(trophies !== p.trophies ? { trophies } : {}),
       ...(guardChanged ? { outerGuard } : {}),
     },
-    news,
+    news: told,
     notes,
   };
 }
