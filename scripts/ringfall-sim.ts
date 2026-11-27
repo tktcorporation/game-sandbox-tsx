@@ -2094,7 +2094,7 @@ function checkIsland(): string | null {
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
   if (
     !v12 ||
-    v12.v !== 49 ||
+    v12.v !== 50 ||
     v12.day !== 7 ||
     POIS.some((o) => (startOwn.has(o.id) ? v12.poiState[o.id].state !== "own" : v12.poiState[o.id].state !== "foe"))
   )
@@ -2240,13 +2240,6 @@ function checkSaveCompat(): string | null {
   const v44 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 44 })));
   if (!v44 || v44.v !== 46 || v44.outerGuard.lost !== 0 || v44.outerGuard.island)
     return `save compat: v44 outerGuard loaded as ${JSON.stringify(v44 && { v: v44.v, outerGuard: v44.outerGuard })}`;
-  // v46: 4-person team (作り順④). v45 and older get a fresh auto-assigned team.
-  // v47: 部隊戦 field (作り順⑤). v46 and older get a fresh battle via ensureBattle.
-  if (!newProfile().team || newProfile().team.members.length !== 4 || newProfile().team.members.filter((m) => m.ai).length !== 3)
-    return `save compat: new profile team is ${JSON.stringify(newProfile().team)}`;
-  const v45 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 45, team: undefined })));
-  if (!v45 || v45.v !== 46 || v45.team.members.length !== 4 || v45.team.members.filter((m) => m.ai).length !== 3)
-    return `save compat: v45 team loaded as ${JSON.stringify(v45 && { v: v45.v, team: v45.team })}`;
   return null;
 }
 

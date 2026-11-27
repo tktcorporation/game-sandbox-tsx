@@ -720,10 +720,6 @@ export interface State {
   goalNeed: number;
   goalHave: number;
   /**
-   * 部隊戦 field sortie (作り順⑤): captures update field holds in settle, not home poiState.
-   */
-  teamField: boolean;
-  /**
    * A sortie to a neighbour's holding (`Start.sortie`, docs/ringfall/holdings-raid.md): the node
    * and POI attacked, its owner, when time runs out and how far from the core the player may walk
    * before the sortie ends. Null for a raid of the player's own island.
@@ -962,11 +958,6 @@ export interface Start {
   goalHave?: number;
   goalNeed?: number;
   /**
-   * 部隊戦 field sortie (作り順⑤): captures write field holds, not home-island poiState.
-   * Left out, a normal own-island raid.
-   */
-  teamField?: boolean;
-  /**
    * 「攻める」target chosen at the gate (TKT-218): star scoring +N/−M for this hub only.
    * Left out, no star raid (overnight / sync still move trophies).
    */
@@ -1155,7 +1146,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     defenceAid,
     attack: (() => {
       const a = sortie ? { id: sortie.id, owner: sortie.owner, N: sortie.N, M: sortie.M } : start.attack;
-      if (!a || start.teamField) return null;
+      if (!a) return null;
       const poi = poiIndex(a.id);
       if (poi < 0 || (!sortie && !isContestedPoi(poi))) return null;
       const who = rivalOf(hold[poi] ?? "foe");
@@ -1194,7 +1185,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     goal: start.goal ?? null,
     goalHave: start.goalHave ?? 0,
     goalNeed: start.goalNeed ?? 0,
-    teamField: !!start.teamField,
     sortie: sortie
       ? (() => {
           const node = nodeIndex(sortie.id);

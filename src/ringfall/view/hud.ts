@@ -5,7 +5,7 @@ import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { revengeNodeFromLine } from "../meta/attack-scout";
 import type { Island } from "../meta/island";
-import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, fieldResultLine, goalCompass, leagueChangeLine, PHRASE, TERM, moduleRaiseReady, newsIncursion, raidStarsLine, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine, winBonusMark } from "./copy";
+import { aiLabel, attackCapturing, attackCapturePrompt, attackSeized, goalCompass, leagueChangeLine, PHRASE, TERM, moduleRaiseReady, newsIncursion, raidStarsLine, relayOf, robotHubSeized, robotHubTropNote, trophyHead, trophyLine, winBonusMark } from "./copy";
 import { raidTrophyDelta } from "../meta/trophies";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { capturedIds } from "../sim/front";
@@ -1736,16 +1736,10 @@ export class Hud {
         : "";
     const robotNote = tookRobotHub ? `<p class="trop-line">${esc(robotHubTropNote())}</p>` : "";
     const tropLine = `${starLine}${tropBreakdown}${leagueLine}${bonusLine}${robotNote}`;
-    // 作り順⑤ + TKT-219: 部隊戦 result with clan-war stars (trophies do not move).
-    const fieldLine = settled?.fieldBattle
-      ? `<p class="field-result">${esc(fieldResultLine(settled.fieldBattle.result, settled.fieldBattle.ours, settled.fieldBattle.ours + settled.fieldBattle.theirs, settled.fieldBattle.stars))}</p>`
-      : s.teamField
-        ? `<p class="field-result">${esc(TERM.battleField)}</p>`
-        : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s);
     const dayHead = settled
-      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}${fieldLine}`
+      ? `<h3 class="day-end">${settled.day} 日目</h3><div id="island-news">${newsBlock(allNews, settled.profile.poiState)}</div>${tropLine}`
       : "";
     // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =

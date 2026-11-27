@@ -41,16 +41,6 @@ export type TermId =
   | "revenge"
   | "shielding"
   | "lostToday"
-  | "team"
-  | "aiMate"
-  | "outerHubs"
-  | "teamBattle"
-  | "battleField"
-  | "foeTeam"
-  | "fieldHubs"
-  | "warPower"
-  | "bounty"
-  | "warScore"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -129,56 +119,6 @@ export const TERM = {
    * 【元】（なし） 【案】今日取られた 【理由】喪失上限が見える。内部名は出さない
    */
   lostToday: "今日取られた",
-  /**
-   * 4-person team board (作り順④).
-   * 【元】（なし） 【案】チーム 【理由】部隊戦の片側。新しい別名を増やさない
-   */
-  team: "チーム",
-  /**
-   * AI fill seat on a team (作り順④).
-   * 【元】（なし）／AIの味方 【案】AIの仲間 【理由】味方は戦場の語。仲間は席の埋め
-   */
-  aiMate: "AIの仲間",
-  /**
-   * Outer contested hub count on the team board (作り順④).
-   * 【元】（なし）／拠点 【案】外側の拠点 【理由】取り合う外側だけを数えると分かる
-   */
-  outerHubs: "外側の拠点",
-  /**
-   * Team battle mode (作り順⑤).
-   * 【元】（なし） 【案】部隊戦 【理由】design-direction の語。別名を増やさない
-   */
-  teamBattle: "部隊戦",
-  /**
-   * On-screen name of the team-battle field (作り順⑤).
-   * 【元】（なし） 【案】荒地の戦場 【理由】自島と別の場だと一目で分かる
-   */
-  battleField: "荒地の戦場",
-  /**
-   * Opposing team on the field (作り順⑤).
-   * 【元】（なし）／敵チーム 【案】相手チーム 【理由】部隊戦の片側。チームと揃える
-   */
-  foeTeam: "相手チーム",
-  /**
-   * Field hub count readout (作り順⑤).
-   * 【元】（なし）／拠点 【案】戦場の拠点 【理由】自島の外側の拠点と混ぜない
-   */
-  fieldHubs: "戦場の拠点",
-  /**
-   * War power from outer hubs on the field (作り順⑥ / 2026-11-26).
-   * 【元】力 【案】部隊戦の力 【理由】部隊戦ボード専用だと分かる。トロフィーと並べない
-   */
-  warPower: "部隊戦の力",
-  /**
-   * Leader bounty on the strongest rival (作り順⑥).
-   * 【元】（なし） 【案】懸賞金 【理由】design-direction の語。先頭への上乗せ（物資。トロフィーではない）
-   */
-  bounty: "懸賞金",
-  /**
-   * Team score inside one 部隊戦 match only (作り順⑥ / 2026-11-26).
-   * 【元】得点（個人の通算） 【案】得点＝チームの得点 【理由】トロフィーと分離。ボードにだけ出す
-   */
-  warScore: "得点",
   /**
    * Legacy expedition verb (signal-station button removed under E4).
    * 【元】送る 【案】遠征に出す — adopted, then button abolished.
@@ -542,35 +482,6 @@ export function lostTodayLine(lost: number, cap: number): string {
 }
 
 /**
- * Team board seat line (作り順④): outer hub count.
- * 【元】（なし） 【案】外側の拠点 n 【理由】部隊戦の力の種。力そのものは fieldBoard の「力」
- */
-export function teamOuterLine(outer: number): string {
-  return `${TERM.outerHubs} ${outer}`;
-}
-
-/**
- * Field battle status line (作り順⑤).
- * 【元】（なし） 【案】荒地の戦場 · あと 2 日 · 戦場の拠点 2/5 【理由】期間と持ち分が一行で分かる
- */
-export function fieldBattleLine(daysLeft: number, ours: number, total: number): string {
-  return `${TERM.battleField} · あと ${daysLeft} 日 · ${TERM.fieldHubs} ${ours}/${total}`;
-}
-
-/**
- * Field battle result line (作り順⑤ + TKT-219 stars).
- * 【元】部隊戦 · 勝ち · 戦場の拠点 3/5
- * 【案】部隊戦 · 勝ち · ★★☆ · 戦場の拠点 3/5
- * 【理由】クラン戦型の星を結果に出す（トロフィーは動かさない）
- */
-export function fieldResultLine(result: "win" | "loss" | "draw", ours: number, total: number, stars?: number): string {
-  const say = result === "win" ? "勝ち" : result === "loss" ? "負け" : "引き分け";
-  const s = stars === undefined ? undefined : Math.max(0, Math.min(3, Math.round(stars)));
-  const starBit = s === undefined ? "" : ` · ${"★".repeat(s)}${"☆".repeat(3 - s)}`;
-  return `${TERM.teamBattle} · ${say}${starBit} · ${TERM.fieldHubs} ${ours}/${total}`;
-}
-
-/**
  * League band change on results (TKT-219).
  * 【元】（なし） 【案】リーグ · 銅 → 銀 【理由】昇格・降格が一目で分かる
  */
@@ -606,30 +517,6 @@ export function raidStarsLine(stars: number, delta: number): string {
 }
 
 /**
- * War power line on the field board only (作り順⑥ / 2026-11-26).
- * 【元】力 12 【案】部隊戦の力 12 【理由】部隊戦ボード専用
- */
-export function warPowerLine(power: number): string {
-  return `${TERM.warPower} ${power}`;
-}
-
-/**
- * Team score on the field board only (作り順⑥ / 2026-11-26).
- * 【元】得点 42 【案】チームの得点 42 【理由】個人トロフィーと並べず、今の部隊戦だけ
- */
-export function warScoreLine(total: number): string {
-  return `チームの${TERM.warScore} ${total}`;
-}
-
-/**
- * Bounty mark under an 攻める row (作り順⑥ / 2026-11-26).
- * 【元】懸賞金 【案】懸賞金 · 物資 +3 【理由】トロフィーではなく物資の上乗せだと分かる
- */
-export function bountyMark(extraMaterials = 3): string {
-  return `${TERM.bounty} · 物資 +${extraMaterials}`;
-}
-
-/**
  * First-time multiplayer guide cards (TKT-204 案 C / 2026-11-26 early-MP).
  * Shown at first camp (not only at the gate).
  */
@@ -654,16 +541,15 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
     title: TERM.captureCore,
     // 【元】相手の拠点を核 · 制圧すると…
     // 【案】相手の拠点の核を制圧すると… 【理由】ユーザー承認済み（TKT-218）
-    body: `相手の拠点の核を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。${TERM.signal}に${TERM.team}もある。`,
+    body: `相手の拠点の核を制圧すると${TERM.trophy}が増える。取られたら${TERM.islandNews}から${TERM.revenge}。`,
   },
 ];
 
 /** Guide next / done button labels (TKT-204 案 C). */
 export const mpHowtoNext = (last: boolean): string => (last ? "分かった" : "次へ");
 
-/** Re-export for view callers (canonical: meta/neighbours.ts / meta/team.ts). */
+/** Re-export for view callers (canonical: meta/neighbours.ts). */
 export { aiLabel } from "../meta/neighbours";
-export { memberLabel } from "../meta/team";
 
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;

@@ -52,8 +52,6 @@ assert.ok(rows.every((r) => r.onFront), "footholds on front");
 const p = newProfile(salt);
 assert.equal(p.poiState.powerplant?.state?.startsWith("rival:"), true);
 assert.equal(p.poiState.fuel?.state?.startsWith("rival:"), true);
-assert.equal(p.team?.members.length, 4, "team from day 1");
-assert.ok(p.teamBattle, "team battle from day 1");
 
 // Starter ownership belongs only to newly created profiles, not to missing save data.
 const firstShore = ROUTE_SHORES[0]!;
@@ -105,7 +103,6 @@ assert.equal(trophyHead(TROPHY.start), `${TERM.trophy} · 銅`);
 assert.equal(MP_HOWTO_CARDS[0]!.title, TERM.seaIslands);
 assert.equal(MP_HOWTO_CARDS[1]!.title, TERM.attack);
 assert.ok(MP_HOWTO_CARDS[0]!.body.includes("地図"));
-assert.ok(MP_HOWTO_CARDS[2]!.body.includes(TERM.team));
 
 console.log(
   "early-mp ok",

@@ -26,6 +26,5 @@ if (MP_HOWTO_CARDS[1]!.title !== TERM.attack) throw new Error("card2 title");
 if (MP_HOWTO_CARDS[2]!.title !== TERM.captureCore) throw new Error("card3 title");
 if (!MP_HOWTO_CARDS[2]!.body.includes(TERM.trophy)) throw new Error("card3 trophy");
 if (!MP_HOWTO_CARDS[2]!.body.includes(TERM.revenge)) throw new Error("card3 revenge");
-if (!MP_HOWTO_CARDS[2]!.body.includes(TERM.team)) throw new Error("card3 team");
 
 console.log("mp howto ok", MP_HOWTO_CARDS.map((c) => c.title).join(" → "));
