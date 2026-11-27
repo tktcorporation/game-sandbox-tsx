@@ -39,15 +39,15 @@ export function accrue(s: Stores, poiState: Island, now: number): Stores {
   return { at, since: Math.max(s.since, now) };
 }
 
-/** The credits waiting at all holdings (whole credits). */
-export const waiting = (s: Stores): number => Math.floor(NODES.reduce((n, x) => n + (s.at[x.id] ?? 0), 0));
+/** The credits waiting at all holdings: each holding's whole credits. */
+export const waiting = (s: Stores): number => NODES.reduce((n, x) => n + Math.floor(s.at[x.id] ?? 0), 0);
 
-/** Collects what the holdings made up to `now`: the credits and the stores emptied. */
+/** Collects what the holdings made up to `now`: the whole credits, each holding keeping the fraction of a credit it has not finished. */
 export function collect(s: Stores, poiState: Island, now: number): { credits: number; stores: Stores } {
   const up = accrue(s, poiState, now);
   const credits = waiting(up);
   const at: Partial<Record<NodeId, number>> = {};
-  for (const id of Object.keys(up.at) as NodeId[]) at[id] = 0;
+  for (const id of Object.keys(up.at) as NodeId[]) at[id] = (up.at[id] ?? 0) - Math.floor(up.at[id] ?? 0);
   return { credits, stores: { at, since: up.since } };
 }
 

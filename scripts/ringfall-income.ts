@@ -20,3 +20,16 @@ console.log("income ok", own, "holdings");
   assert.equal(collect(back, p.poiState, T + 2 * H).credits, own * INCOME.perHour, "a reload lost the holdings' hours");
 }
 console.log("income round trip ok");
+// Collecting often loses nothing: every 10 s for an hour pays what one collection after the hour does.
+{
+  let st = accrue(emptyStores(), p.poiState, T);
+  let paid = 0;
+  for (let t = T + 10_000; t <= T + H; t += 10_000) {
+    const r = collect(st, p.poiState, t);
+    paid += r.credits;
+    st = r.stores;
+  }
+  const once = collect(accrue(emptyStores(), p.poiState, T), p.poiState, T + H).credits;
+  assert.ok(Math.abs(paid - once) <= own, `collected often ${paid}, once ${once}`);
+}
+console.log("income often ok");
