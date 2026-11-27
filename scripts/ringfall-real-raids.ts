@@ -158,4 +158,18 @@ assert.equal(real[0]!.owner, B.code);
   assert.deepEqual(r.profile.parcels.map((q) => q.id), [2]);
   assert.equal(keepParcels(r.profile, r.profile).back.length, 0, "came home twice");
 }
+// A sortie's record (攻めの記録) rides on its log line to the owner; only the latest few keep theirs.
+{
+  let w = op(null, { t: "claim", player: { id: A.id, name: A.name }, code: A.code }, OLD).state!;
+  w = op(w, { t: "report", player: { id: A.id, name: A.name }, retaken: [], holds: holdsWith(["supply"]), factory: 1, day: 1 }, T0).state!;
+  const rec = (n: number) => ({ node: "supply", every: 3, path: [n, 0, n + 1, 1], marks: [{ t: 3, k: "end" as const, x: n, z: 0 }] });
+  for (let k = 0; k < 10; k++) w = op(w, { t: "raid", from: B, target: "supply", captured: false, replay: rec(k) }, T0 + 1000 * (k + 1)).state!;
+  const kept = w.log.filter((e) => e.replay);
+  assert.equal(kept.length, 8, `${kept.length} records kept`);
+  assert.equal(kept.at(-1)?.replay?.path[0], 9);
+  const read = parseLog(op(w, { t: "log", player: A.id, after: 0 }, T0 + 20_000).body);
+  assert.deepEqual(read?.entries.at(-1)?.replay, rec(9), "the owner's log lost the record");
+  // One naming another node than its line's does not read.
+  assert.equal(parseLog({ entries: [{ ...read!.entries.at(-1)!, replay: { ...rec(1), node: "quarry" } }], next: 1 })?.entries[0].replay, undefined);
+}
 console.log("real raids ok", real.map((t) => t.title).join(" | "));

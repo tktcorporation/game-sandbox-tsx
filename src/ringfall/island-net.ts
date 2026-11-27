@@ -21,6 +21,7 @@ import { clawBackLine, pushNews } from "./view/copy";
 import { clawBack } from "./meta/income";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import type { NodeId } from "./sim/map";
+import type { Replay } from "./sim/replay-data";
 
 /** An answer: the body of a success, or why it failed. */
 export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | NetError };
@@ -156,14 +157,17 @@ async function readHoldings(list: readonly Neighbour[]) {
  * A sortie on another player's holding has ended (docs/ringfall/glossary.md 攻め): tell their island
  * whether its core was taken. Best effort: the attacker's own settle never waits on it.
  */
-export async function reportRaid(code: string, target: string, captured: boolean, stars?: number, won?: number): Promise<void> {
+export async function reportRaid(code: string, target: string, captured: boolean, stars?: number, won?: number, replay?: Replay | null): Promise<void> {
   const who = loadIdentity();
   if (!who.code) return;
-  await call(`/api/islands/${encodeURIComponent(code)}/raids`, {
-    method: "POST",
-    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}), ...(won ? { won } : {}) }),
-  });
+  const report = { from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}), ...(won ? { won } : {}) };
+  const withRecord = replay ? JSON.stringify({ ...report, replay }) : "";
+  // The record rides along while the body fits the server's cap; the result never waits on it.
+  await call(`/api/islands/${encodeURIComponent(code)}/raids`, { method: "POST", body: withRecord && withRecord.length <= RAID_BODY ? withRecord : JSON.stringify(report) });
 }
+
+/** The longest raid report sent with its record (`MAX_BODY` in worker/api.ts, less headroom). */
+const RAID_BODY = 3900;
 
 /**
  * The game's own islands (meta/ai-islands.ts, AI の島) are answered here from the profile the page

@@ -10,6 +10,7 @@ import { DEFENCE_AID, defencePool, isContestedPoi, type PoiHold } from "./island
 import { rivalHold, rivalOf } from "./holds";
 import { enemyNodes, nodeHolds, ownNodes, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
+import { newReplay, type Replay } from "./replay";
 
 export interface Vec3 {
   x: number;
@@ -729,6 +730,8 @@ export interface State {
    * before the sortie ends. Null for a raid of the player's own island.
    */
   sortie: { node: number; poi: number; owner: string; end: number; leave: number } | null;
+  /** A sortie's record for its holding's owner (sim/replay.ts); null for any other raid. */
+  replay: Replay | null;
   /**
    * Defence stock queued this raid when the player deposits at a depot (`leftParcels` only;
    * not world pickups). The sim gate never deposits, so the bench hash is unchanged.
@@ -1197,6 +1200,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
           return { node, poi: poiIndex(sortie.id), owner: sortie.owner, end: SORTIE.time, leave: Math.hypot(d.x - core.x, d.z - core.z) + SORTIE.leave };
         })()
       : null,
+    replay: sortie ? newReplay(nodeIndex(sortie.id)) : null,
     // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
     parcels: [],
     leftParcels: [],

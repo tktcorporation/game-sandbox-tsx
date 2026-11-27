@@ -5,6 +5,7 @@ import { ISLAND_TABLE } from "../src/ringfall/meta/island-table";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { CONTESTED_SHORES as CLIENT_CONTESTED, isContestedShore as clientContested } from "../src/ringfall/meta/neighbours";
 import { DAY_MS, OUTER_GUARD, utcDay, utcDayEnd } from "../src/ringfall/meta/outer-guard";
+import type { Replay } from "../src/ringfall/sim/replay-data";
 
 /*
  * One island on the server (docs/ringfall/multiplayer.md, 戦いの解き方): its owner, the nodes' holds
@@ -72,6 +73,8 @@ export const EXPEDITION = {
   maxTicks: 3600,
   /** Entries the log keeps, the oldest dropped first. */
   logMax: 200,
+  /** The latest sorties whose record (攻めの記録) the log keeps; older lines keep their words alone. */
+  replayMax: 8,
 };
 
 const TICK_MS = CONQUEST.tick * 1000;
@@ -138,6 +141,8 @@ export interface LogEntry {
   stars?: number;
   /** The trophies the sortie's attacker won (`raid`), as their settle counted them: what the owner loses. */
   won?: number;
+  /** A sortie's record (攻めの記録, sim/replay.ts): kept on the latest `EXPEDITION.replayMax` lines only. */
+  replay?: Replay;
 }
 
 /** An expedition as the owner's raid takes it in (`lease`): the island's number for it, whose, its node, its members' kinds, and how it stood. */
@@ -252,7 +257,7 @@ export type IslandOp =
    * the attacker when it ends. Captured, the holding goes back to the robots with its 島の守り;
    * else the owner is told it held (守りきった). The island's day shield and loss cap still hold.
    */
-  | { t: "raid"; from: Attacker; target: string; captured: boolean; stars?: number; won?: number };
+  | { t: "raid"; from: Attacker; target: string; captured: boolean; stars?: number; won?: number; replay?: Replay };
 
 /** The answer to an op: the HTTP status and body, and the island as it is after it (null while nobody has claimed it). */
 export interface OpResult {
@@ -348,15 +353,20 @@ export function recordOuterTaken(s: IslandState, at: number) {
   markIslandShield(s, at);
 }
 
-function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, by: Attacker, stars?: number, won?: number) {
+function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, by: Attacker, stars?: number, won?: number, replay?: Replay) {
   if (t === "taken") {
     s.taken = { day: utcDay(at), n: takenOn(s, at) + 1 };
     // Hold still shows the pre-flip owner here (caller updates holds after / separately).
     if (isContestedShore(NODE_IDS[node]) && s.holds[node] === "own") recordOuterTaken(s, at);
   }
   if (t === "taken" || t === "retaken") shieldNode(s, node, at);
-  s.log.push({ seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by }, ...(stars !== undefined ? { stars } : {}), ...(won !== undefined ? { won } : {}) });
+  s.log.push({ seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by }, ...(stars !== undefined ? { stars } : {}), ...(won !== undefined ? { won } : {}), ...(replay ? { replay } : {}) });
   if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);
+  // Records weigh more than words: only the latest few keep theirs, so the island's state stays small.
+  if (replay) {
+    let kept = 0;
+    for (let k = s.log.length - 1; k >= 0; k--) if (s.log[k].replay && ++kept > EXPEDITION.replayMax) delete s.log[k].replay;
+  }
 }
 
 /**
@@ -1005,7 +1015,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     const won = Number.isFinite(op.won) && op.won! > 0 ? Math.min(60, Math.round(op.won!)) : undefined;
     if (!op.captured || guarded) {
       const star = guarded && op.captured ? 0 : Math.min(stars, 1);
-      appendLog(s, now, "wiped", i, op.from, star, star ? won : undefined);
+      appendLog(s, now, "wiped", i, op.from, star, star ? won : undefined, op.replay);
       return done(200, { ok: true, taken: false }, true);
     }
     // The holding's 島の守り leave it: its owner's copy sends them back to their stash (決定 B: things are never taken).
@@ -1014,7 +1024,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     // Back to the robots first, so the log counts the day's loss once (here, not as a contested shore's).
     s.holds[i] = "foe";
     s.raided = [...(s.raided ?? []).filter((k) => k !== i), i];
-    appendLog(s, now, "taken", i, op.from, Math.max(2, stars), won);
+    appendLog(s, now, "taken", i, op.from, Math.max(2, stars), won, op.replay);
     recordOuterTaken(s, now);
     return done(200, { ok: true, taken: true }, true);
   }

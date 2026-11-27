@@ -18,6 +18,7 @@ import { parseParcels, parsePings, type Parcel } from "./parcels";
 import { clampTrophies, defenceWin, raidOdds, rivalTrophies, starGain, trophyDelta } from "./trophies";
 import { emptyOuterGuard, guardOn, mergeOuterGuard, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
+import { parseReplay, type Replay } from "../sim/replay-data";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -97,6 +98,8 @@ export interface IslandLogEntry {
   stars?: number;
   /** The trophies the sortie's attacker won, as their settle counted them: what this island's owner loses. */
   won?: number;
+  /** The sortie's record (攻めの記録, sim/replay.ts), on the latest sorties' lines. */
+  replay?: Replay;
 }
 
 const STATES: readonly ServerState[] = ["coming", "attacking", "waiting", "holding"];
@@ -135,6 +138,8 @@ export function parseView(raw: unknown): IslandView | null {
   };
 }
 
+const LOG_NODES: readonly string[] = ISLAND_TABLE.nodes.map((n) => n.id);
+
 /** The owner's log as the server answered it: the entries it can read, and the number to read after next time; null when unreadable. */
 export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: number } | null {
   if (!isObj(raw) || !Array.isArray(raw.entries) || !count(raw.next)) return null;
@@ -143,7 +148,9 @@ export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: numbe
     if (!(isObj(e) && by && count(e.seq) && typeof e.at === "number" && LOG_KINDS.includes(e.t as never) && typeof e.node === "string")) return [];
     const stars = count(e.stars) && e.stars <= 3 ? { stars: e.stars } : {};
     const won = count(e.won) && e.won > 0 ? { won: e.won } : {};
-    return [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by, ...stars, ...won }];
+    const record = parseReplay(e.replay, LOG_NODES);
+    const replay = record && record.node === e.node ? { replay: record } : {};
+    return [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by, ...stars, ...won, ...replay }];
   });
   return { entries, next: raw.next };
 }

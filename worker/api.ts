@@ -1,7 +1,8 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { TROPHY } from "../src/ringfall/meta/trophies";
-import { parseContestedFailed, parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
+import { parseReplay } from "../src/ringfall/sim/replay-data";
+import { NODE_IDS, parseContestedFailed, parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
 import { CONTESTED_OUTER_TABLE } from "../src/ringfall/meta/contested-outer-table";
@@ -606,7 +607,10 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     if (typeof raw.target !== "string" || typeof raw.captured !== "boolean") return fail(400, "bad-request");
     const stars = typeof raw.stars === "number" && Number.isInteger(raw.stars) && raw.stars >= 0 && raw.stars <= 3 ? raw.stars : undefined;
     const won = typeof raw.won === "number" && Number.isInteger(raw.won) && raw.won > 0 ? raw.won : undefined;
-    return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured, ...(stars !== undefined ? { stars } : {}), ...(won !== undefined ? { won } : {}) }, now);
+    // The sortie's record, only of the holding attacked; one that does not read is left out, the report kept.
+    const record = parseReplay(raw.replay, NODE_IDS);
+    const replay = record && record.node === raw.target ? record : undefined;
+    return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured, ...(stars !== undefined ? { stars } : {}), ...(won !== undefined ? { won } : {}), ...(replay ? { replay } : {}) }, now);
   }
   // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
   if (sub === "assault") {

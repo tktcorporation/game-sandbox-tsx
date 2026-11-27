@@ -4,6 +4,7 @@ import { stepPlayer, tickReveal } from "./player";
 import { stepAlly } from "./ally";
 import { stepDepots, stepEntries, stepExtract, stepHome, stepLoot, stepParties, stepPoi, stepReinforce, stepSortie } from "./world";
 import { TICK } from "./config";
+import { stepReplay } from "./replay";
 import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
 import { stepFront, useZones } from "./front";
@@ -25,6 +26,12 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
   // Clear in place: same list the view and the gate read after the tick, without a fresh array each time.
   s.events.length = 0;
   if (s.phase === "done") return;
+  tick(s, input, prevCrouch);
+  // A sortie's record reads the whole tick's events, the one that ended it included (sim/replay.ts).
+  if (s.replay) stepReplay(s);
+}
+
+function tick(s: State, input: Input, prevCrouch: boolean) {
   s.time += TICK;
   // A wipe or an extraction ends the raid mid-tick; nothing after it may fire, score or move.
   // The raid is over before the battle may be: the rest of it is reckoned then (sim/battle.ts).
