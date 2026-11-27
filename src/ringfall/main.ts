@@ -746,9 +746,9 @@ function openCamp() {
     awayBooted = true;
     // The AI players' attacks on the holdings since the last session (real time).
     const away = hub.takeAway(awayFor(hub.profile));
-    // What the holdings made while the player was away (real time), collected on arrival.
-    const made = hub.collectIncome();
-    void deliverAwayNews(beforeSnap, away?.lines ?? [], made > 0 ? [incomeLine(made)] : []);
+    // What the holdings made while the player was away (real time) is collected once the island's sync has
+    // brought in the holdings other players took meanwhile, so those pay nothing (deliverAwayNews()).
+    void deliverAwayNews(beforeSnap, away?.lines ?? []);
   }
   // Reload with pending: open 整理 over the camp (not the title). Leave the pointer free so the buttons work.
   // Early-MP: show the three howto cards at first camp, before free roam (depart keeps a fallback).
@@ -765,17 +765,26 @@ function openCamp() {
  * 野営起動時: 島を同期し、留守中に届いた対人の結果があればリザルトと同じ文の一枚を出す。
  * 控えは takeSync / hub.update ですでに Profile.news へ入る。一枚はセッションで一度だけ。
  */
-function deliverAwayNews(before: Profile, awayLines: readonly string[] = [], extra: readonly string[] = []) {
+function deliverAwayNews(before: Profile, awayLines: readonly string[] = []) {
   void syncOwn(before, false).then((r) => {
     void flushRecalls(
       () => hub.profile,
       (q) => hub.update(q),
     );
-    if (!camping || running || awaySheetOpen || !$("results").hidden) return;
+    // A raid begun meanwhile takes the island as it started; its end collects instead.
+    if (!camping || running) return;
+    // The holdings other players took while the player was away are lost first: they pay nothing.
+    const synced = r.ok ? takeSync(hub.profile, r.body) : null;
+    if (synced && synced.profile !== hub.profile) hub.update(synced.profile);
+    const made = hub.collectIncome();
+    const extra = made > 0 ? [incomeLine(made)] : [];
+    if (awaySheetOpen || !$("results").hidden) {
+      saveProfile(hub.profile);
+      return;
+    }
     let fromSync: ReturnType<typeof awaySheetParts> = null;
-    if (r.ok) {
-      const { profile, news, notes } = takeSync(hub.profile, r.body);
-      if (profile !== hub.profile) hub.update(profile);
+    if (synced) {
+      const { news, notes } = synced;
       world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
       if (news.length) hub.takeNews(news);
       saveProfile(hub.profile);
