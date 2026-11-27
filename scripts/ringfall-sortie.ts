@@ -18,6 +18,7 @@ import { DEPOTS, depotIndex, NODES, nodeIndex, POIS, poiIndex, poiRegion, type N
 import { capturable, useCore } from "../src/ringfall/sim/front";
 import { DEPOT, FRONT, SORTIE, TICK } from "../src/ringfall/sim/config";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
+import { parseReplay, REPLAY } from "../src/ringfall/sim/replay-data";
 import { step } from "../src/ringfall/sim/step";
 import { objectiveSteps } from "../src/ringfall/sim/objective";
 import { dist2d } from "../src/ringfall/sim/geom";
@@ -134,7 +135,10 @@ function parts(): { name: string; err: string | null; line: string }[] {
               ? "the capture is not counted"
               : !title.includes("攻める")
                 ? `objective "${title}"`
-                : null;
+                : // (The capture begun here is started outside a tick, so only its end is marked.)
+                  !s.replay?.marks.some((m) => m.k === "taken")
+                  ? `the record's marks ${s.replay?.marks.map((m) => m.k).join(",") ?? "none"}`
+                  : null;
     out.push({ name: "core", err, line: `taken at ${Math.round(s.time)} s, siege events ${siege}, objective "${title}"` });
   }
 
@@ -146,6 +150,26 @@ function parts(): { name: string; err: string | null; line: string }[] {
     const t = Math.round(s.time);
     const err = s.phase !== "done" || s.outcome !== "extracted" ? `phase ${s.phase} outcome ${s.outcome} at ${t} s` : !seen.includes("sortieUp") ? "no sortieUp" : Math.abs(t - SORTIE.time) > 1 ? `ended at ${t} s` : null;
     out.push({ name: "time", err, line: `ended at ${t} s, ${s.outcome}` });
+
+    // The record of the whole sortie: a point every few seconds to its end, the end marked, small enough to send.
+    const rec = s.replay;
+    const size = JSON.stringify(rec ?? {}).length;
+    const points = rec ? rec.path.length / 2 : 0;
+    const want = Math.min(REPLAY.points, Math.floor(SORTIE.time / REPLAY.every) + 1);
+    const err3 = !rec
+      ? "no record"
+      : rec.node !== TARGET
+        ? `the record's node ${rec.node}`
+        : Math.abs(points - want) > 1
+          ? `${points} points, not ${want}`
+          : rec.marks.at(-1)?.k !== "end"
+            ? "the end is not marked"
+            : size > 2400
+              ? `${size} characters`
+              : JSON.stringify(parseReplay(JSON.parse(JSON.stringify(rec)), [TARGET])) !== JSON.stringify(rec)
+                ? "the record does not read back"
+                : null;
+    out.push({ name: "record", err: err3, line: `${points} points, ${rec?.marks.length ?? 0} marks, ${size} characters` });
 
     const w = sortie();
     w.enemies = [];
@@ -166,7 +190,7 @@ function parts(): { name: string; err: string | null; line: string }[] {
   // none
   {
     const s = newRun(31, starterKit(), "reservoir");
-    const err = s.sortie !== null ? "a plain raid has a sortie" : s.enemies.length < 40 ? `a plain raid stands ${s.enemies.length} robots` : null;
+    const err = s.sortie !== null ? "a plain raid has a sortie" : s.replay !== null ? "a plain raid keeps a record" : s.enemies.length < 40 ? `a plain raid stands ${s.enemies.length} robots` : null;
     out.push({ name: "none", err, line: `plain raid: ${s.enemies.length} robots, ${s.bins.length} bins` });
   }
   return out;

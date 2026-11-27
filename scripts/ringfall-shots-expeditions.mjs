@@ -154,6 +154,78 @@ export async function expeditionShots({ browser, port, out, errors }) {
     await pg.screenshot({ path: `${out}/158-expeditions-landing.png` });
   }
   await ctx.close();
+  await attackShots({ browser, port, out, errors });
+}
+
+/**
+ * 攻められた記録 on the signal station (view/attacks.ts): a save holding two sorties on the quarry,
+ * one with its track; 見る plays it on the holding's small map (drawn whole under a browser driver).
+ */
+export async function attackShots({ browser, port, out, errors }) {
+  const core = { x: -327, z: 132 };
+  const path = [];
+  // In from the south-west, round the core's west side, onto it, and back out.
+  for (let i = 0; i <= 40; i++) {
+    const f = i / 40;
+    const a = f < 0.6 ? f / 0.6 : 1 - (f - 0.6) / 0.4;
+    path.push(Math.round(core.x - 110 * (1 - a) + 14 * Math.sin(f * 9)), Math.round(core.z + 90 * (1 - a) - 10 * Math.cos(f * 7)));
+  }
+  const replay = {
+    node: "quarry",
+    every: 3,
+    path,
+    marks: [
+      { t: 40, k: "fall", x: core.x - 40, z: core.z + 30 },
+      { t: 55, k: "fall", x: core.x - 18, z: core.z + 12 },
+      { t: 70, k: "core", x: core.x, z: core.z },
+      { t: 95, k: "taken", x: core.x, z: core.z },
+      { t: 120, k: "end", x: path.at(-2), z: path.at(-1) },
+    ],
+  };
+  const now = Date.now();
+  const save = {
+    ...SAVE,
+    v: 54,
+    poiState: Object.fromEntries(HELD.map((id) => [id, { state: id === "quarry" ? "foe" : "own" }])),
+    incoming: [],
+    expeditions: [],
+    attacks: [
+      { seq: 4, at: now - 26 * 3600_000, by: { code: "K7M2QX", name: "みなと" }, node: "relay", taken: false, stars: 1, won: 6 },
+      { seq: 9, at: now - 2 * 3600_000, by: { code: "Z3P9TR", name: "となり" }, node: "quarry", taken: true, stars: 3, won: 28, credits: 140, replay },
+    ],
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await ctx.newPage();
+  pg.on("pageerror", (e) => errors.push(`attacks pageerror: ${e.message}`));
+  await pg.addInitScript(([k, v]) => localStorage.getItem(k) || localStorage.setItem(k, v), [KEY, JSON.stringify(save)]);
+  await pg.addInitScript((v) => localStorage.setItem("ringfall.neighbours.v1", v), JSON.stringify({ neighbours: NEAR }));
+  // The first camp's cards about the other islands, already read.
+  await pg.addInitScript(() => localStorage.setItem("ringfall.mpHowto.v1", "1"));
+  await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
+  await pg.waitForTimeout(300);
+  await pg.click("#start");
+  await pg.waitForFunction(() => getComputedStyle(document.getElementById("fade")).opacity === "0", null, { timeout: 8000 }).catch(() => errors.push("attacks: the fade never cleared"));
+  await pg.evaluate(() => window.advanceTime(300));
+  if (!(await pg.evaluate(() => window.ringfallCamp.open("signal")))) errors.push("attacks: the signal station did not open");
+  await pg.evaluate(() => window.advanceTime(400));
+  const rows = await pg.evaluate(() => [...document.querySelectorAll("#hub-attacks .attack-records li")].map((li) => ({ text: li.textContent, watch: !!li.querySelector(".watch") })));
+  if (rows.length !== 2 || !/となり/.test(rows[0]?.text ?? "") || !rows[0].watch || rows[1].watch || !/−28/.test(rows[0].text) || !/−140/.test(rows[0].text)) errors.push(`attacks: the signal station's records read ${JSON.stringify(rows)}`);
+  if (!rows.length) errors.push(`attacks: panel ${await pg.evaluate(() => (document.getElementById("hub-attacks")?.outerHTML ?? "none").slice(0, 200))}; saved ${await pg.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "{}").attacks?.length, KEY)}`);
+  if (!rows.some((r) => r.watch)) {
+    await ctx.close();
+    return;
+  }
+  await pg.click("#hub-attacks .watch");
+  await pg.waitForTimeout(300);
+  const shown = await pg.evaluate(() => {
+    const c = document.querySelector("#hub-attacks canvas.attack-map");
+    c?.scrollIntoView({ block: "center" });
+    return !!c && !c.hidden && c.clientWidth > 100;
+  });
+  if (!shown) errors.push("attacks: 見る did not show the record's map");
+  await pg.waitForTimeout(200);
+  await pg.screenshot({ path: `${out}/157-attack-record.png` });
+  await ctx.close();
 }
 
 // Alone: serve the build and run the expeditions' shots.

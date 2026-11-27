@@ -244,6 +244,8 @@ export function aiView(
     nodes,
     expeditions,
     pings: [],
+    // No sortie of another player reaches the game's own islands: nothing taken to reconcile.
+    raided: [],
     parcels,
   };
 }

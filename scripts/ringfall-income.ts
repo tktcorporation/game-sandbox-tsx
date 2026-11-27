@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { accrue, collect, emptyStores, INCOME, parseStores, storeCap } from "../src/ringfall/meta/income";
+import { accrue, collect, emptyStores, INCOME, parseStores, storeCap, clawBack } from "../src/ringfall/meta/income";
 import { newProfile } from "../src/ringfall/meta/profile";
 const p = newProfile(3);
 const H = 3_600_000, T = Date.UTC(2026, 10, 1);
@@ -33,3 +33,26 @@ console.log("income round trip ok");
   assert.ok(Math.abs(paid - once) <= own, `collected often ${paid}, once ${once}`);
 }
 console.log("income often ok");
+// A holding another player took before the last collection: what it paid then goes back out of the cash.
+{
+  const st = accrue(emptyStores(), p.poiState, T);
+  const after = collect(st, p.poiState, T + 2 * H);
+  const node = Object.keys(after.stores.paid ?? {})[0] as keyof NonNullable<typeof after.stores.paid>;
+  assert.ok(node, "a collection recorded nothing paid");
+  const paid = after.stores.paid![node]![0]!.n;
+  const took = clawBack(after.stores, 10_000, [{ node, at: T + H }]);
+  assert.equal(took.back, paid, "the income of a holding taken before it was collected stayed paid");
+  assert.equal(clawBack(after.stores, 10_000, [{ node, at: T + 3 * H }]).back, 0, "income collected before the holding was taken came back");
+  assert.equal(clawBack(after.stores, 5, [{ node, at: T + H }]).back, 5, "more taken back than the cash held");
+  assert.equal(clawBack(took.stores, 10_000, [{ node, at: T + H }]).back, 0, "taken back twice");
+  assert.deepEqual(parseStores(JSON.parse(JSON.stringify(after.stores))).paid, after.stores.paid);
+  // Two raids home before the loss is known: both collections after it come back, not the last alone.
+  const twice = collect(after.stores, p.poiState, T + 3 * H);
+  const both = paid + twice.stores.paid![node]!.at(-1)!.n;
+  assert.equal(clawBack(twice.stores, 10_000, [{ node, at: T + H }]).back, both, "only the last collection came back");
+  // Bringing the stores up to date (an AI player's attack) keeps the records.
+  assert.deepEqual(accrue(twice.stores, p.poiState, T + 4 * H).paid, twice.stores.paid, "accrue dropped the collections");
+  // A save from before the list kept one collection as an object.
+  assert.deepEqual(parseStores({ at: {}, since: T, paid: { [node]: { at: T, n: 7 } } }).paid, { [node]: [{ at: T, n: 7 }] });
+}
+console.log("income claw-back ok");

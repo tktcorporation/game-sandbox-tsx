@@ -1,4 +1,5 @@
 import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { parseAttacks, type Attack } from "./attacks";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
@@ -40,7 +41,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 53;
+  v: 54;
   cash: number;
   stash: Item[];
   raids: number;
@@ -144,6 +145,8 @@ export interface Profile {
   attackedAt: number;
   /** 拠点の収入 waiting at each holding, made by the clock (meta/income.ts). v52 and older start empty. */
   stores: Stores;
+  /** Other players' sorties on the holdings (攻められた記録, meta/attacks.ts), newest last. v53 and older start empty. */
+  attacks: Attack[];
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -206,7 +209,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 53,
+    v: 54,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -242,6 +245,7 @@ export function newProfile(seed = 1): Profile {
     raided: [],
     attackedAt: 0,
     stores: emptyStores(),
+    attacks: [],
   };
 }
 
@@ -735,6 +739,21 @@ function store(p: Profile, items: Item[]): { profile: Profile; pending: Item[] }
 }
 
 /**
+ * The holdings `before` held that `after` no longer does: the 島の守り waiting at them go back into
+ * the stash (what does not fit waits for 倉庫の整理) and leave the island. A holding taken costs its
+ * owner what it had made, never their things (glossary.md 決定 B). The profile, and what came back.
+ */
+export function keepParcels(before: Pick<Profile, "poiState" | "parcels">, after: Profile): { profile: Profile; back: Parcel[] } {
+  const lost = new Set(NODES.filter((n) => before.poiState[n.id]?.state === "own" && after.poiState[n.id]?.state !== "own").map((n) => n.id as string));
+  if (!lost.size) return { profile: after, back: [] };
+  const seen = new Set<number>();
+  const back = [...(before.parcels ?? []), ...(after.parcels ?? [])].filter((q) => lost.has(q.poi) && !seen.has(q.id) && (seen.add(q.id), true));
+  if (!back.length) return { profile: after, back };
+  const kept = { ...after, parcels: (after.parcels ?? []).filter((q) => !lost.has(q.poi)) };
+  return { profile: store(kept, back.map((q) => ({ t: "valuable" as const, kind: q.kind }))).profile, back };
+}
+
+/**
  * Puts what came off the island into the stash.
  * What was sent home from a depot arrives however the raid ended; the depots switched on
  * and the map explored are kept too. The ways in walked to are learned only when the player got
@@ -1101,12 +1120,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * (only other players take holdings, and a holding taken goes back to the robots) and adds `attackedAt`.
  * v51 and older count the island's day by raids (`day`); v52 keeps when it started (`since`) and counts calendar days.
  * v52 and older are paid 拠点の収入 at each settle; v53 makes it by the clock at each holding (`stores`).
+ * v53 and older keep no record of the sorties on the holdings; v54 adds `attacks` (攻められた記録).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1191,7 +1211,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 53,
+    v: 54,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1225,6 +1245,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     outerGuard,
     raided,
     stores: typeof o.v === "number" && o.v >= 53 ? parseStores(o.stores) : emptyStores(),
+    attacks: typeof o.v === "number" && o.v >= 54 ? parseAttacks(o.attacks) : [],
     attackedAt: typeof o.v === "number" && o.v >= 51 && Number.isFinite(o.attackedAt) ? Math.max(0, o.attackedAt as number) : 0,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),

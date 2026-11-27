@@ -300,7 +300,7 @@ function onEvent(e: GameEvent, s: State) {
     // 実プレイヤーのお隣への短いレイド: 保留中の勝敗報告を同期時に送信（失敗時は再試行）。
     postRaidSummary(settled, s);
     // A sortie on another player's holding tells their island how it ended (they hear of it in 島の知らせ).
-    if (s.sortie && !isAiOwner(s.sortie.owner)) void reportRaid(s.sortie.owner, NODES[s.sortie.node].id, capturedIds(s).includes(NODES[s.sortie.node].id), settled.trophies?.stars);
+    if (s.sortie && !isAiOwner(s.sortie.owner)) void reportRaid(s.sortie.owner, NODES[s.sortie.node].id, capturedIds(s).includes(NODES[s.sortie.node].id), settled.trophies?.stars, settled.trophies?.gained, s.replay);
     syncIsland(settled.profile, s);
     // The AI players' attacks on the holdings while the raid ran (real time): on the results and the signal station.
     // The holdings the raid's battle lost went to AI players (決定 B), then their attacks while the raid ran (real time).

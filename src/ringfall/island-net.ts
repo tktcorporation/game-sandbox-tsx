@@ -17,9 +17,12 @@ import { islandDay } from "./meta/days";
 import { playerNodes } from "./meta/island";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
-import { pushNews } from "./view/copy";
+import { clawBackLine, pushNews } from "./view/copy";
+import { clawBack } from "./meta/income";
+import { addAttacks } from "./meta/attacks";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import type { NodeId } from "./sim/map";
+import type { Replay } from "./sim/replay-data";
 
 /** An answer: the body of a success, or why it failed. */
 export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | NetError };
@@ -155,14 +158,17 @@ async function readHoldings(list: readonly Neighbour[]) {
  * A sortie on another player's holding has ended (docs/ringfall/glossary.md 攻め): tell their island
  * whether its core was taken. Best effort: the attacker's own settle never waits on it.
  */
-export async function reportRaid(code: string, target: string, captured: boolean, stars?: number): Promise<void> {
+export async function reportRaid(code: string, target: string, captured: boolean, stars?: number, won?: number, replay?: Replay | null): Promise<void> {
   const who = loadIdentity();
   if (!who.code) return;
-  await call(`/api/islands/${encodeURIComponent(code)}/raids`, {
-    method: "POST",
-    body: JSON.stringify({ from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}) }),
-  });
+  const report = { from: { ...player(who), code: who.code }, target, captured, ...(stars !== undefined ? { stars } : {}), ...(won ? { won } : {}) };
+  const withRecord = replay ? JSON.stringify({ ...report, replay }) : "";
+  // The record rides along while the body fits the server's cap; the result never waits on it.
+  await call(`/api/islands/${encodeURIComponent(code)}/raids`, { method: "POST", body: withRecord && withRecord.length <= RAID_BODY ? withRecord : JSON.stringify(report) });
 }
+
+/** The longest raid report sent with its record (`MAX_BODY` in worker/api.ts, less headroom). */
+const RAID_BODY = 3900;
 
 /**
  * The game's own islands (meta/ai-islands.ts, AI の島) are answered here from the profile the page
@@ -399,6 +405,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
     synced.holds = view.body.nodes;
     synced.incoming = incomingOf(view.body);
     synced.parcels = view.body.parcels;
+    synced.raided = view.body.raided;
     synced.outerGuard = outerGuardFromView(view.body);
   }
   if (!log.ok && !view.ok && !report) return view;
@@ -422,9 +429,38 @@ const tropLookup = (p: Profile) => rivalTrophiesLookup(p.trophies ?? TROPHY.star
 
 export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }, tropLookup(p)).profile;
 
+/**
+ * The holdings the log says another player took, which the player does not hold after the sync: the
+ * income collected from them since they were taken goes back out of the cash (meta/income.ts
+ * `clawBack()`, which takes each collection back once). Whether the holding was the player's before
+ * this sync is not asked: an earlier sync may have shown it lost (by its holds or `raided`) without
+ * the log that tells when.
+ */
+export function takenBack(_before: Profile, after: Profile, news: readonly IslandLogEntry[]): Profile {
+  return takenBackBy(_before, after, news).profile;
+}
+
+/** `takenBack()`, with the credits taken back for each log line (by its seq), for the record of it (meta/attacks.ts). */
+function takenBackBy(_before: Profile, after: Profile, news: readonly IslandLogEntry[]): { profile: Profile; credits: Record<number, number> } {
+  const credits: Record<number, number> = {};
+  let { stores, cash } = after;
+  for (const e of news) {
+    if (!(e.t === "taken" && after.poiState[e.node as NodeId]?.state !== "own")) continue;
+    const r = clawBack(stores, cash, [{ node: e.node as NodeId, at: e.at }]);
+    stores = r.stores;
+    cash -= r.back;
+    if (r.back > 0) credits[e.seq] = r.back;
+  }
+  return { profile: stores === after.stores ? after : { ...after, stores, cash }, credits };
+}
+
 export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[]; notes: string[] } {
   const lookup = tropLookup(p);
-  const r = s.ticket < applied ? applySync(p, { reported: s.synced.reported }, lookup) : ((applied = s.ticket), applySync(p, s.synced, lookup));
+  const synced = s.ticket < applied ? applySync(p, { reported: s.synced.reported }, lookup) : ((applied = s.ticket), applySync(p, s.synced, lookup));
+  const back = takenBackBy(p, synced.profile, synced.news);
+  const attacks = addAttacks(back.profile.attacks, synced.news, back.credits);
+  const r = { ...synced, profile: attacks === back.profile.attacks ? back.profile : { ...back.profile, attacks }, notes: [...synced.notes] };
+  if (r.profile.cash < synced.profile.cash) r.notes.push(clawBackLine(synced.profile.cash - r.profile.cash));
   // トロフィーの増減は必ず知らせの一行と一緒に Profile.news へ残す.
   if (!r.notes.length) return { profile: r.profile, news: r.news, notes: r.notes };
   return { profile: { ...r.profile, news: pushNews(r.profile.news ?? [], r.notes) }, news: r.news, notes: r.notes };

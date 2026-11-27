@@ -229,7 +229,7 @@ export class ExpeditionPanel {
           ? `<p class="exp-shield">${esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))}</p>`
           : "";
     // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
-    const head = `${trop}${shield}<div class="mod-head"><strong>${flagIcon()}お隣の島</strong></div>`;
+    const head = `${trop}${shield}<div class="mod-head"><strong>${flagIcon()}${TERM.otherPlayers}</strong></div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
     // Island codes: folded away from daily entry (お隣 cards are the primary).

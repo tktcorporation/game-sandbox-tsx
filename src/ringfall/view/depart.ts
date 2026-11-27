@@ -157,7 +157,7 @@ export class DepartPicker {
     title.textContent = TERM.attack;
     if (!targets.length) {
       // 【元】（非表示） 【案】空のときも見出しを残す 【理由】攻める入口を初日に見せる
-      list.innerHTML = `<p class="attack-empty lock-note">${esc("攻められるお隣の拠点はまだない")}</p>`;
+      list.innerHTML = `<p class="attack-empty lock-note">${esc("攻められる別プレイヤーの陣地はまだない")}</p>`;
       return;
     }
     // The neighbours' holdings (docs/ringfall/holdings-raid.md): choosing one makes the departure a sortie there.

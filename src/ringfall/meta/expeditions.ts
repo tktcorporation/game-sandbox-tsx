@@ -18,6 +18,7 @@ import { parseParcels, parsePings, type Parcel } from "./parcels";
 import { clampTrophies, defenceWin, raidOdds, rivalTrophies, starGain, trophyDelta } from "./trophies";
 import { emptyOuterGuard, guardOn, mergeOuterGuard, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
+import { parseReplay, type Replay } from "../sim/replay-data";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -67,6 +68,8 @@ export interface IslandView {
   pings: { id: number; x: number; z: number; by: string; until: number }[];
   /** Parcels at depots (ux-design C2). */
   parcels: Parcel[];
+  /** Holdings sorties took that the owner's reports have not shown lost yet (outlives the bounded log). */
+  raided: string[];
 }
 
 /**
@@ -93,6 +96,10 @@ export interface IslandLogEntry {
   by: { code: string; name: string };
   /** A sortie's stars (0–3): what its attacker won, and so what this island's owner loses. */
   stars?: number;
+  /** The trophies the sortie's attacker won, as their settle counted them: what this island's owner loses. */
+  won?: number;
+  /** The sortie's record (攻めの記録, sim/replay.ts), on the latest sorties' lines. */
+  replay?: Replay;
 }
 
 const STATES: readonly ServerState[] = ["coming", "attacking", "waiting", "holding"];
@@ -126,9 +133,12 @@ export function parseView(raw: unknown): IslandView | null {
     nodes,
     expeditions,
     pings: parsePings(raw.pings),
+    raided: Array.isArray(raw.raided) ? raw.raided.filter((x): x is string => typeof x === "string") : [],
     parcels: parseParcels(raw.parcels),
   };
 }
+
+const LOG_NODES: readonly string[] = ISLAND_TABLE.nodes.map((n) => n.id);
 
 /** The owner's log as the server answered it: the entries it can read, and the number to read after next time; null when unreadable. */
 export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: number } | null {
@@ -137,7 +147,10 @@ export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: numbe
     const by = isObj(e) ? attacker(e.by) : null;
     if (!(isObj(e) && by && count(e.seq) && typeof e.at === "number" && LOG_KINDS.includes(e.t as never) && typeof e.node === "string")) return [];
     const stars = count(e.stars) && e.stars <= 3 ? { stars: e.stars } : {};
-    return [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by, ...stars }];
+    const won = count(e.won) && e.won > 0 ? { won: e.won } : {};
+    const record = parseReplay(e.replay, LOG_NODES);
+    const replay = record && record.node === e.node ? { replay: record } : {};
+    return [{ seq: e.seq, at: e.at, t: e.t as IslandLogEntry["t"], node: e.node, by, ...stars, ...won, ...replay }];
   });
   return { entries, next: raw.next };
 }
@@ -213,6 +226,8 @@ export interface Synced {
   parcels?: readonly Parcel[];
   /** Server's outer-guard snapshot from the island view (作り順③). */
   outerGuard?: OuterGuard;
+  /** Holdings sorties took that the island still waits for the owner to see lost (`IslandView.raided`). */
+  raided?: readonly string[];
 }
 
 /**
@@ -240,13 +255,21 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
   let poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   // Another player's sortie took a holding (glossary.md 攻め): it went back to the robots on the server; so here.
-  const raidedBy: { code: string; stars: number }[] = [];
+  const raidedBy: { seq: number; code: string; stars: number; won?: number }[] = [];
+  // What each sortie's line cost the trophies, as reckoned here: the record of it (meta/attacks.ts) shows the same.
+  const costs = new Map<number, number>();
   for (const e of news) {
     if (e.t !== "taken" || isAiOwner(e.by.code) || poiState[e.node as NodeId]?.state !== "own") continue;
     const srv = s.holds?.find((h) => h.id === e.node)?.hold;
     if (srv === "own") continue;
     poiState = { ...poiState, [e.node]: { state: "foe" } };
-    raidedBy.push({ code: e.by.code, stars: e.stars ?? 3 });
+    raidedBy.push({ seq: e.seq, code: e.by.code, stars: e.stars ?? 3, ...(e.won ? { won: e.won } : {}) });
+  }
+  // A holding a sortie took whose log line has already scrolled away: lost all the same (its trophies are past knowing).
+  for (const id of s.raided ?? []) {
+    // One taken back since whose report has not reached the island yet (`retaken`) stays the player's.
+    if (poiState[id as NodeId]?.state !== "own" || s.holds?.find((h) => h.id === id)?.hold === "own" || p.retaken.includes(id as NodeId)) continue;
+    poiState = { ...poiState, [id]: { state: "foe" } };
   }
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
@@ -282,7 +305,9 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
     // A holding another player's sortie took costs what their stars won (starGain of raidOdds N).
     for (const r of raidedBy) {
       const foe = rivalTrop ? rivalTrop(r.code) : rivalTrophies(r.code, p.trophies!);
-      const n = starGain(raidOdds(foe, p.trophies!).N, r.stars);
+      // What the attacker's settle counted, when it says; else what their stars win at today's standings.
+      const n = r.won ?? starGain(raidOdds(foe, p.trophies!).N, r.stars);
+      costs.set(r.seq, n);
       lost += n;
       next = clampTrophies(next - n);
     }
@@ -291,7 +316,8 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
     for (const e of news.filter((n) => n.t === "wiped")) {
       const foe = rivalTrop ? rivalTrop(e.by.code) : rivalTrophies(e.by.code, p.trophies!);
       if (e.stars) {
-        const n = starGain(raidOdds(foe, p.trophies!).N, e.stars);
+        const n = e.won ?? starGain(raidOdds(foe, p.trophies!).N, e.stars);
+        costs.set(e.seq, n);
         lost += n;
         next = clampTrophies(next - n);
       } else defended += defenceWin(foe, p.trophies!);
@@ -302,9 +328,11 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       notes.push(trophyLine(p.trophies, next, gained, lost, defended));
     }
   }
+  // The lines with what they cost, where the report did not say (`won`).
+  const told = costs.size ? news.map((e) => (!e.won && costs.get(e.seq) ? { ...e, won: costs.get(e.seq)! } : e)) : news;
   const guardChanged = JSON.stringify(outerGuard) !== JSON.stringify(p.outerGuard ?? emptyOuterGuard());
   if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies && !guardChanged)
-    return { profile: p, news, notes };
+    return { profile: p, news: told, notes };
   return {
     profile: {
       ...p,
@@ -316,7 +344,7 @@ export function applySync<P extends { poiState: Island; logSeq: number; retaken:
       ...(trophies !== p.trophies ? { trophies } : {}),
       ...(guardChanged ? { outerGuard } : {}),
     },
-    news,
+    news: told,
     notes,
   };
 }

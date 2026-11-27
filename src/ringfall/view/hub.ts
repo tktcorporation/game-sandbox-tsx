@@ -1,4 +1,5 @@
 import { PLAYER } from "../sim/config";
+import { attacksHtml, playAttack } from "./attacks";
 import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
@@ -7,7 +8,7 @@ import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, 
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+import { armed, build, keepParcels, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 // buyPrice / canStartIn / onSale used by sourceGuide
 import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
@@ -21,7 +22,7 @@ import { sfx } from "./sfx";
 import { rarityText } from "./palette";
 import { islandDay } from "../meta/days";
 import { collect } from "../meta/income";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
@@ -54,7 +55,7 @@ export function sortieTopFor(p: Profile): SortieTarget | null {
 
 /** The holding of whoever took one of the player's in this 島の知らせ line, to attack back (やり返す), or null. */
 export function revengeFor(p: Profile, line: string): SortieTarget | null {
-  if (!line.includes("取られた")) return null;
+  if (!line.includes(TERM.lostHolding)) return null;
   return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings()).find((t) => line.startsWith(`${t.ownerName}に`)) ?? null;
 }
 
@@ -573,6 +574,8 @@ export class Hub {
     // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
     if (el) el.innerHTML = this.signalNews();
+    const rec = this.station === "signal" ? document.getElementById("hub-attacks") : null;
+    if (rec) rec.innerHTML = this.attacksList();
   }
 
   /**
@@ -670,15 +673,23 @@ export class Hub {
     if (tell) this.closed();
   }
 
-  private set(p: Profile) {
+  private set(given: Profile) {
+    const p = this.parcelsBack(given);
     const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
     this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
     saveProfile(this.profile);
     this.load = this.fit(this.load);
   }
 
+  /** A holding lost since the profile last stood: its 島の守り come back to the stash, with a line in 島の知らせ (決定 B: the owner's things are never taken). */
+  private parcelsBack(p: Profile): Profile {
+    const r = keepParcels(this.profile, p);
+    return r.back.length ? { ...r.profile, news: pushNews(r.profile.news ?? [], [parcelsBackLine(r.back.length)]) } : r.profile;
+  }
+
   /** Takes a profile settled after a raid: the last loadout picked again from the stash, the start kept where the profile allows it. */
-  reload(p: Profile) {
+  reload(given: Profile) {
+    const p = this.parcelsBack(given);
     const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
     this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
     if (extra.length) saveProfile(this.profile);
@@ -732,6 +743,12 @@ export class Hub {
         sfx.click();
         this.close();
       }
+      return;
+    }
+    if (act === "attack-play") {
+      sfx.click();
+      const root = document.getElementById("hub-attacks");
+      if (root) playAttack(root, this.profile, Number(arg));
       return;
     }
     if (act.startsWith("exp-")) {
@@ -1173,7 +1190,16 @@ export class Hub {
    * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
    */
   private signalPanel(): string {
-    return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
+    return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-attacks">${this.attacksList()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
+  }
+
+  /** 攻められた記録 (view/attacks.ts): each with やり返す while its attacker has a holding to attack. */
+  private attacksList(): string {
+    const targets = this.sortieTargets();
+    return attacksHtml(this.profile, (code) => {
+      const t = targets.find((x) => x.code === code);
+      return t ? `${t.owner}|${t.id}` : null;
+    });
   }
 
   /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）。 */
@@ -1489,7 +1515,7 @@ export class Hub {
         : st === "factory"
           ? PHRASE.sideFactory
           : st === "signal"
-            ? TERM.seaIslands
+            ? TERM.otherPlayers
             : TERM.loadout;
     $("hub-side-title").textContent = sideTitle;
     // Narrow tabs: 倉庫 / 右列の見出し。One-column stations hide the tab bar.

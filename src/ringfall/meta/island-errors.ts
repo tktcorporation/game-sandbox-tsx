@@ -65,7 +65,7 @@ export const ERROR_TEXT: Record<ApiError | NetError, string> = {
   "own-island": "自分の島には送れません",
   "no-own-island": "自分の島の番号がまだありません",
   "closed-node": "その拠点は遠征で取れません",
-  "route-shut": "そのお隣への航路が閉じています",
+  "route-shut": "その別プレイヤーへの航路が閉じています",
   "node-not-open": "その拠点は他のプレイヤーが持っています",
   protected: "始めたばかりの島です。保護が明けるまで待つ",
   "node-busy": "その拠点にはもう遠征隊が向かっています",
