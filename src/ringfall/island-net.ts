@@ -430,19 +430,22 @@ const tropLookup = (p: Profile) => rivalTrophiesLookup(p.trophies ?? TROPHY.star
 export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }, tropLookup(p)).profile;
 
 /**
- * The holdings the sync found another player took (`before` held them, `after` does not): the income
- * collected from them since they were taken goes back out of the cash (meta/income.ts `clawBack()`).
+ * The holdings the log says another player took, which the player does not hold after the sync: the
+ * income collected from them since they were taken goes back out of the cash (meta/income.ts
+ * `clawBack()`, which takes each collection back once). Whether the holding was the player's before
+ * this sync is not asked: an earlier sync may have shown it lost (by its holds or `raided`) without
+ * the log that tells when.
  */
-export function takenBack(before: Profile, after: Profile, news: readonly IslandLogEntry[]): Profile {
-  return takenBackBy(before, after, news).profile;
+export function takenBack(_before: Profile, after: Profile, news: readonly IslandLogEntry[]): Profile {
+  return takenBackBy(_before, after, news).profile;
 }
 
 /** `takenBack()`, with the credits taken back for each log line (by its seq), for the record of it (meta/attacks.ts). */
-function takenBackBy(before: Profile, after: Profile, news: readonly IslandLogEntry[]): { profile: Profile; credits: Record<number, number> } {
+function takenBackBy(_before: Profile, after: Profile, news: readonly IslandLogEntry[]): { profile: Profile; credits: Record<number, number> } {
   const credits: Record<number, number> = {};
   let { stores, cash } = after;
   for (const e of news) {
-    if (!(e.t === "taken" && before.poiState[e.node as NodeId]?.state === "own" && after.poiState[e.node as NodeId]?.state !== "own")) continue;
+    if (!(e.t === "taken" && after.poiState[e.node as NodeId]?.state !== "own")) continue;
     const r = clawBack(stores, cash, [{ node: e.node as NodeId, at: e.at }]);
     stores = r.stores;
     cash -= r.back;

@@ -14,7 +14,7 @@ import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies
 import { keepParcels, newProfile, parseProfile } from "../src/ringfall/meta/profile";
 import { addAttacks, ATTACKS_KEPT } from "../src/ringfall/meta/attacks";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
-import { attackable } from "../src/ringfall/island-net";
+import { attackable, takenBack } from "../src/ringfall/island-net";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
 import { NODES } from "../src/ringfall/sim/map";
 
@@ -187,5 +187,14 @@ assert.equal(real[0]!.owner, B.code);
   const p = { ...newProfile(5), attacks: addAttacks([], [line(1, "taken", rec)], { 1: 120 }) };
   assert.deepEqual(parseProfile(JSON.parse(JSON.stringify(p)))?.attacks, p.attacks, "the records did not survive a save");
   assert.deepEqual(parseProfile({ ...JSON.parse(JSON.stringify(p)), v: 53 })?.attacks, [], "a v53 save kept records");
+}
+// The log comes a sync after the holds showed the holding lost: its income still comes back, once.
+{
+  const base = newProfile(5);
+  const gone = { ...base, cash: 1000, poiState: { ...base.poiState, supply: { state: "foe" as const } }, stores: { at: {}, since: T0, paid: { supply: [{ at: T0 + 7_200_000, n: 120 }] } } };
+  const line: IslandLogEntry = { seq: 5, at: T0 + 3_600_000, t: "taken", node: "supply", by: B, stars: 3 };
+  const once = takenBack(gone, gone, [line]);
+  assert.equal(once.cash, 880, "the income of a holding lost a sync earlier stayed paid");
+  assert.equal(takenBack(once, once, [line]).cash, 880, "taken back twice");
 }
 console.log("real raids ok", real.map((t) => t.title).join(" | "));
