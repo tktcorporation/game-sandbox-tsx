@@ -425,13 +425,14 @@ const tropLookup = (p: Profile) => rivalTrophiesLookup(p.trophies ?? TROPHY.star
 export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }, tropLookup(p)).profile;
 
 /**
- * The holdings the sync found another player took (`before` held them, `after` does not): the income
- * collected from them since they were taken goes back out of the cash (meta/income.ts `clawBack()`).
+ * The holdings the log says another player took, which the player does not hold after the sync: the
+ * income collected from them since they were taken goes back out of the cash (meta/income.ts
+ * `clawBack()`, which takes each collection back once). Whether the holding was the player's before
+ * this sync is not asked: an earlier sync may have shown it lost (by its holds or `raided`) without
+ * the log that tells when.
  */
-export function takenBack(before: Profile, after: Profile, news: readonly IslandLogEntry[]): Profile {
-  const lost = news.flatMap((e) =>
-    e.t === "taken" && before.poiState[e.node as NodeId]?.state === "own" && after.poiState[e.node as NodeId]?.state !== "own" ? [{ node: e.node as NodeId, at: e.at }] : [],
-  );
+export function takenBack(_before: Profile, after: Profile, news: readonly IslandLogEntry[]): Profile {
+  const lost = news.flatMap((e) => (e.t === "taken" && after.poiState[e.node as NodeId]?.state !== "own" ? [{ node: e.node as NodeId, at: e.at }] : []));
   if (!lost.length) return after;
   const { stores, back } = clawBack(after.stores, after.cash, lost);
   return { ...after, stores, cash: after.cash - back };
