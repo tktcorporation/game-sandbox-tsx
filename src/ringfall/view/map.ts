@@ -32,7 +32,7 @@ import { UI, alpha } from "./palette";
  */
 
 /** A rectangle of the world in metres. */
-type View = { x0: number; z0: number; x1: number; z1: number };
+export type View = { x0: number; z0: number; x1: number; z1: number };
 const WHOLE: View = { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 };
 
 /** Metres of empty margin around a fitted view so names and marks near the edge stay whole. */
@@ -490,6 +490,8 @@ export class IslandMap {
    * the player, and no names: the map (M) is where they are read.
    */
   mini = 0;
+  /** A fixed part of the world to show, as a small map of one place (the signal station's 攻めの記録), or null. */
+  frame: View | null = null;
   /** What holding each node opens, as small marks beside it: the departure's (a raid's map leaves them out, to read at a glance). */
   unlocks = true;
   /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
@@ -672,6 +674,7 @@ export class IslandMap {
    * region's frame grows to take in the player, who may stand on the way between the regions.
    */
   fitView(s: MapScene): View {
+    if (this.frame) return this.frame;
     if (this.mini && s.player) {
       const { x, z } = s.player.pos;
       return { x0: x - this.mini, z0: z - this.mini, x1: x + this.mini, z1: z + this.mini };

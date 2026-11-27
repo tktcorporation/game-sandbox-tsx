@@ -19,6 +19,7 @@ import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, pa
 import type { Profile } from "./meta/profile";
 import { clawBackLine, pushNews } from "./view/copy";
 import { clawBack } from "./meta/income";
+import { addAttacks } from "./meta/attacks";
 import { rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import type { NodeId } from "./sim/map";
 import type { Replay } from "./sim/replay-data";
@@ -433,18 +434,29 @@ export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { re
  * collected from them since they were taken goes back out of the cash (meta/income.ts `clawBack()`).
  */
 export function takenBack(before: Profile, after: Profile, news: readonly IslandLogEntry[]): Profile {
-  const lost = news.flatMap((e) =>
-    e.t === "taken" && before.poiState[e.node as NodeId]?.state === "own" && after.poiState[e.node as NodeId]?.state !== "own" ? [{ node: e.node as NodeId, at: e.at }] : [],
-  );
-  if (!lost.length) return after;
-  const { stores, back } = clawBack(after.stores, after.cash, lost);
-  return { ...after, stores, cash: after.cash - back };
+  return takenBackBy(before, after, news).profile;
+}
+
+/** `takenBack()`, with the credits taken back for each log line (by its seq), for the record of it (meta/attacks.ts). */
+function takenBackBy(before: Profile, after: Profile, news: readonly IslandLogEntry[]): { profile: Profile; credits: Record<number, number> } {
+  const credits: Record<number, number> = {};
+  let { stores, cash } = after;
+  for (const e of news) {
+    if (!(e.t === "taken" && before.poiState[e.node as NodeId]?.state === "own" && after.poiState[e.node as NodeId]?.state !== "own")) continue;
+    const r = clawBack(stores, cash, [{ node: e.node as NodeId, at: e.at }]);
+    stores = r.stores;
+    cash -= r.back;
+    if (r.back > 0) credits[e.seq] = r.back;
+  }
+  return { profile: stores === after.stores ? after : { ...after, stores, cash }, credits };
 }
 
 export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[]; notes: string[] } {
   const lookup = tropLookup(p);
   const synced = s.ticket < applied ? applySync(p, { reported: s.synced.reported }, lookup) : ((applied = s.ticket), applySync(p, s.synced, lookup));
-  const r = { ...synced, profile: takenBack(p, synced.profile, synced.news), notes: [...synced.notes] };
+  const back = takenBackBy(p, synced.profile, synced.news);
+  const attacks = addAttacks(back.profile.attacks, synced.news, back.credits);
+  const r = { ...synced, profile: attacks === back.profile.attacks ? back.profile : { ...back.profile, attacks }, notes: [...synced.notes] };
   if (r.profile.cash < synced.profile.cash) r.notes.push(clawBackLine(synced.profile.cash - r.profile.cash));
   // トロフィーの増減は必ず知らせの一行と一緒に Profile.news へ残す.
   if (!r.notes.length) return { profile: r.profile, news: r.news, notes: r.notes };

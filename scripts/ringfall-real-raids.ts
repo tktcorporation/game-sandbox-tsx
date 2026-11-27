@@ -11,7 +11,8 @@ import assert from "node:assert/strict";
 import { islandOp, NODE_IDS, shieldNode, type IslandOp, type IslandState } from "../worker/island";
 import { applySync, parseLog, parseView, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
 import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies";
-import { keepParcels, newProfile } from "../src/ringfall/meta/profile";
+import { keepParcels, newProfile, parseProfile } from "../src/ringfall/meta/profile";
+import { addAttacks, ATTACKS_KEPT } from "../src/ringfall/meta/attacks";
 import { sortieTargets } from "../src/ringfall/meta/sortie";
 import { attackable } from "../src/ringfall/island-net";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
@@ -171,5 +172,20 @@ assert.equal(real[0]!.owner, B.code);
   assert.deepEqual(read?.entries.at(-1)?.replay, rec(9), "the owner's log lost the record");
   // One naming another node than its line's does not read.
   assert.equal(parseLog({ entries: [{ ...read!.entries.at(-1)!, replay: { ...rec(1), node: "quarry" } }], next: 1 })?.entries[0].replay, undefined);
+}
+// The owner keeps the sorties on their holdings (攻められた記録): fresh ones once, the newest few, across a save.
+{
+  const line = (seq: number, t: "taken" | "wiped", replay?: IslandLogEntry["replay"]): IslandLogEntry => ({ seq, at: T0 + seq, t, node: "supply", by: B, stars: t === "taken" ? 3 : 1, won: 20, ...(replay ? { replay } : {}) });
+  const rec = { node: "supply", every: 3, path: [1, 2, 3, 4], marks: [{ t: 3, k: "taken" as const, x: 1, z: 2 }] };
+  const expedition: IslandLogEntry = { seq: 2, at: T0, t: "taken", node: "quarry", by: B };
+  let kept = addAttacks([], [line(1, "taken", rec), expedition, line(3, "wiped")], { 1: 120 });
+  assert.deepEqual(kept.map((a) => [a.seq, a.taken, a.credits ?? 0, !!a.replay]), [[1, true, 120, true], [3, false, 0, false]], "an expedition's line is no sortie's record");
+  assert.equal(addAttacks(kept, [line(1, "taken")]), kept, "a record kept twice");
+  for (let k = 10; k < 20; k++) kept = addAttacks(kept, [line(k, "wiped")]);
+  assert.equal(kept.length, ATTACKS_KEPT);
+  assert.equal(kept.at(-1)?.seq, 19);
+  const p = { ...newProfile(5), attacks: addAttacks([], [line(1, "taken", rec)], { 1: 120 }) };
+  assert.deepEqual(parseProfile(JSON.parse(JSON.stringify(p)))?.attacks, p.attacks, "the records did not survive a save");
+  assert.deepEqual(parseProfile({ ...JSON.parse(JSON.stringify(p)), v: 53 })?.attacks, [], "a v53 save kept records");
 }
 console.log("real raids ok", real.map((t) => t.title).join(" | "));

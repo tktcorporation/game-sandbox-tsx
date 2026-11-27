@@ -5019,6 +5019,69 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin-bottom: 6px;
   color: var(--mist);
 }
+/* 攻められた記録 on the signal station (view/attacks.ts): who, where, stars, cost, when; its track on a small map. */
+#hub ul.attack-records {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+#hub ul.attack-records li {
+  padding: 4px 0;
+}
+#hub .attack-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+#hub .attack-line .who {
+  color: var(--rival-light);
+}
+#hub .attack-line .stars {
+  color: var(--hot);
+}
+#hub .attack-line .taken,
+#hub .attack-line .lost {
+  color: var(--foe-soft);
+}
+#hub .attack-line .held {
+  color: var(--own-light);
+}
+#hub .attack-line .when {
+  color: var(--slate);
+  font-size: 12px;
+}
+#hub .attack-line svg {
+  width: 12px;
+  height: 12px;
+  margin-right: 2px;
+  vertical-align: -1px;
+}
+#hub .attack-line .watch {
+  margin: 0 0 0 8px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--own);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: none;
+  transform: none;
+}
+#hub canvas.attack-map {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+  margin: 6px 0 2px;
+  background: var(--board);
+}
+#hub canvas.attack-map[hidden] {
+  display: none;
+}
 /* The island's news on the signal station (TKT-204 案 F: やり返す on 取られた). */
 #hub ul.island-news.signal-news {
   margin: 0;

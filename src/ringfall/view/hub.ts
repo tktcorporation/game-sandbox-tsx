@@ -1,4 +1,5 @@
 import { PLAYER } from "../sim/config";
+import { attacksHtml, playAttack } from "./attacks";
 import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
@@ -54,7 +55,7 @@ export function sortieTopFor(p: Profile): SortieTarget | null {
 
 /** The holding of whoever took one of the player's in this 島の知らせ line, to attack back (やり返す), or null. */
 export function revengeFor(p: Profile, line: string): SortieTarget | null {
-  if (!line.includes("取られた")) return null;
+  if (!line.includes(TERM.lostHolding)) return null;
   return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings()).find((t) => line.startsWith(`${t.ownerName}に`)) ?? null;
 }
 
@@ -573,6 +574,8 @@ export class Hub {
     // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
     if (el) el.innerHTML = this.signalNews();
+    const rec = this.station === "signal" ? document.getElementById("hub-attacks") : null;
+    if (rec) rec.innerHTML = this.attacksList();
   }
 
   /**
@@ -740,6 +743,12 @@ export class Hub {
         sfx.click();
         this.close();
       }
+      return;
+    }
+    if (act === "attack-play") {
+      sfx.click();
+      const root = document.getElementById("hub-attacks");
+      if (root) playAttack(root, this.profile, Number(arg));
       return;
     }
     if (act.startsWith("exp-")) {
@@ -1181,7 +1190,16 @@ export class Hub {
    * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
    */
   private signalPanel(): string {
-    return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
+    return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-attacks">${this.attacksList()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
+  }
+
+  /** 攻められた記録 (view/attacks.ts): each with やり返す while its attacker has a holding to attack. */
+  private attacksList(): string {
+    const targets = this.sortieTargets();
+    return attacksHtml(this.profile, (code) => {
+      const t = targets.find((x) => x.code === code);
+      return t ? `${t.owner}|${t.id}` : null;
+    });
   }
 
   /** One 島の知らせ on the signal station: リザルトと同じ文の控え（最大 NEWS_KEEP）。 */

@@ -39,6 +39,10 @@ export type TermId =
   | "attack"
   | "contest"
   | "revenge"
+  | "attackRecord"
+  | "lostHolding"
+  | "heldHolding"
+  | "watch"
   | "today"
   | "shielding"
   | "lostToday"
@@ -110,6 +114,14 @@ export const TERM = {
    * 【元】（なし）／仕返し 【案】やり返す 【理由】取られた行から攻め先へ
    */
   revenge: "やり返す",
+  /** The signal station's list of sorties on the player's holdings (glossary.md 攻めの記録). */
+  attackRecord: "攻められた記録",
+  /** A sortie that took the holding (the log's 取られた). */
+  lostHolding: "取られた",
+  /** A sortie the holding held against (the log's 守りきった). */
+  heldHolding: "守りきった",
+  /** Plays a sortie's record on its small map. */
+  watch: "見る",
   /** The calendar day the player is on (glossary.md 日 / 今日). No count of days is shown. */
   today: "今日",
   /**
