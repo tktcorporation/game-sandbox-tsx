@@ -44,7 +44,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { aiLabel, awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
+import { aiLabel, attackGoal, awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -385,7 +385,8 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   const raid = {
     lent: lentResults(raidLent, settled.battle),
     // Defence stock from deposits this raid (silent; no separate "aid" verb).
-    parcels: who.code ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
+    // A sortie's depot is the neighbour's: nothing left there becomes this island's stock.
+    parcels: who.code && !settled.sortie ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
     contestedFailed: contestedFailed(settled),
   };
@@ -977,16 +978,19 @@ function start(go: Launch, from?: State) {
   world.reset();
   sound.reset();
   // A lease with less than the battle's length left would run out under the raid: the island reckons those expeditions itself.
-  const lent = lease && leaseLasts(lease, null) ? lease : null;
+  // A sortie is no battle of the island: the island's expeditions are given back for it to reckon.
+  if (go.sortie && lease?.expeditions.length) void releaseLease();
+  const lent = !go.sortie && lease && leaseLasts(lease, null) ? lease : null;
   raidLent = lent?.expeditions ?? [];
   // The expeditions on the game's own islands brought up to the clock: one that has ended gives its squad back to this raid.
   const fresh = refreshAi(hub.profile);
   if (fresh !== hub.profile) hub.update(fresh);
   // The game's own islands' expedition of the day and their squads holding nodes here join it as the server's do.
-  const aiLent = aiLentFor(hub.profile);
+  const aiLent = go.sortie ? [] : aiLentFor(hub.profile);
   // The names of the islands whose squads come or stand in this raid, for its banners.
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
-  raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
+  // A sortie fights no defence of the island: the game's islands' expedition of the day is no win or loss of it.
+  raidAi = go.sortie ? null : { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
   const neigh = neighboursFor(hub.profile);
   const defence = contestedDefence(hub.profile.poiState, hub.profile.day, neigh, aiSalt());
@@ -1000,43 +1004,53 @@ function start(go: Launch, from?: State) {
         hub.profile.teamBattle!,
       )
     : null;
-  state = newRun(go.seed, kit, region, {
-    depots: hub.profile.depots,
-    seen: hub.profile.seen,
-    from: go.from,
-    entry: go.entry,
-    routes: hub.profile.routes,
-    island: fieldIsland ?? holds(hub.profile),
-    threat: raidThreat(hub.profile),
-    known: hub.profile.known,
-    // Free stash slots after takeKit — 中継ボックス sends only what fits.
-    stashRoom: stashRoom(hub.profile),
-    stashWant: wanted(hub.profile),
-    ...((): { goal?: ReturnType<typeof goalKind>; goalHave?: number; goalNeed?: number } => {
-      if (field) return {};
-      const g = goalKind(hub.profile);
-      if (!g) return {};
-      const prog = goalProgress(hub.profile, g);
-      return { goal: g, goalHave: prog.have, goalNeed: prog.need };
-    })(),
-    ...(field
-      ? { teamField: true }
-      : {
-          battle: {
-            factory: hub.profile.factory,
-            away: squadsAway(hub.profile),
-            rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
-          },
-          // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
-          ...(defence.length ? { defence } : {}),
-          ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
-          ...(go.attack ? { attack: go.attack } : {}),
-        }),
-  });
+  state = go.sortie
+    ? // A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): played there alone, no battle of the island.
+      newRun(go.seed, kit, region, {
+        sortie: go.sortie,
+        routes: hub.profile.routes,
+        known: hub.profile.known,
+        stashRoom: stashRoom(hub.profile),
+        stashWant: wanted(hub.profile),
+      })
+    : newRun(go.seed, kit, region, {
+        depots: hub.profile.depots,
+        seen: hub.profile.seen,
+        from: go.from,
+        entry: go.entry,
+        routes: hub.profile.routes,
+        island: fieldIsland ?? holds(hub.profile),
+        threat: raidThreat(hub.profile),
+        known: hub.profile.known,
+        // Free stash slots after takeKit — 中継ボックス sends only what fits.
+        stashRoom: stashRoom(hub.profile),
+        stashWant: wanted(hub.profile),
+        ...((): { goal?: ReturnType<typeof goalKind>; goalHave?: number; goalNeed?: number } => {
+          if (field) return {};
+          const g = goalKind(hub.profile);
+          if (!g) return {};
+          const prog = goalProgress(hub.profile, g);
+          return { goal: g, goalHave: prog.have, goalNeed: prog.need };
+        })(),
+        ...(field
+          ? { teamField: true }
+          : {
+              battle: {
+                factory: hub.profile.factory,
+                away: squadsAway(hub.profile),
+                rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)],
+              },
+              // 方向 A: 取り合う拠点の守備隊 = 持ち主の工場 + 島の守り
+              ...(defence.length ? { defence } : {}),
+              ...(defenceParcels.length ? { parcels: defenceParcels } : {}),
+              ...(go.attack ? { attack: go.attack } : {}),
+            }),
+      });
   hud.setContract();
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
-    if (lent) leaseReq = null;
+    if (go.sortie) leaseReq.on = "gone";
+    else if (lent) leaseReq = null;
     else {
       leaseReq.on = "raid";
       leaseReq.raid = state;
@@ -1070,7 +1084,11 @@ function start(go: Launch, from?: State) {
   // With a hunt goal: 「ダム湖に着いた。タイタンは発着場（○ m）」; else the entry / depot name.
   // Field sorties name the battlefield (作り順⑤).
   const hunt = state.goal ? huntSpot(state) : null;
-  if (field) {
+  if (go.sortie) {
+    const at = NODES[nodeIndex(go.sortie.id)];
+    const name = sortieOwnerName(go.sortie.owner);
+    hud.banner(attackGoal(`${name}の${at.name}`), `${TERM.relayBox}で帰る · 時間切れでも帰る`, false, 3.6);
+  } else if (field) {
     hud.banner(FIELD_NAME, FIELD_HUBS.filter((h) => hub.profile.teamBattle?.holds[h.id] === "theirs").map((h) => h.name).slice(0, 2).join(" · ") || TERM.teamBattle);
   } else if (hunt) {
     const metres = Math.round(dist2d(state.player.pos, hunt));
@@ -1079,6 +1097,13 @@ function start(go: Launch, from?: State) {
     hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   }
   lock();
+}
+
+/** An island owner's name as the screens show it (the game's own islands marked AI), or the id when unknown. */
+function sortieOwnerName(owner: string): string {
+  const n = neighboursFor(hub.profile).find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
+  if (!n) return owner;
+  return n.ai ? aiLabel(n.name) : n.name;
 }
 
 function finish() {
@@ -1095,11 +1120,7 @@ function finish() {
     const tropPer = settlement.trophies?.gained
       ? Math.max(1, Math.round(settlement.trophies.gained / settlement.takenRival.length))
       : undefined;
-    const nameOf = (owner: string) => {
-      const n = neighboursFor(hub.profile).find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
-      if (!n) return owner;
-      return n.ai ? aiLabel(n.name) : n.name;
-    };
+    const nameOf = sortieOwnerName;
     hub.recordNews(
       settlement.takenRival.map((t) => newsIncursion(nameOf(t.owner), NODES[nodeIndex(t.id)]?.name ?? t.id, true, tropPer)),
     );

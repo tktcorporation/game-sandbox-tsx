@@ -115,7 +115,7 @@ export function coreInReach(s: State): number {
 }
 
 /** Whether node `i` can be taken in the raid as it stands: on the front, and not the player's already. */
-export const capturable = (s: Pick<State, "nodes">, i: number) => frontNodes(s.nodes)[i];
+export const capturable = (s: Pick<State, "nodes"> & { sortie?: State["sortie"] }, i: number) => (s.sortie ? s.sortie.node === i : frontNodes(s.nodes)[i]);
 
 /**
  * The use key at core `i`: a core off the front is shielded by the enemy and refuses; one on it
@@ -195,6 +195,8 @@ export function stepFront(s: State) {
     takeNode(s, c.node);
     return;
   }
+  // A sortie's holding is defended by its owner's squad alone: no siege comes to it.
+  if (s.sortie) return;
   if (c.coming) {
     if (s.time >= c.coming.at) landWave(s, c.node);
     return;

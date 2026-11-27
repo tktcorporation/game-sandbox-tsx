@@ -60,7 +60,8 @@ export class DepartPicker {
         this.render();
         return;
       }
-      if (el.classList.contains("on")) {
+      // While a sortie is chosen the start still lit is not the departure: clicking it makes the raid one of the island again.
+      if (el.classList.contains("on") && !this.hub.sortiePick()) {
         if (this.hub.rideRefused()) return;
         this.go();
         return;
@@ -69,13 +70,9 @@ export class DepartPicker {
     });
     // 攻める list (TKT-204 案 B): pick a scouted rival hub → nearest start + goal.
     $("depart-attack-list").addEventListener("click", (e) => {
-      const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-attack]");
+      const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-owner]");
       if (!el) return;
-      if (el.classList.contains("shut")) {
-        sfx.locked();
-        return;
-      }
-      if (!this.hub.selectAttack(el.dataset.attack as NodeId)) return;
+      if (!this.hub.selectSortie(el.dataset.owner!, el.dataset.attack as NodeId)) return;
       sfx.click();
       this.render();
     });
@@ -153,7 +150,7 @@ export class DepartPicker {
    * Kept visible even when empty (early-MP) so the attack entry is always on the gate.
    */
   private renderAttack() {
-    const targets = this.hub.attackTargets();
+    const targets = this.hub.sortieTargets();
     const box = $("depart-attack");
     const list = $("depart-attack-list");
     const title = $("depart-attack-title");
@@ -161,23 +158,18 @@ export class DepartPicker {
     title.textContent = TERM.attack;
     if (!targets.length) {
       // 【元】（非表示） 【案】空のときも見出しを残す 【理由】攻める入口を初日に見せる
-      list.innerHTML = `<p class="attack-empty lock-note">${esc(`相手の${TERM.outerHubs}はまだない`)}</p>`;
+      list.innerHTML = `<p class="attack-empty lock-note">${esc("攻められるお隣の拠点はまだない")}</p>`;
       return;
     }
-    const on = this.hub.attackPick();
+    // The neighbours' holdings (docs/ringfall/holdings-raid.md): choosing one makes the departure a sortie there.
+    const on = this.hub.sortiePick();
     list.innerHTML = targets
       .map((t) => {
-        const shut = !t.onFront;
-        const cls = ["attack-row", on?.id === t.id ? "on" : "", shut ? "shut" : ""].filter(Boolean).join(" ");
-        // Shut row: short gate name only (full contestGateHint stays on #depart-warn; wordy ≤18).
-        const bounty = !shut && t.bounty ? `<small class="scout-bounty">${esc(bountyMark(BOUNTY.extraMaterials))}</small>` : "";
-        const bonus = !shut && t.winBonus > 0 ? `<small class="scout-bonus">${esc(winBonusMark(t.winBonus))}</small>` : "";
-        const scout = shut
-          ? `<small class="scout-gate">${esc(t.gate ? `先に${t.gate}` : TERM.front)}</small>`
-          : `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.win, t.lose))}</small>${bonus}${bounty}`;
-        const lock = shut ? `<span class="pick-lock">${lockIcon()}</span>` : "";
+        const cls = ["attack-row", on?.owner === t.owner && on.id === t.id ? "on" : ""].filter(Boolean).join(" ");
+        const bonus = t.winBonus > 0 ? `<small class="scout-bonus">${esc(winBonusMark(t.winBonus))}</small>` : "";
+        const scout = `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.win, t.lose))}</small>${bonus}`;
         // Split owner / hub so wordy counts each ≤18 (AI names stay short alone).
-        return `<button type="button" class="${cls}" data-attack="${t.id}" aria-label="${esc(t.title)}">${flagIcon(SIDE.rival)}${lock}<span class="attack-body"><span class="attack-title"><b>${esc(t.ownerName)}</b><b>の${esc(t.hubName)}</b></span>${scout}</span></button>`;
+        return `<button type="button" class="${cls}" data-owner="${esc(t.owner)}" data-attack="${t.id}" aria-label="${esc(t.title)}">${flagIcon(SIDE.rival)}<span class="attack-body"><span class="attack-title"><b>${esc(t.ownerName)}</b><b>の${esc(t.hubName)}</b></span>${scout}</span></button>`;
       })
       .join("");
   }
@@ -229,6 +221,8 @@ export class DepartPicker {
       if (!chosen) return "";
       const p = this.hub.profile;
       const at = { x: chosen.q.x, z: chosen.q.z };
+      // A sortie is played on the neighbour's island: no line from the island's start.
+      if (this.hub.sortiePick()) return "";
       const attack = this.hub.attackPick();
       const toward = attack ?? rivalFrontPick(p, at) ?? frontPickFor(p, at);
       if (!toward) return "";

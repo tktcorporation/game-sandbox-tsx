@@ -104,7 +104,7 @@ const SALT = 42;
 // --- Profile carries teamBattle (v48 current; v46 migrates in) ---
 {
   const p = newProfile(9);
-  assert.equal(p.v, 48);
+  assert.equal(p.v, 49);
   assert.ok(p.teamBattle);
   assert.equal(p.teamBattle!.days, TEAM_BATTLE.days);
   assert.equal(battleOpen(p.teamBattle, p.day), true);
@@ -114,7 +114,7 @@ const SALT = 42;
   delete raw.teamBattle;
   const migrated = parseProfile(raw, 9);
   assert.ok(migrated);
-  assert.equal(migrated!.v, 48);
+  assert.equal(migrated!.v, 49);
   assert.ok(migrated!.teamBattle);
   assert.equal(migrated!.teamBattle!.foe.members.length, TEAM.size);
   console.log("profile: v48 teamBattle + v46→v48 migrate");

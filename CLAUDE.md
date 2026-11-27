@@ -112,7 +112,7 @@ confirm. A click or tap chooses a start (`Hub.choose()`); the confirm, Enter, th
 second click on the chosen start goes, the arrows step the choice, Esc turns back into the yard.
 A depot the loadout does not fit (`fitsStart()`) cannot be confirmed. From the gate, a start at
 `FIRST_ENTRY` walks out where the player stands (`walkOut()`); any other start comes after a fade.
-The chosen depot is kept by the hub between departures, not in the profile. The
+The chosen depot is kept by the hub between departures, not in the profile. Beside the map the 攻める list (`renderAttack()`) offers the neighbours' holdings (`Hub.sortieTargets()`, `meta/sortie.ts`): choosing one (`Hub.selectSortie()`, again to take it back) makes the confirm a sortie there (`Launch.sortie`, after a fade; `main.ts` starts it with no battle, lease or AI expedition of the island), and choosing a start on the map makes it a raid of the island again. The
 camp shows the day's line and a 今日の作戦 card (`Hub.today()`). No robot
 walks into the yard (`inCamp()` in `enemies.ts`); during a raid they see and shoot into it as
 anywhere. Walking back into it during a raid, after `HOME.away` seconds outside and with no robot
@@ -139,7 +139,7 @@ The quest board (入門／今日の依頼／物語の依頼, `meta/quests.ts` / 
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 48), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 49), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -149,7 +149,7 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node; a save from before v28 may hold `cycle` / `cycleDay` / `liberations` (島の解放) which v43 drops; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`; a save from before v35 drops `events`; a save from before v36 has nothing night-related on Profile to drop — night was ephemeral; a save from before v37 has nothing map-table-related on Profile — the station was UI-only; a save from before v38 has nothing vehicle-related on Profile — the camp vehicle was UI-only; a save from before v39 has nothing fortify-related on Profile — fortify was raid/server only; a save from before v40 holds no island-news archive (`Profile.news`); a save from before v41 has nothing contested-hub-specific on Profile — ownership is `poiState` rival holds, accepted as v41 for stack consistency; a save from before v42 holds no `pending` / `goal` — overflow on load and after settle waits for 倉庫の整理, goal is auto; a save from before v43 drops `cycle` / `cycleDay` / `liberations` — the island never resets; a save from before v44 marks outer-edge contested hubs (作り順②) for stack consistency — ownership still in `poiState`; a save from before v45 holds no `outerGuard` — anti-snowball island shield / loss cap start empty; a save from before v46 holds no `team` — 4-person team with AI の仲間 fill is auto-assigned; a save from before v47 holds no `teamBattle` — 部隊戦 on 荒地の戦場 is opened via `ensureBattle`; a save from before v48 may lack war-power hooks / team `score` on `teamBattle` — 部隊戦の力 / 懸賞金 / チームの得点 live there; personal `warScore` is dropped) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 may hold `cycle` / `cycleDay` / `liberations` (島の解放) which v43 drops; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`; a save from before v35 drops `events`; a save from before v36 has nothing night-related on Profile to drop — night was ephemeral; a save from before v37 has nothing map-table-related on Profile — the station was UI-only; a save from before v38 has nothing vehicle-related on Profile — the camp vehicle was UI-only; a save from before v39 has nothing fortify-related on Profile — fortify was raid/server only; a save from before v40 holds no island-news archive (`Profile.news`); a save from before v41 has nothing contested-hub-specific on Profile — ownership is `poiState` rival holds, accepted as v41 for stack consistency; a save from before v42 holds no `pending` / `goal` — overflow on load and after settle waits for 倉庫の整理, goal is auto; a save from before v43 drops `cycle` / `cycleDay` / `liberations` — the island never resets; a save from before v44 marks outer-edge contested hubs (作り順②) for stack consistency — ownership still in `poiState`; a save from before v45 holds no `outerGuard` — anti-snowball island shield / loss cap start empty; a save from before v46 holds no `team` — 4-person team with AI の仲間 fill is auto-assigned; a save from before v47 holds no `teamBattle` — 部隊戦 on 荒地の戦場 is opened via `ensureBattle`; a save from before v48 may lack war-power hooks / team `score` on `teamBattle` — 部隊戦の力 / 懸賞金 / チームの得点 live there; personal `warScore` is dropped; a save from before v49 holds no `raided` — no neighbour's holding taken by a sortie) and moves its
 start to one it may choose (`allowedStart()`).
 Island day events (破片の落下 / 嵐 / 回収部隊: `EVENTS`, `DEBRIS`, `STORM`, `CREW`, `Profile.events`)
 were removed 2026-11-24 without feature flags (restore from Git history before that PR). Night raids
@@ -228,6 +228,25 @@ its best gun pierces, `Skill.capture` a raid (`Skill.battle` in a battle), and t
 no POI two tiers past its best gun, and its paths go round the nearest such garrison of its
 region (or the titan's sight, where the titan is). The objective card points at the front
 (`objectiveSteps()`).
+A sortie (`Start.sortie`, `State.sortie`, `SORTIE` in `config.ts`; docs/ringfall/holdings-raid.md)
+is a raid to a neighbour's holding, a node its owner holds on their own island: `newRun(..., { sortie })`
+holds that node as theirs and every other POI as the enemy's, starts at its depot (on), and stands
+only the owner's defence round its core (`rivalDefenceSquad()`: their factory's kinds and up to
+`DEFENCE_AID` grunts of 島の守り), with no beat, walk, pack, roamer, party, reinforcement, raider or
+battle, and only the node's own bins and floor loot. Its core is capturable though it is not on the
+player's front (`capturable()`), no siege comes to it, and its stars are scored as a rival hub's
+(`State.attack`). It ends alive when `SORTIE.time` runs out (`sortieUp`) or the player walks
+`SORTIE.leave` metres past the depot's distance from the core (`sortieLeft`, `stepSortie()` in
+`world.ts`), or by the depot; a tick runs only the sortie's systems (`SORTIE_AFTER` in `step.ts`), and
+the objective is the core, then the depot (`sortieSteps()`). `npx tsx scripts/ringfall-sortie.ts`
+checks it (`checkSortie()` in the sim gate); a raid without `sortie` plays as before.
+`meta/sortie.ts` holds the sorties' meta: `sortieTargets()` lists the holdings of the islands next
+door the player may attack (for now the game's own islands, `aiNodes()`, within the trophy band,
+nearest trophies first), `sortieStart()` gives the raid's `Start.sortie`, and `settle()` treats a
+sortie as away from home (as a field raid): the player's island, depots, ways in, explored map and
+nodes taken back stay as they were, the stars move the trophies and 核 · 制圧 seizes the holding's
+島の守り as a rival hub's, and a holding taken is recorded (`Profile.raided`, v49) and is no target
+for `SORTIE_META.regrow` days. `npx tsx scripts/ringfall-sortie-settle.ts` checks it (`checkSortieSettle()`).
 A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
 `newRun(..., { battle: { factory } })` (`State.battle`); a raid without it, as the sim gate's tables
 play, has none. It lasts `CONQUEST.time` seconds, the raid's time limit (`timeUp`: still out is a

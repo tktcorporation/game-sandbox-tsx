@@ -22,6 +22,7 @@ import {
   winBonusMaterials,
 } from "./trophies";
 import { emptyOuterGuard, parseOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
+import { parseRaided, recordRaid, type Raided } from "./sortie";
 import { isContestedShore } from "./neighbours";
 import { ensureTeam, formTeam, parseTeam, selfOuterCount, teamSalt, type Team, type TeamSelf } from "./team";
 import {
@@ -54,7 +55,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 48;
+  v: 49;
   cash: number;
   stash: Item[];
   raids: number;
@@ -142,6 +143,12 @@ export interface Profile {
    */
   outerGuard: OuterGuard;
   /**
+   * Holdings of other islands this profile's sorties took (docs/ringfall/holdings-raid.md): whose,
+   * which node and on which day. A holding taken stays the robots' on its owner's island for
+   * `SORTIE_META.regrow` days, so it is no target until then. v48 and older saves have none.
+   */
+  raided: Raided[];
+  /**
    * 4-person team (作り順④): self + AI の仲間 fill. Outer counts refresh with the day.
    * v45 and older saves get a fresh auto-assigned team on load.
    * Future: war power / battle field / scoring read `team` without reshaping it.
@@ -223,7 +230,7 @@ export function newProfile(seed = 1): Profile {
   const poiState = withStartingFootholds(newIsland(), s);
   const team = formTeam(seedSelf(s), s, 1, contestedOwned({ poiState }).length);
   return {
-    v: 48,
+    v: 49,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -256,6 +263,7 @@ export function newProfile(seed = 1): Profile {
     pending: [],
     goal: null,
     outerGuard: emptyOuterGuard(),
+    raided: [],
     // 作り順④: auto-assign self + AI の仲間 (identity may replace self later via bindTeam).
     team,
     // 作り順⑤+⑥: open the first 部隊戦 on day 1 (AI foe fill; score starts at 0).
@@ -811,11 +819,16 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
   // 作り順⑥: leader bounty adds extra materials when the owner is the strongest rival.
-  const seized = seizeRivalLoot(p, s, bountyOwners(p, s));
+  // A sortie's holding is on the neighbour's island: the player's own 島の守り there is never its stock.
+  const seized = seizeRivalLoot(s.sortie ? { ...p, parcels: [] } : p, s, bountyOwners(p, s));
   if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
   for (const it of seized.items) home.push(it);
   // Field sorties (作り順⑤): captures write field holds, not home-island poiState / depots / entries.
   const fieldRaid = !!s.teamField;
+  // A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md) leaves the player's own
+  // island as it was: no capture, depot, way in or explored ground of it is the player's.
+  const sortieRaid = !!s.sortie;
+  const awayRaid = fieldRaid || sortieRaid;
   // TKT-219: league win-bonus materials for 「攻める」stars (before store so they can fit stash).
   // Robot hubs / field sorties never get this — only a gate-picked rival attack.
   let tropStarsEarly: 0 | 1 | 2 | 3 | undefined;
@@ -840,7 +853,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     opened.push(r.id);
     spent.add(i);
   }
-  const day = fieldRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
+  const day = awayRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first (freedAt) while today's island still holds the stash packing.
   const change = dayChange(p, day);
   const threat = s.threat ?? 0;
@@ -848,14 +861,14 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
   // Field raids enable synthetic depots for every "own" field node — never copy those into the home profile.
-  const depots = fieldRaid
+  const depots = awayRaid
     ? [...p.depots]
     : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const depotSent = fieldRaid
+  const depotSent = awayRaid
     ? { ...p.depotSent }
     : Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
   // Field raids start on the battlefield entry without unlocking it as a home way in.
-  const learned = fieldRaid
+  const learned = awayRaid
     ? ([] as EntryId[])
     : s.outcome === "extracted"
       ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e))
@@ -868,13 +881,14 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const takenIds = new Set(s.takenParcels ?? []);
   let parcels = (p.parcels ?? []).filter((q) => !takenIds.has(q.id));
   const nextParcelId = () => 1 + parcels.reduce((n, q) => Math.max(n, q.id), 0);
-  for (const left of s.leftParcels ?? []) {
+  // A sortie's depot is the neighbour's: what was left there is no 島の守り of the player's island.
+  for (const left of sortieRaid ? [] : (s.leftParcels ?? [])) {
     parcels = [
       ...parcels.filter((q) => q.poi !== left.poi || q.kind !== left.kind),
       { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
     ];
   }
-  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), parcels, incursionTaken: [] };
+  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, p.day) } : {}) };
   // Apply the same overnight pass once the raid's haul is on today's island.
   const { profile: night } = advanceDay(settled, day);
   // Trophy (TKT-218): 「攻める」star score, then overnight / other contested moves (★★ remote).
@@ -970,7 +984,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
   // Manual 目標 lasts one sortie: clear on return so camp no longer shows 目標にしている.
   const fresh = { ...next, stash: withStarters(next.stash), goal: null };
-  fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
+  // A sortie's hold is the neighbour's island, not this one: nothing of the player's was taken back.
+  fresh.retaken = sortieRaid ? [...p.retaken] : addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
   const takenRival = [
     ...attackTaken,
     ...trop.taken.flatMap((id) => {
@@ -1218,7 +1233,7 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1296,6 +1311,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
       : [];
   const outerGuard =
     typeof o.v === "number" && o.v >= 45 ? parseOuterGuard(o.outerGuard) : emptyOuterGuard();
+  // v49: holdings of other islands the sorties took (`raided`).
+  const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   const savedTeam = typeof o.v === "number" && o.v >= 46 ? parseTeam(o.team) : null;
   const team =
@@ -1304,7 +1321,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const savedBattle = typeof o.v === "number" && o.v >= 47 ? parseTeamBattle(o.teamBattle) : null;
   const teamBattle = ensureBattle(savedBattle, team, seedN, day);
   return {
-    v: 48,
+    v: 49,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1336,6 +1353,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     pending,
     goal,
     outerGuard,
+    raided,
     team,
     teamBattle,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
