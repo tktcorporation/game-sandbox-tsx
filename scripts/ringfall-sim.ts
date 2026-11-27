@@ -2090,14 +2090,14 @@ function checkIsland(): string | null {
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
   if (
     !v12 ||
-    v12.v !== 53 ||
+    v12.v !== 54 ||
     POIS.some((o) => (startOwn.has(o.id) ? v12.poiState[o.id].state !== "own" : v12.poiState[o.id].state !== "foe"))
   )
     return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
   // Legacy v21 strings: "freed" → own, "held" → foe, "thin" → own; pad forced foe.
   const v21 = { ...p, v: 21, network: 4, pressure: 1.2, outposts: { pumps: "rogue", substation: "freed" }, scores: [{ day: 1, score: [1, 2, 0], won: false }], poiState: { ...blankIsland(), supply: { state: "freed", lastVisit: 1, since: 0 }, quarry: { state: "thin", lastVisit: 1, since: 2 }, relay: { state: "held", lastVisit: 0, since: 0 }, pad: { state: "freed", lastVisit: 2, since: 0 } } };
   const back = parseProfile(JSON.parse(JSON.stringify(v21)));
-  if (!back || back.v !== 53 || playerNodes(back).join() !== "supply,quarry" || back.poiState.pad.state !== "foe" || "network" in back || "pressure" in back || "outposts" in back || "scores" in back) return `island scenario: a v21 save loaded as ${JSON.stringify(back && { v: back.v, day: back.day, poiState: back.poiState, extra: ["network", "pressure", "outposts", "scores"].filter((k) => k in back) })}`;
+  if (!back || back.v !== 54 || playerNodes(back).join() !== "supply,quarry" || back.poiState.pad.state !== "foe" || "network" in back || "pressure" in back || "outposts" in back || "scores" in back) return `island scenario: a v21 save loaded as ${JSON.stringify(back && { v: back.v, day: back.day, poiState: back.poiState, extra: ["network", "pressure", "outposts", "scores"].filter((k) => k in back) })}`;
   // v32 with legacy "held"/"freed" (and a rival) normalizes to v33 "foe"/"own"/RivalHold and re-saves as the new words.
   const v32raw = {
     ...newProfile(),
