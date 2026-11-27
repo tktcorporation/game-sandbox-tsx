@@ -55,6 +55,18 @@ for (let d = 1; d <= 30; d++) {
   q = r.profile;
 }
 assert.ok(taken > 0 && held > 0, `a month brought taken ${taken}, held ${held}`);
+// A holding taken carries off what it had made (拠点の収入).
+{
+  let q2 = { ...first.profile, stores: { at: {}, since: T0 } };
+  q2 = { ...q2, stores: { at: Object.fromEntries(Object.entries(q2.poiState).filter(([, x]) => x.state === "own").map(([id]) => [id, 0])), since: T0 } };
+  let stolen = 0;
+  for (let d = 1; d <= 30 && !stolen; d++) {
+    const r = awayAttacks(q2, salt, T0 + d * DAY_MS);
+    stolen = r.stolen;
+    q2 = r.profile;
+  }
+  assert.ok(stolen > 0, "a holding taken carried off nothing it had made");
+}
 // Same profile, same hours: the same attacks.
 assert.deepEqual(awayAttacks(first.profile, salt, T0 + 3 * DAY_MS).news, awayAttacks(first.profile, salt, T0 + 3 * DAY_MS).news);
 // Nothing held: nothing to attack.

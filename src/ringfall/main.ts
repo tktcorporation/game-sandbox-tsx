@@ -41,7 +41,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { aiLabel, attackGoal, awaySheetParts, goalIsAt, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
+import { aiLabel, attackGoal, awaySheetParts, goalIsAt, incomeLine, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
 import { Hud, setRevenge } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -313,12 +313,16 @@ function onEvent(e: GameEvent, s: State) {
           after: away.after,
           gained: t?.gained ?? 0,
           lost: (t?.lost ?? 0) + away.lost,
+          ...(t?.failed ? { failed: t.failed } : {}),
           defended: (t?.defended ?? 0) + away.defended,
           ...(t?.stars !== undefined ? { stars: t.stars } : {}),
         },
         ...(league ? { league } : { league: undefined }),
       };
     }
+    // 拠点の収入 the holdings made by the clock, collected as the player comes home (meta/income.ts).
+    const made = hub.collectIncome();
+    if (settlement) settlement = { ...settlement, profile: hub.profile, income: (settlement.income ?? 0) + made };
     aiNews = away?.lines ?? [];
     islandNews = [...aiNews];
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
@@ -738,7 +742,9 @@ function openCamp() {
     awayBooted = true;
     // The AI players' attacks on the holdings since the last session (real time).
     const away = hub.takeAway(awayFor(hub.profile));
-    void deliverAwayNews(beforeSnap, away?.lines ?? []);
+    // What the holdings made while the player was away (real time), collected on arrival.
+    const made = hub.collectIncome();
+    void deliverAwayNews(beforeSnap, away?.lines ?? [], made > 0 ? [incomeLine(made)] : []);
   }
   // Reload with pending: open 整理 over the camp (not the title). Leave the pointer free so the buttons work.
   // Early-MP: show the three howto cards at first camp, before free roam (depart keeps a fallback).
@@ -755,7 +761,7 @@ function openCamp() {
  * 野営起動時: 島を同期し、留守中に届いた対人の結果があればリザルトと同じ文の一枚を出す。
  * 控えは takeSync / hub.update ですでに Profile.news へ入る。一枚はセッションで一度だけ。
  */
-function deliverAwayNews(before: Profile, awayLines: readonly string[] = []) {
+function deliverAwayNews(before: Profile, awayLines: readonly string[] = [], extra: readonly string[] = []) {
   void syncOwn(before, false).then((r) => {
     void flushRecalls(
       () => hub.profile,
@@ -771,9 +777,9 @@ function deliverAwayNews(before: Profile, awayLines: readonly string[] = []) {
       saveProfile(hub.profile);
       // 同期で届いた行＋トロフィー行をそのまま一枚に（文の一致だけに頼らない）。
       const shown = news.filter(newsVisible).map(logLine);
-      fromSync = shown.length || notes.length ? awaySheetParts([], [...awayLines, ...shown, ...notes]) : null;
+      fromSync = shown.length || notes.length ? awaySheetParts([], [...awayLines, ...shown, ...notes, ...extra]) : null;
     }
-    const parts = fromSync ?? awaySheetParts(before.news ?? [], hub.profile.news ?? []);
+    const parts = fromSync ?? awaySheetParts(before.news ?? [], [...(hub.profile.news ?? []), ...extra]);
     if (!parts) return;
     // 同期のあいだに出撃やリザルトが開いていたら重ねない。
     if (!camping || running || departing || !$("results").hidden || hub.station !== null || organize.open) return;

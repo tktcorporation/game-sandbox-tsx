@@ -1715,7 +1715,7 @@ export class Hud {
         ? `<p class="trop-line">${esc(raidStarsLine(trop.stars, starDelta))}</p>`
         : "";
     const tropBreakdown = tropMoved
-      ? `<p class="trop-line">${trophyLine(trop!.before, trop!.after, trop!.gained, trop!.lost, trop!.defended ?? 0)}</p>`
+      ? `<p class="trop-line">${trophyLine(trop!.before, trop!.after, trop!.gained, trop!.lost, trop!.defended ?? 0, trop!.failed ?? 0)}</p>`
       : "";
     const leagueLine = settled?.league
       ? `<p class="trop-line">${esc(leagueChangeLine(settled.league.from, settled.league.to))}</p>`

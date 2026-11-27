@@ -49,7 +49,7 @@ import { squadsAway } from "../src/ringfall/meta/expeditions";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { blankIsland, heldIncome, islandHolds, applyRaid, holds, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { blankIsland, islandHolds, applyRaid, holds, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { kill } from "../src/ringfall/sim/combat";
@@ -2090,14 +2090,14 @@ function checkIsland(): string | null {
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
   if (
     !v12 ||
-    v12.v !== 52 ||
+    v12.v !== 53 ||
     POIS.some((o) => (startOwn.has(o.id) ? v12.poiState[o.id].state !== "own" : v12.poiState[o.id].state !== "foe"))
   )
     return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
   // Legacy v21 strings: "freed" → own, "held" → foe, "thin" → own; pad forced foe.
   const v21 = { ...p, v: 21, network: 4, pressure: 1.2, outposts: { pumps: "rogue", substation: "freed" }, scores: [{ day: 1, score: [1, 2, 0], won: false }], poiState: { ...blankIsland(), supply: { state: "freed", lastVisit: 1, since: 0 }, quarry: { state: "thin", lastVisit: 1, since: 2 }, relay: { state: "held", lastVisit: 0, since: 0 }, pad: { state: "freed", lastVisit: 2, since: 0 } } };
   const back = parseProfile(JSON.parse(JSON.stringify(v21)));
-  if (!back || back.v !== 52 || playerNodes(back).join() !== "supply,quarry" || back.poiState.pad.state !== "foe" || "network" in back || "pressure" in back || "outposts" in back || "scores" in back) return `island scenario: a v21 save loaded as ${JSON.stringify(back && { v: back.v, day: back.day, poiState: back.poiState, extra: ["network", "pressure", "outposts", "scores"].filter((k) => k in back) })}`;
+  if (!back || back.v !== 53 || playerNodes(back).join() !== "supply,quarry" || back.poiState.pad.state !== "foe" || "network" in back || "pressure" in back || "outposts" in back || "scores" in back) return `island scenario: a v21 save loaded as ${JSON.stringify(back && { v: back.v, day: back.day, poiState: back.poiState, extra: ["network", "pressure", "outposts", "scores"].filter((k) => k in back) })}`;
   // v32 with legacy "held"/"freed" (and a rival) normalizes to v33 "foe"/"own"/RivalHold and re-saves as the new words.
   const v32raw = {
     ...newProfile(),
@@ -3870,12 +3870,11 @@ function checkFront(): string | null {
   if (ob().kind !== "done") return "front: getting off did not finish the objective";
   // Overnight: the node is the player's whether the raid got off or was wiped; each node pays its income.
   const alive = settle(fresh, s);
-  if (alive.gained.join() !== "supply" || alive.front.gained.join() !== "supply" || alive.income !== FRONT.income || alive.profile.cash !== fresh.cash + FRONT.income) return `front: overnight after the capture ${JSON.stringify({ gained: alive.gained, front: alive.front, income: alive.income })}`;
+  if (alive.gained.join() !== "supply" || alive.front.gained.join() !== "supply" || alive.income !== 0 || alive.profile.cash !== fresh.cash) return `front: overnight after the capture ${JSON.stringify({ gained: alive.gained, front: alive.front, income: alive.income })}`;
   s.outcome = "dead";
   const dead = settle(fresh, s);
-  if (dead.gained.join() !== "supply" || dead.profile.poiState.supply.state !== "own" || dead.income !== FRONT.income) return `front: a wiped capture left ${dead.profile.poiState.supply.state}`;
-  const three: Profile = { ...fresh, poiState: { ...fresh.poiState, ...Object.fromEntries((["supply", "quarry", "relay"] as const).map((id) => [id, { state: "own" as const }])) } };
-  if (heldIncome(three) !== 3 * FRONT.income) return `front: the income of three nodes is ${heldIncome(three)}`;
+  if (dead.gained.join() !== "supply" || dead.profile.poiState.supply.state !== "own" || dead.income !== 0) return `front: a wiped capture left ${dead.profile.poiState.supply.state}`;
+  // 拠点の収入 is made by the clock (meta/income.ts, scripts/ringfall-income.ts), not paid at the settle.
   if (frontIds(holdsOf(three)) !== "smelter,station,waterworks,lodge,carpark,control".split(",").sort((a, b) => nodeIndex(a) - nodeIndex(b)).join()) return `front: with the reservoir's three nodes the front is ${frontIds(holdsOf(three))}`;
   // An outpost is no node: its guards stand and it takes no core.
   const r = newRun(9, starterKit(), "reservoir", { island: holds(three) });
@@ -4221,7 +4220,7 @@ function checkBattle(): string | null {
   r.battle!.done = true;
   const settled = settle(both, r);
   if (playerNodes(settled.profile).join() !== "quarry,relay" || settled.raid.lost.join() !== "supply" || settled.raid.gained.join() !== "quarry") return `battle: overnight after a battle that ended with the quarry and the relay the player's left ${JSON.stringify({ nodes: playerNodes(settled.profile), raid: settled.raid, front: settled.front })}`;
-  if (settled.income !== playerNodes(settled.profile).length * FRONT.income) return `battle: ${playerNodes(settled.profile).length} nodes paid ${settled.income}`;
+  if (settled.income !== 0) return `battle: the settle paid ${settled.income} of 拠点の収入`;
   // Saves: v19 keeps the factory; before, the factory the camp starts with.
   const kept = parseProfile(JSON.parse(JSON.stringify({ ...settled.profile, factory: 3 })));
   if (!kept || kept.v !== 46 || kept.factory !== 3) return `battle: a v22 save loaded as ${JSON.stringify(kept && { v: kept.v, factory: kept.factory })}`;

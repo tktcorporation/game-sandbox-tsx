@@ -17,6 +17,7 @@ import { aiLabel } from "./neighbours";
 import { canLoseOuter, emptyOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";
 import type { Parcel } from "./parcels";
 import { clampTrophies, raidOdds, TROPHY } from "./trophies";
+import { accrue, emptyStores, type Stores } from "./income";
 
 export const AWAY = {
   /** One draw an hour. */
@@ -42,7 +43,7 @@ const hash = (...xs: number[]) => {
 };
 const unit = (...xs: number[]) => (hash(...xs) % 100_000) / 100_000;
 
-type Seen = { poiState: Island; parcels: readonly Parcel[]; factory: number; trophies: number; outerGuard: OuterGuard; attackedAt: number };
+type Seen = { poiState: Island; parcels: readonly Parcel[]; factory: number; trophies: number; outerGuard: OuterGuard; attackedAt: number; stores: Stores };
 
 /** What the hours since the last look brought: the profile after them and the island's news of them. */
 export interface AwayResult<P> {
@@ -50,6 +51,8 @@ export interface AwayResult<P> {
   news: IslandLogEntry[];
   /** Trophies lost to holdings taken (defences are paid by the caller with `defenceWin`). */
   lost: number;
+  /** Credits waiting at the holdings taken, which the attackers carried off (拠点の収入). */
+  stolen: number;
 }
 
 /** The odds an attacker of factory `attack` takes a holding defended by `defence` (factory + its 島の守り). */
@@ -61,13 +64,15 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
   const first = Math.max(Math.floor(p.attackedAt / AWAY.hour) + 1, Math.floor(now / AWAY.hour) - AWAY.catchUp + 1);
   const last = Math.floor(now / AWAY.hour);
   // A fresh profile starts counting now: nothing came before the player was here.
-  if (!p.attackedAt || last < first) return { profile: { ...p, attackedAt: p.attackedAt || now }, news, lost: 0 };
+  if (!p.attackedAt || last < first) return { profile: { ...p, attackedAt: p.attackedAt || now }, news, lost: 0, stolen: 0 };
   const islands = aiIslands(salt, taken);
   let poiState = p.poiState;
   let parcels = [...p.parcels];
   let guard = p.outerGuard ?? emptyOuterGuard();
   let trophies = p.trophies ?? TROPHY.start;
   let lost = 0;
+  let stolen = 0;
+  let stores = p.stores ?? emptyStores();
   for (let h = first; h <= last; h++) {
     if (!islands.length || unit(salt, h, 3) >= AWAY.chance) continue;
     const at = h * AWAY.hour + (hash(salt, h, 5) % AWAY.hour);
@@ -80,6 +85,10 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
     const guardAt = Math.min(DEFENCE_AID, parcels.filter((q) => q.poi === node).length);
     const odds = takeOdds(attack, p.factory + guardAt / 2);
     if (canLoseOuter(guard, at) && unit(salt, h, 13) < odds) {
+      // What the holding made up to the attack goes with it.
+      stores = accrue(stores, poiState, at);
+      stolen += Math.floor(stores.at[node] ?? 0);
+      stores = { ...stores, at: { ...stores.at, [node]: 0 } };
       poiState = { ...poiState, [node]: { state: "foe" } };
       parcels = parcels.filter((q) => q.poi !== node);
       guard = recordOuterLoss(guard, at);
@@ -89,5 +98,5 @@ export function awayAttacks<P extends Seen>(p: P, salt: number, now: number, tak
       news.push({ seq: 0, at, t: "taken", node, by });
     } else news.push({ seq: 0, at, t: "wiped", node, by });
   }
-  return { profile: { ...p, poiState, parcels, outerGuard: guard, trophies, attackedAt: now }, news, lost };
+  return { profile: { ...p, poiState, parcels, outerGuard: guard, trophies, attackedAt: now, stores }, news, lost, stolen };
 }

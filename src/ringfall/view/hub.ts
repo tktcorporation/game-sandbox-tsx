@@ -20,6 +20,7 @@ import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
 import { islandDay } from "../meta/days";
+import { collect } from "../meta/income";
 import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
@@ -638,6 +639,14 @@ export class Hub {
     if (r.lost) this.recordNews([trophyLine(before, this.profile.trophies ?? TROPHY.start, 0, r.lost, 0)]);
     const def = this.awardDefence(r.news.filter((e) => e.t === "wiped"));
     return { lines, before, after: this.profile.trophies ?? TROPHY.start, lost: r.lost, defended: def?.defended ?? 0 };
+  }
+
+  /** Collects 拠点の収入 the holdings made up to `now` into the cash (meta/income.ts): the credits collected. */
+  collectIncome(now = Date.now()): number {
+    const { credits, stores } = collect(this.profile.stores, this.profile.poiState, now);
+    this.update({ ...this.profile, stores, cash: this.profile.cash + credits });
+    saveProfile(this.profile);
+    return credits;
   }
 
   update(p: Profile) {

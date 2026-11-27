@@ -113,7 +113,7 @@ function parts(): { name: string; err: string | null; line: string }[] {
     // saves
     const round = parseProfile(JSON.parse(JSON.stringify(p1)));
     const old = parseProfile({ ...JSON.parse(JSON.stringify(p0)), v: 48, raided: undefined });
-    const err2 = !round || round.v !== 52 || round.raided.length !== p1.raided.length ? "raided lost on a round trip" : !old || old.v !== 49 || old.raided.length ? "a v48 save does not load clean" : null;
+    const err2 = !round || round.v !== 53 || round.raided.length !== p1.raided.length ? "raided lost on a round trip" : !old || old.v !== 49 || old.raided.length ? "a v48 save does not load clean" : null;
     out.push({ name: "saves", err: err2, line: `v${round?.v}, raided ${round?.raided.length}` });
   }
   // home: the player's own 島の守り at the same POI stays home when the neighbour's holding is taken.

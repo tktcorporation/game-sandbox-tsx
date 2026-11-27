@@ -4,7 +4,8 @@ import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
 import { islandDay, sinceFor } from "./days";
-import { applyRaid, blankIsland, contestedOwned, raidChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, heldIncome, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
+import { emptyStores, parseStores, type Stores } from "./income";
+import { applyRaid, blankIsland, contestedOwned, raidChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
@@ -39,7 +40,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 52;
+  v: 53;
   cash: number;
   stash: Item[];
   raids: number;
@@ -141,6 +142,8 @@ export interface Profile {
    * profile not yet looked at: the first look starts the clock. v50 and older start at 0.
    */
   attackedAt: number;
+  /** 拠点の収入 waiting at each holding, made by the clock (meta/income.ts). v52 and older start empty. */
+  stores: Stores;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -203,7 +206,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 52,
+    v: 53,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -238,6 +241,7 @@ export function newProfile(seed = 1): Profile {
     outerGuard: emptyOuterGuard(),
     raided: [],
     attackedAt: 0,
+    stores: emptyStores(),
   };
 }
 
@@ -576,7 +580,7 @@ export interface Settlement {
   raid: FrontChange;
   after: FrontChange;
   /**
-   * Credits the nodes the player holds paid at this settle (`heldIncome()`), plus any still held
+   * 拠点の収入 collected as the raid came home (the caller adds it, meta/income.ts), plus any still held
    * away on other islands (`awayIncome()` folded in — 方向 A: 拠点の収入に一本化).
    */
   income: number;
@@ -590,7 +594,7 @@ export interface Settlement {
    * Trophy change this settle (`gained` / `lost` / `defended` / `stars`); left out when none moved.
    * `stars` is set for a 「攻める」raid (0–3), even when the net delta is 0.
    */
-  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number; stars?: number };
+  trophies?: { before: number; after: number; gained: number; lost: number; defended?: number; stars?: number; failed?: number };
   /**
    * Rival / contested hubs taken this settle (home raid): owner id at raid start, for 島の知らせ
    * 「{誰}の{拠点}を制圧した · トロフィー +n · 倉庫へ届く」. Left out when none.
@@ -834,6 +838,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const selfTrop = p.trophies ?? TROPHY.start;
   let tropGained = 0;
   let tropLost = 0;
+  // Lost by an attack that took no star (攻めきれず), apart from holdings taken (取られた).
+  let tropFailed = 0;
   let tropStars: number | undefined = tropStarsEarly;
   const skip = new Set<NodeId>();
   const attackTaken: { id: NodeId; owner: string }[] = [];
@@ -841,14 +847,14 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     const a = s.attack;
     const d = raidTrophyDelta(a.N, a.M, tropStars);
     if (d > 0) tropGained += d;
-    else tropLost += -d;
+    else tropFailed += -d;
     skip.add(a.id);
     if ((s.stats.captured ?? []).includes(a.id)) attackTaken.push({ id: a.id, owner: a.owner });
   }
-  const trop = trophyDelta(selfTrop + tropGained - tropLost, beforeHolds, afterHolds, rivalTrop ?? ((o) => rivalTrophies(o, selfTrop)), skip);
+  const trop = trophyDelta(selfTrop + tropGained - tropFailed, beforeHolds, afterHolds, rivalTrop ?? ((o) => rivalTrophies(o, selfTrop)), skip);
   tropGained += trop.gained;
   tropLost += trop.lost;
-  const tropNext = clampTrophies(selfTrop + tropGained - tropLost);
+  const tropNext = clampTrophies(selfTrop + tropGained - tropLost - tropFailed);
   if (tropNext !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: tropNext });
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが{誰}の倉庫へ」).
@@ -866,8 +872,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   }
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   if (outerGuard !== (p.outerGuard ?? emptyOuterGuard())) Object.assign(night, { outerGuard });
-  // The nodes the player holds once the night is over pay their day's credits.
-  const homePay = heldIncome(night);
+  // 拠点の収入 is made by the clock and collected at the camp (meta/income.ts), not paid per raid.
+  const homePay = 0;
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
   // 方向 A: 遠征で持つ拠点の収入も拠点の収入に合算（リザルトの別行は出さない）。
@@ -888,7 +894,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       return owner ? [{ id, owner }] : [];
     }),
   ];
-  const tropMoved = tropGained > 0 || tropLost > 0 || tropStars !== undefined;
+  const tropMoved = tropGained > 0 || tropLost > 0 || tropFailed > 0 || tropStars !== undefined;
   // League from trophy before → after this settle (including overnight).
   const league = tropMoved || tropNext !== selfTrop ? leagueChanged(selfTrop, tropNext) : null;
   return {
@@ -912,6 +918,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
             after: tropNext,
             gained: tropGained,
             lost: tropLost,
+            ...(tropFailed > 0 ? { failed: tropFailed } : {}),
             ...(tropStars !== undefined ? { stars: tropStars } : {}),
           },
         }
@@ -1093,12 +1100,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v50 and older may hold other players' nodes on the player's own island; v51 makes them the enemy's
  * (only other players take holdings, and a holding taken goes back to the robots) and adds `attackedAt`.
  * v51 and older count the island's day by raids (`day`); v52 keeps when it started (`since`) and counts calendar days.
+ * v52 and older are paid 拠点の収入 at each settle; v53 makes it by the clock at each holding (`stores`).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1183,7 +1191,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 52,
+    v: 53,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1216,6 +1224,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     goal,
     outerGuard,
     raided,
+    stores: typeof o.v === "number" && o.v >= 53 ? parseStores(o.stores) : emptyStores(),
     attackedAt: typeof o.v === "number" && o.v >= 51 && Number.isFinite(o.attackedAt) ? Math.max(0, o.attackedAt as number) : 0,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),

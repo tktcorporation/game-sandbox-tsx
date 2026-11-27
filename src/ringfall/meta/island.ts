@@ -243,9 +243,6 @@ export function applyRaid<P extends IslandDay>(p: P, r: RaidDay): { profile: P; 
 const rivalBeats = (start: Partial<Record<NodeId, string>>, left: Partial<Record<NodeId, string>>, end: Partial<Record<NodeId, string>>): Pick<DayChange, "rivals"> =>
   Object.keys(start).length || Object.keys(left).length || Object.keys(end).length ? { rivals: { start, left, end } } : {};
 
-/** Credits paid at the settle for every node the player holds: `FRONT.income` each (not only the front). */
-export const heldIncome = (p: Pick<IslandDay, "poiState">): number => playerNodes(p).length * FRONT.income;
-
 /** Each POI's standing for a raid's start (`Start.island`). */
 export const holds = (p: Pick<IslandDay, "poiState">): Partial<Record<PoiId, PoiHold>> => Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id].state]));
 

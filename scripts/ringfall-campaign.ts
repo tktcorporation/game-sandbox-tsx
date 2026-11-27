@@ -26,6 +26,7 @@ import { shopRarity } from "../src/ringfall/meta/island";
 import { FACTORY, FACTORY_TOP, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
 import { awayAttacks } from "../src/ringfall/meta/away-attacks";
+import { collect } from "../src/ringfall/meta/income";
 import { isAiOwner, rivalOf } from "../src/ringfall/sim/holds";
 import { fork } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -138,7 +139,7 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
   // The game's own islands attack the holdings by the clock as in a browser with no island server
   // (meta/away-attacks.ts): a day of the month is a day of real time before each raid.
   const T0 = Date.UTC(2026, 10, 1);
-  p = { ...p, attackedAt: T0, since: T0 };
+  p = { ...p, attackedAt: T0, since: T0, stores: { at: {}, since: T0 } };
   for (let d = 1; d <= days; d++) {
     // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
     const gear = bestGear(p);
@@ -149,6 +150,9 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     p = taken.profile;
     const away = awayAttacks(p, seed, T0 + d * 86_400_000);
     p = away.profile;
+    // The holdings' 拠点の収入 made over the day, collected before the raid (meta/income.ts).
+    const made = collect(p.stores, p.poiState, T0 + d * 86_400_000);
+    p = { ...p, stores: made.stores, cash: p.cash + made.credits };
     const came = away.news.length > 0;
     const aiTook = away.news.filter((e) => e.t === "taken").length;
     const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory }, threat: raidThreat(p) });

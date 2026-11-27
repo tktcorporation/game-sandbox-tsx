@@ -318,10 +318,11 @@ export function attackSeized(whoHub: string): string {
  * 【案】…（取った +a · 守りきった +d · 取られた −b）
  * 【理由】攻め／守りの内訳（design-direction トロフィーと物資）
  */
-export function trophyLine(before: number, after: number, gained = 0, lost = 0, defended = 0): string {
+export function trophyLine(before: number, after: number, gained = 0, lost = 0, defended = 0, failed = 0): string {
   const parts: string[] = [];
   if (gained > 0) parts.push(`取った +${gained}`);
   if (defended > 0) parts.push(`守りきった +${defended}`);
+  if (failed > 0) parts.push(`攻めきれず −${failed}`);
   if (lost > 0) parts.push(`取られた −${lost}`);
   const mid = parts.length ? `（${parts.join(" · ")}）` : "";
   return `${TERM.trophy} ${before.toLocaleString("ja-JP")} → ${after.toLocaleString("ja-JP")}${mid}`;
@@ -512,6 +513,11 @@ export const mpHowtoNext = (last: boolean): string => (last ? "分かった" : "
 
 /** Re-export for view callers (canonical: meta/neighbours.ts). */
 export { aiLabel } from "../meta/neighbours";
+
+/** 拠点の収入 collected at the camp (glossary.md 拠点の収入): made by the clock at each holding. */
+export function incomeLine(credits: number): string {
+  return `拠点の収入 +${credits.toLocaleString("ja-JP")} クレジット`;
+}
 
 export function moduleRaiseReady(moduleName: string): string {
   return `${moduleName} · ${TERM.raiseLevelReady}`;
