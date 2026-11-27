@@ -14,6 +14,7 @@ import { aiByCode, aiChanges, aiIslands, aiRefresh, aiView, withAi } from "./met
 import { awayAttacks, battleLosses } from "./meta/away-attacks";
 import { aiLabel } from "./meta/neighbours";
 import { islandDay } from "./meta/days";
+import { playerNodes } from "./meta/island";
 import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import { pushNews } from "./view/copy";
@@ -196,7 +197,8 @@ export const neighboursNowOnMap = (): Neighbour[] => (aiSource ? neighboursOnMap
 export const incomingFor = (p: Profile): Incoming[] => p.incoming;
 
 /** The AI players' attacks on the holdings since the profile last looked, up to `now` (meta/away-attacks.ts). */
-export const awayFor = (p: Profile, now = Date.now()) => awayAttacks(p, aiSalt(), now, serverSlots());
+/** The AI players' attacks since `p.attackedAt`; `before`, the profile as those hours began, when `p` has settled a raid since. */
+export const awayFor = (p: Profile, now = Date.now(), before?: Profile) => awayAttacks(p, aiSalt(), now, serverSlots(), before && playerNodes(before));
 /**
  * The AI players next door, whose names the enemy's squads at the player's holdings go by in a raid
  * (決定 B). With every slot at sea taken by real players, the game's own islands still lend their

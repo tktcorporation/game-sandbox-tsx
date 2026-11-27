@@ -305,7 +305,7 @@ function onEvent(e: GameEvent, s: State) {
     // The AI players' attacks on the holdings while the raid ran (real time): on the results and the signal station.
     // The holdings the raid's battle lost went to AI players (決定 B), then their attacks while the raid ran (real time).
     const inRaid = s.battle ? lossesFor(hub.profile, lostToRaiders(s.battle, s.nodes)) : null;
-    const meanwhile = awayFor(inRaid?.profile ?? hub.profile);
+    const meanwhile = awayFor(inRaid?.profile ?? hub.profile, Date.now(), before);
     const away = hub.takeAway({ ...meanwhile, news: [...(inRaid?.news ?? []), ...meanwhile.news], lost: (inRaid?.lost ?? 0) + meanwhile.lost });
     if (away && settlement) {
       const t = settlement.trophies;
