@@ -22,8 +22,11 @@ import { SEIZE, canRaidOwner, raidOdds, rivalTrophies, trophiesTable, winBonusBa
 export const SORTIE_META = {
   /** Days a holding taken stays the robots' on its owner's island, the day it was taken included. */
   regrow: 2,
-  /** The most records kept (`Profile.raided`): older ones have regrown long since. */
-  keep: 24,
+  /**
+   * The most records kept (`Profile.raided`): every holding the islands next door could hold (four
+   * islands of twenty-one nodes), so none still regrowing is ever dropped by the cap.
+   */
+  keep: 84,
 };
 
 /** A holding a sortie took: its owner (a `RivalHold`'s id), the node and the profile's day. */
@@ -44,7 +47,7 @@ export function parseRaided(raw: unknown): Raided[] {
 
 /** `list` with holding `id` of `owner` taken on `day`. */
 export const recordRaid = (list: readonly Raided[], owner: string, id: NodeId, day: number): Raided[] =>
-  [...list.filter((r) => !(r.owner === owner && r.id === id)), { owner, id, day }].slice(-SORTIE_META.keep);
+  [...list.filter((r) => !(r.owner === owner && r.id === id) && day - r.day < SORTIE_META.regrow), { owner, id, day }].slice(-SORTIE_META.keep);
 
 /** Whether holding `id` of `owner` is still the robots' on `day` after a sortie took it. */
 export const regrowing = (list: readonly Raided[], owner: string, id: NodeId, day: number): boolean =>

@@ -599,7 +599,8 @@ const hub = new Hub(loadedHub, () => {
       const db = (b.x - p.x) ** 2 + (b.z - p.z) ** 2;
       return da - db;
     })[0];
-    if (near) hub.choose(near.kind, near.id);
+    // やり返す keeps its holding chosen: a start of the player's island would make it a raid of the island.
+    if (near && !hub.sortieFocus) hub.choose(near.kind, near.id);
     askDepart(false);
     return;
   }
