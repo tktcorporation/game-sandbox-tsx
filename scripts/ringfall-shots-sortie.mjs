@@ -34,7 +34,10 @@ const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium",
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
 });
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+// SORTIE_PHONE=1 shoots the same loop on a phone held sideways (file names start with m).
+const phone = process.env.SORTIE_PHONE === "1";
+const pre = phone ? "m" : "";
+const ctx = await browser.newContext(phone ? { viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true } : { viewport: { width: 1280, height: 720 } });
 const pg = await ctx.newPage();
 pg.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::|api\//.test(m.text()) && errors.push(`console: ${m.text()}`));
@@ -42,7 +45,7 @@ pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::|api\
 const read = async () => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
 const shot = async (name) => {
   await pg.evaluate(() => window.ringfallDraw?.());
-  await pg.screenshot({ path: `${out}/${name}.png` });
+  await pg.screenshot({ path: `${out}/${pre}${name}.png` });
   console.log("shot", name);
 };
 
@@ -53,6 +56,13 @@ await pg.waitForTimeout(400);
 await pg.click("#start");
 await pg.waitForFunction(() => getComputedStyle(document.getElementById("fade")).opacity === "0", null, { timeout: 8000 }).catch(() => errors.push("fade never cleared"));
 
+// The camp as a day starts: the day's line and 今日の作戦.
+await pg.waitForTimeout(500);
+await shot("00-camp");
+await pg.evaluate(() => window.ringfallCamp.open("signal"));
+await pg.waitForTimeout(300);
+await shot("00b-signal");
+await pg.evaluate(() => window.ringfallCamp.close());
 // The gate: the departure opens with the 攻める list.
 await pg.evaluate(() => window.ringfallCamp.toGate());
 await pg.evaluate(() => window.ringfallCamp.openDepart());
@@ -97,6 +107,20 @@ if (rows) {
   const res = await pg.locator("#results").isVisible();
   if (!res) errors.push("no results after the sortie's time");
   await shot("04-results");
+  await pg.screenshot({ path: `${out}/${pre}04b-results-full.png`, fullPage: true });
+  // Back in the camp: the next day, and what the camp says to do next.
+  if (res) {
+    await pg.click("#restart");
+    await pg.waitForTimeout(1500);
+    await shot("05-camp-after");
+    await pg.evaluate(() => window.ringfallCamp.open("signal"));
+    await pg.waitForTimeout(300);
+    await shot("06-signal-after");
+    await pg.evaluate(() => window.ringfallCamp.close());
+    await pg.evaluate(() => window.ringfallCamp.openDepart());
+    await pg.waitForTimeout(400);
+    await shot("07-depart-after");
+  }
 }
 
 await browser.close();

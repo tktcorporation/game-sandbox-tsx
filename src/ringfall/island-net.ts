@@ -208,7 +208,8 @@ const raiderIslands = () => {
   return next.length ? next : aiIslands(aiSalt());
 };
 /** The holdings a raid's battle lost, as the AI players' attacks (`battleLosses()`). */
-export const lossesFor = (p: Profile, lost: readonly { node: NodeId; by: string }[], now = Date.now()) => battleLosses(p, raiderIslands(), lost, now);
+// Against every one of the game's islands, not the slots free now: the neighbours may have changed since the raid began.
+export const lossesFor = (p: Profile, lost: readonly { node: NodeId; by: string }[], now = Date.now()) => battleLosses(p, aiIslands(aiSalt()), lost, now);
 
 /** The expeditions with those on the game's islands brought up to now: the profile itself when none changes. */
 export function refreshAi(p: Profile): Profile {
