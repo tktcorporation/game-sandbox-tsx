@@ -59,7 +59,7 @@ export function parseStores(raw: unknown): Stores {
   if (o.at && typeof o.at === "object")
     for (const n of NODES) {
       const v = (o.at as Record<string, unknown>)[n.id];
-      if (typeof v === "number" && Number.isFinite(v) && v > 0) at[n.id] = Math.min(storeCap(), v);
+      if (typeof v === "number" && Number.isFinite(v) && v >= 0) at[n.id] = Math.min(storeCap(), v);
     }
   const since = typeof o.since === "number" && Number.isFinite(o.since) ? Math.max(0, o.since) : 0;
   return { at, since };
