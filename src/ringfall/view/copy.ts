@@ -191,6 +191,9 @@ export const PHRASE = {
   sortieDo: `${TERM.sortie}する`,
   /** The departure set to 攻める with no holding on its list. */
   noAttackTarget: "攻め先なし",
+  /** A sortie's results: the core taken, or the holding held against it. */
+  sortieTaken: TERM.captureCore,
+  sortieHeld: "攻めきれず",
   factoryRaiseReady: `${TERM.factory} · ${TERM.raiseLevelReady}`,
   sideWorkshop: TERM.workshop,
   sideFactory: TERM.factory,

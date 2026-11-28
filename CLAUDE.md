@@ -104,7 +104,7 @@ A wipe ends the raid and loses the haul (`haulValue()` in `results.ts` is its wo
 screen gives no grade or score: it leads with the day (the island's map and its tug-of-war bar, in
 beats: the nodes that changed hands in the raid, and those the battle took after the player left under
 the depot's mark, each ringed and turning to its new colour, from the settlement's `raid` and
-`after`; the overnight night-raid beat is gone with PR3), then the haul.
+`after`; the overnight night-raid beat is gone with PR3), then the haul. A sortie's results (`Hud.sortieResult()`) lead instead with the holding attacked, its stars and the trophies before and after, under a headline of 核 · 制圧, 攻めきれず or 全滅; the island's map and bar are left out, since a sortie leaves the island as it was.
 Clearing a POI's garrison is 掃討 in the UI; 制圧 is only the capture of a core.
 Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's

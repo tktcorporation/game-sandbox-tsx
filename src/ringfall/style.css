@@ -2866,6 +2866,69 @@ body.touch .map-buttons button {
   color: var(--muted);
   font-size: 14px;
 }
+/* A sortie's results lead with the holding attacked, the stars and the trophies. */
+#day-result .sortie-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--plate);
+  box-shadow: inset 4px 0 0 var(--rival);
+}
+#day-result .sortie-who {
+  align-items: center;
+  gap: 4px;
+  font-size: 20px;
+  font-weight: 800;
+}
+#day-result .sortie-who .ico {
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+}
+#day-result .sortie-stars {
+  gap: 6px;
+  font-size: 54px;
+  line-height: 1;
+}
+#day-result .sortie-stars b {
+  color: var(--muted);
+}
+#day-result .sortie-stars b.on {
+  color: var(--hot);
+}
+#day-result .sortie-trop {
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--num);
+  font-size: 20px;
+}
+#day-result .sortie-trop small {
+  font-family: var(--jp);
+  font-size: 14px;
+  color: var(--muted);
+}
+#day-result .sortie-trop i {
+  font-style: normal;
+  color: var(--muted);
+}
+#day-result .sortie-trop b {
+  font-size: 30px;
+}
+#results #day-result .sortie-trop em {
+  font-style: normal;
+  font-weight: 800;
+  font-size: 20px;
+}
+#results #day-result .sortie-trop em.up {
+  color: var(--good);
+}
+#results #day-result .sortie-trop em.down {
+  color: var(--foe);
+}
+#results #haul-line[hidden] {
+  display: none;
+}
 /* The results' beat: the depot's mark for the battle after the player left. */
 #day-beat {
   display: inline-flex;
