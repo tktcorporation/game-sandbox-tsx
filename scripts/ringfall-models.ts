@@ -605,7 +605,7 @@ const gunPairs = pairs(entries.filter((e) => e.group === "gun" && !e.id.includes
 const LOOT_SETS: Record<string, readonly string[]> = {
   heal: keys(HEALS).map((h) => `loot:${String(h)}`),
   valuable: keys(VALUABLES).map((v) => `loot:${String(v)}`),
-  gear: ["loot:armor", "loot:key", "loot:mod", "loot:flare"],
+  gear: ["loot:armor", "loot:mod", "loot:flare"],
 };
 /** Where loot is mostly told apart from (the middle of models.md's "a few metres to 20 m"): outlines are compared on this distance's pixels. */
 const LOOT_DIST = 10;
@@ -620,7 +620,7 @@ const LOOT_APART = 0.3;
 /** Each loot kind (but the shield shard, a lone glint by design) has at least this many parts of READ_PX pixels or more at LOOT_FAR: a shape, not a block. */
 const LOOT_PARTS = 4;
 /** The kinds whose rarity the item itself shows (beside the beam): a part in the rarity's colour READ_PX pixels or more at LOOT_FAR. */
-const LOOT_RARITY: Record<string, number> = { "loot:armor": 0, "loot:key": 0, "loot:mod": 0, ...Object.fromEntries(keys(VALUABLES).map((v) => [`loot:${String(v)}`, 3])) };
+const LOOT_RARITY: Record<string, number> = { "loot:armor": 0, "loot:mod": 0, ...Object.fromEntries(keys(VALUABLES).map((v) => [`loot:${String(v)}`, 3])) };
 
 const lootPairs = Object.entries(LOOT_SETS).flatMap(([set, ids]) =>
   pairs(ids.map((id) => entries.find((e) => e.id === id)!), ["front", "side"], () => LOOT_DIST / PIXEL_PER_M, outline, outlinesApart).map((p) => ({ ...p, set })),
