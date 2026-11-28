@@ -1677,7 +1677,8 @@ export class Hud {
       ...carried.filter(([label, n]) => n > kept(label, n)).map(([label, n]) => `<span class="lost">${label}${n - kept(label, n) > 1 ? ` × ${n - kept(label, n)}` : ""}</span>`),
     ];
     // The haul's worth under the day's result; what a wipe lost is struck through, what went home from a depot is kept.
-    $("haul-line").hidden = !!sortie && value === 0;
+    // A sortie with nothing brought back shows no worth; what a wipe kept in the pouch or lost (tools among them) still shows.
+    $("haul-line").hidden = !!sortie && value === 0 && !(lost && split.length);
     $("haul-line").innerHTML =
       `<span${lost ? ' class="lost"' : ""}>回収の価値<b>${lost ? value - sentValue : value}</b></span>` +
       (lost && sentValue ? `<span>倉庫へ送った<b>${sentValue}</b></span>` : "") +

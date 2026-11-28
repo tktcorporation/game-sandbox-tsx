@@ -165,7 +165,8 @@ export class DepartPicker {
         ? { ...p, depots: [target.id], poiState: Object.fromEntries(POIS.map((o) => [o.id, { state: o.id === target.id ? rivalHold(target.owner) : ("foe" as const) }])) as typeof p.poiState }
         : p,
     );
-    this.map.draw(scene);
+    // The holding is another player's ground: the player's own explored map says nothing of it, so none of it lies under fog.
+    this.map.draw(target ? { ...scene, seen: scene.seen.map(() => 1) } : scene);
     const over = $("depart-target");
     over.hidden = !target;
     over.innerHTML = target ? `${flagIcon(SIDE.rival)}<b>${esc(target.ownerName)}</b><b>の${esc(target.hubName)}</b>` : "";
