@@ -225,7 +225,7 @@ export function measureVariety(c: { x: number; z: number }, r: number): Variety 
 /** The numbers `ringfall-look.ts` keeps in a place's baseline and compares. */
 export function varietyNumbers(v: Variety) {
   const r2 = (x: number) => Math.round(x * 100) / 100;
-  return { struct: r2(v.structShare), top: r2(v.top.share), kinds: v.kinds, twins: v.twins.length, generic: r2(v.generic), landmark: Math.round(v.landmark.h), lead: Math.round(v.landmark.lead) };
+  return { struct: r2(v.structShare), top: r2(v.top.share), kinds: v.kinds, twins: v.twins.length, generic: r2(v.generic), scattered: r2(v.scattered), landmark: Math.round(v.landmark.h), lead: Math.round(v.landmark.lead) };
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`.padStart(4);
