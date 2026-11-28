@@ -82,12 +82,15 @@ export function jumpBack(island: State, out: State): boolean {
   });
   island.stashRoom = out.stashRoom;
   if (island.ally.active && out.ally.active) {
-    island.ally.hp = Math.max(1, out.ally.hp);
+    island.ally.hp = out.ally.hp;
     island.ally.shield = out.ally.shield;
-    island.ally.down = 0;
+    island.ally.down = out.ally.down;
+    island.ally.helped = 0;
+    island.ally.rescue = 0;
   }
-  island.player.downed = 0;
-  island.player.awaitAlly = false;
+  // A sortie that ended with the player down (its time ran out) brings them back down: the revive is still owed.
+  island.player.downed = out.player.downed;
+  island.player.awaitAlly = out.player.awaitAlly;
   island.player.healing = null;
   island.player.search = null;
   if (out.outcome === "extracted") return true;
