@@ -170,7 +170,7 @@ export const HARBOR_TOUR = [
   ["tour-119-assembly-bay", "assembly", -48, 1.7, 60, 0.66, 0.55],
   ["tour-120-assembly-platform", "assembly", -22, 8 + 36 + 1.6, 8, -2.87, -0.12, true],
   ["tour-121-crawlerway", "assembly", -80, 1.7, 40, -1.57, 0.04],
-  ["tour-122-service-tower-top", "launchpad", -12.6, 12 + 28 * 3.4 + 1.6, -3, 1.4, -0.5, true],
+  ["tour-122-service-tower-top", "launchpad", -25.4, 12 + 31 * 3.4 + 1.6, -3, 1.4, -0.5, true],
   ["tour-123-flame-trench", "launchpad", -2, 1.7, 24, 0, 0.06],
   // The fuel depot from the walkway on its east-west pipe rack toward the crossing and from its
   // yard up at the spherical tanks (the plateau at 8, the racks' walkways at 6 over it); the
