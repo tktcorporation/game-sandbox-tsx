@@ -7,7 +7,8 @@
  *   with the health, weapons, heals, bag and keys the player carried; the raid of the island
  *   stands still meanwhile (its clock and robots untouched).
  * - **back**: a sortie ended alive hands back what the player then carries (what it added to the
- *   bag has no POI of this island) and the raid goes on; a wipe there ends the raid as a wipe.
+ *   bag has no POI of this island) and the raid goes on; a wipe there ends the raid as a wipe,
+ *   the island's battle reckoned to its end.
  * - **settle**: `settleSortie()` moves the trophies by the stars and records the holding taken,
  *   and counts no raid nor brings anything carried home.
  * - **targets**: `jumpTargets()` offers at most `JUMP.choices` players, all holding that node.
@@ -124,6 +125,12 @@ function parts(): { name: string; err: string | null; line: string }[] {
     dead.phase = "done";
     dead.outcome = "dead";
     const gone = jumpBack(w, dead);
+    // A raid with a battle: the wipe reckons the rest of it, as any raid's end does.
+    const b = newRun(53, starterKit(), "reservoir", { island: { [HOME]: "own" }, jumps: [HOME], battle: { factory: 1 } });
+    const lost = jumpOut(b, target, []);
+    lost.phase = "done";
+    lost.outcome = "dead";
+    jumpBack(b, lost);
     const err = !on || s.phase !== "play"
       ? "the raid did not go on after a sortie ended alive"
       : s.player.haul.join() !== "board,gyro" || s.player.haulAt.join() !== "3,-1"
@@ -134,6 +141,8 @@ function parts(): { name: string; err: string | null; line: string }[] {
             ? "the player is not back where they left"
             : gone || w.phase !== "done" || w.outcome !== "dead"
               ? "a wipe in the sortie did not end the raid as a wipe"
+              : !b.battle?.done
+                ? "a wipe in the sortie left the island's battle not reckoned to its end"
               : null;
     out.push({ name: "back", err, line: "alive: the bag and health come back and the raid goes on; wiped: the raid ends a wipe" });
   }

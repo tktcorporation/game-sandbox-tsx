@@ -8,6 +8,7 @@
  * tools, mod parts and the leap's charge. A wipe in the sortie is the raid's wipe. Nothing here
  * reads or writes the profile; what the sortie won is settled by `settleSortie()` in meta/profile.ts.
  */
+import { finishBattle } from "./battle";
 import type { Rarity } from "./config";
 import { nodeIndex } from "./map";
 import { newRun, type Kit, type Player, type Start, type State } from "./state";
@@ -66,7 +67,7 @@ export function jumpOut(island: State, sortie: NonNullable<Start["sortie"]>, rou
 
 /**
  * Back at the core: `island` takes what the player carries out of the sortie `out` as it ended.
- * A wipe there ends the raid of the island as a wipe. Returns whether the raid goes on; when it
+ * A wipe there ends the raid of the island as a wipe, its battle reckoned to the end. Returns whether the raid goes on; when it
  * does not, the caller tells the view of the raid's end.
  */
 export function jumpBack(island: State, out: State): boolean {
@@ -95,5 +96,7 @@ export function jumpBack(island: State, out: State): boolean {
   island.leaving = null;
   island.phase = "done";
   island.outcome = out.outcome ?? "dead";
+  // The raid ends here as any raid does: the rest of the island's battle is reckoned, so the nodes stand as it ended.
+  finishBattle(island);
   return false;
 }
