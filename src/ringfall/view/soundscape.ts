@@ -361,9 +361,6 @@ export class Soundscape {
         if (w) sfx.spawn({ x: w.x, y: terrainHeight(w.x, w.z) + 1.5, z: w.z });
         break;
       }
-      case "flareLit":
-        sfx.careDrop();
-        break;
       case "allyDown":
         sfx.allyDown();
         break;

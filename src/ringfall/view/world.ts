@@ -13,7 +13,7 @@ import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildFlareSmoke, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, still, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, still, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
 import { NeighbourIslands } from "./horizon";
@@ -223,8 +223,6 @@ export class World {
   private allyWalk = 0;
   private loot = new Map<number, THREE.Group>();
   private bins = new Map<number, ReturnType<typeof buildBin>>();
-  /** The flare smoke over each bin that holds a flare, by bin id, until the bin is searched. */
-  private flareSmoke = new Map<number, THREE.Mesh>();
   private hemi = new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, LIGHT.sky);
   private orbPool: THREE.Group[] = [];
   private wavePool: THREE.Mesh[] = [];
@@ -1633,20 +1631,6 @@ export class World {
         this.bins.set(b.id, v);
         this.scene.add(still(v.root));
       }
-      // A bin holding a flare sends a thread of red-orange smoke up off its roof until it is searched,
-      // seen from afar; it thins as the player climbs up to it.
-      if (b.flare) {
-        let smoke = this.flareSmoke.get(b.id);
-        if (!smoke) {
-          smoke = buildFlareSmoke();
-          smoke.position.set(b.x, b.y + 35.5, b.z);
-          this.flareSmoke.set(b.id, smoke);
-          this.scene.add(still(smoke));
-        }
-        smoke.visible = !b.open && s.phase === "play";
-        const d = Math.hypot(b.x - fx, b.z - fz);
-        (smoke.material as THREE.MeshBasicMaterial).opacity = Math.min(0.62, Math.max(0.08, (d - 8) / 60)) * (0.85 + 0.15 * Math.sin(this.time * 3 + b.id));
-      }
       if (!near(v.root)) continue;
       const lid = v.lid.rotation.x + ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
       // The lid is fixed by `still()` and placed again only while it swings.
@@ -1791,11 +1775,6 @@ export class World {
       this.boat.position.y = CHANNEL.y + Math.sin(this.time * 1.7) * 0.06;
       this.boat.rotation.z = Math.sin(this.time * 1.1) * 0.02;
     }
-    // A lit flare at the plateau pickup sends up red smoke.
-    const here = EXTRACTS.find((x) => x.needsFlare);
-    if (here && s.phase === "play" && s.extractTime > 0 && Math.hypot(s.player.pos.x - here.x, s.player.pos.z - here.z) < here.radius) {
-      if (Math.random() < dt * 30) this.burst({ x: here.x, y: groundAt(here.x, here.z, 0.4, 99) + 0.4, z: here.z }, PAL.ring, 2, 1.2, 0.25, -2.5, 2.2);
-    }
 
     // --- particles and tracers
     let n = 0;
@@ -1911,9 +1890,9 @@ export class World {
     extra.add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glow(PAL.orb, 0.35)));
     extra.add(new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), glow(PAL.orb)));
     extra.add(haloSprite(PAL.orb, 1, 0.5));
-    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse"));
+    for (const kind of ["weapon", "armor", "heal", "shard", "valuable", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse"));
     for (const heal of ["cell", "battery", "syringe", "medkit"] as const) extra.add(buildLootItem("heal", 1, undefined, heal));
-    extra.add(buildBin(false).root, buildBin(true).root, buildFlareSmoke(), buildCare(), buildDropship(), buildBoat());
+    extra.add(buildBin(false).root, buildBin(true).root, buildCare(), buildDropship(), buildBoat());
     const guns = new THREE.Group();
     for (const kind of Object.keys(WEAPONS) as (keyof typeof WEAPONS)[]) guns.add(buildGun(kind, 1), buildHands(kind));
     const r = this.renderer;
@@ -1980,8 +1959,6 @@ export class World {
     this.loot.clear();
     for (const b of this.bins.values()) this.scene.remove(b.root);
     this.bins.clear();
-    for (const m of this.flareSmoke.values()) this.scene.remove(m);
-    this.flareSmoke.clear();
     if (this.care) this.scene.remove(this.care);
     this.care = null;
     this.careBeam.visible = false;

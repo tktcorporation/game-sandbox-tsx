@@ -1406,7 +1406,6 @@ window.render_game_to_text = () => {
     modsAround: s.loot.filter((l) => l.kind === "mod").map((l) => ({ mod: l.mod, x: +l.pos.x.toFixed(1), y: +l.pos.y.toFixed(1), z: +l.pos.z.toFixed(1) })),
     settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, learned: settlement.learned, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
-    flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
     phase: s.phase,
     time: +s.time.toFixed(1),
     outcome: s.outcome,
@@ -1432,7 +1431,7 @@ window.render_game_to_text = () => {
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,
     region: s.region,
-    extract: { ship: +callLeft(s, "ship").toFixed(1), boat: +callLeft(s, "boat").toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt, flares: p.flares },
+    extract: { ship: +callLeft(s, "ship").toFixed(1), boat: +callLeft(s, "boat").toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt },
     enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target, ...(e.plate ? { plate: e.plate } : {}), ...(e.rogue ? { rogue: true } : {}) })),
     squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime, ...(q.rogue ? { rogue: true } : {}), ...(q.mobile ? { mobile: true } : {}), ...(q.foe !== undefined ? { foe: q.foe } : {}), ...(q.ambush ? { ambush: true } : {}) })),
     battle: s.battle && {
@@ -1888,7 +1887,7 @@ window.ringfallEnd = (how, haul = [], found = []) => {
   for (const id of found) if (!state.found.includes(id as never)) state.found.push(id as never);
   state.phase = "done";
   state.outcome = how === "dead" ? "dead" : "extracted";
-  if (how !== "dead") state.extractedAt = "village";
+  if (how !== "dead") state.extractedAt = "ship";
   onEvent({ t: "done" }, state);
   return true;
 };

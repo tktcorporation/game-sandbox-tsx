@@ -41,7 +41,7 @@ export const UI = {
   hot: "#ffe23d",
   hotLight: "#ffe27a",
   hotDim: "#c9b25a",
-  /** The ring's orange: the title, the fire buttons, flares and fire. */
+  /** The ring's orange: the title, the fire buttons and fire. */
   ring: "#ff5a2a",
   /** A caution that is not yet a danger: seen, flanked, paused. */
   amber: "#ff9a3c",

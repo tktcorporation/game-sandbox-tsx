@@ -722,7 +722,7 @@ function checkReinforceHidden(): string | null {
 function checkValuableBin(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: RELAY, open: false, flare: false, vault: false, outside: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: RELAY, open: false, top: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -737,7 +737,7 @@ function checkValuableBin(): string | null {
 function checkSearchBreaks(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: RELAY, open: false, flare: false, vault: false, outside: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: RELAY, open: false, top: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -781,17 +781,28 @@ function checkRaiders(): string | null {
 const enemyMaxPlain = (k: keyof typeof ENEMIES) => ENEMIES[k].hp + ENEMIES[k].shield;
 /** Reads the phase afresh, past the narrowing of an earlier check. */
 const phaseOf = (s: State): State["phase"] => s.phase;
-/** Standing in the plateau pickup leaves with a flare, and does nothing without one. */
-function checkFlareExtract(): string | null {
-  const s = padRun();
-  const at = EXTRACTS.find((x) => x.id === "flare")!;
-  const p = s.player;
-  p.pos = { x: at.x, y: groundAt(at.x, at.z, 0.4, 20), z: at.z };
-  ticks(s, at.hold + 2);
-  if (s.phase === "done") return "flare scenario: left the island without a flare";
-  p.flares = 1;
-  ticks(s, at.hold + 0.2);
-  if (phaseOf(s) !== "done" || s.extractedAt !== "flare" || p.flares !== 0) return `flare scenario: phase ${s.phase}, exit ${s.extractedAt}, flares ${p.flares}`;
+/**
+ * Every region has one way off, a craft: standing in its spot calls it, nothing leaves before it
+ * lands, robots beam in round it on ground a walker stands on while it comes, and the raid ends by it.
+ */
+function checkCrafts(): string | null {
+  for (const r of REGIONS) {
+    if (r.exits.length !== 1) return `crafts: ${r.id} has ${r.exits.length} ways off, not one craft`;
+    const x = EXTRACTS.find((e) => e.id === r.exits[0])!;
+    const s = padRun();
+    s.ally.active = false;
+    const p = s.player;
+    p.pos = { x: x.x, y: groundAt(x.x, x.z, 0.4, 99), z: x.z };
+    p.iframes = 999;
+    holdSpot(s, x.call - 1);
+    const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD);
+    if (callLeft(s, x.id) <= 0 || s.phase === "done" || waves.length < 2) return `crafts: ${x.id} with ${callLeft(s, x.id).toFixed(1)} s left, phase ${s.phase}, ${waves.length} robots beamed in`;
+    const at = x.waves ?? x;
+    const stranded = waves.filter((e) => ENEMIES[e.kind].fly === 0 && (highGround(e.pos.x, e.pos.z) || Math.hypot(e.pos.x - at.x, e.pos.z - at.z) > 40));
+    if (stranded.length) return `crafts: ${x.id}'s robots beamed in off its ground at ${stranded.map((e) => `${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}`).join(" ")}`;
+    holdSpot(s, 1 + x.hold + 0.2);
+    if (phaseOf(s) !== "done" || s.extractedAt !== x.id) return `crafts: did not leave by ${x.id} (${callLeft(s, x.id).toFixed(1)}, ${s.phase})`;
+  }
   return null;
 }
 /** Standing at the dropship calls it; robots beam in while it comes, and it lands after its call time. */
@@ -1205,7 +1216,7 @@ function checkWeakPointBehindBody(): string | null {
 function checkHelpBeforeLoot(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: SUPPLY, open: false, flare: false, vault: false, outside: false });
+  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: SUPPLY, open: false, top: false, vault: false, outside: false });
   hurtAlly(s, 999);
   s.ally.pos = { x: p.pos.x + 3, y: p.pos.y, z: p.pos.z };
   const press = idleInput();
@@ -1696,7 +1707,7 @@ function checkDepots(): string | null {
   loot.depots[PADD] = true;
   stand(loot);
   const p = loot.player;
-  loot.bins.push({ id: 9300, x: p.pos.x, y: p.pos.y, z: p.pos.z, poi: PAD, open: false, flare: false, vault: false, outside: false });
+  loot.bins.push({ id: 9300, x: p.pos.x, y: p.pos.y, z: p.pos.z, poi: PAD, open: false, top: false, vault: false, outside: false });
   if (useTarget(loot)?.kind !== "bin") return `depot scenario: with a bin in reach the press went to ${useTarget(loot)?.kind}`;
   loot.bins.pop();
   loot.loot.push({ id: 9301, kind: "weapon", rarity: 1, weapon: { kind: "pike", rarity: 1, mag: -1 }, pos: { ...p.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
@@ -1897,7 +1908,7 @@ function checkHideout(): string | null {
 function checkVault(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: QUARRY, open: false, flare: false, vault: true, outside: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: QUARRY, open: false, top: false, vault: true, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -3263,7 +3274,7 @@ function checkMods(): string | null {
   {
     const bare = { mods: [] as ModKind[] };
     const one = (k: ModKind) => ({ mods: [k] });
-    if (searchFor(one("probe"), { flare: false, vault: false }) >= searchFor(bare, { flare: false, vault: false })) return "mod scenario: the probe does not shorten a search";
+    if (searchFor(one("probe"), { top: false, vault: false }) >= searchFor(bare, { top: false, vault: false })) return "mod scenario: the probe does not shorten a search";
     if (healTime(one("medic"), "cell") >= healTime(bare, "cell")) return "mod scenario: the patch does not shorten a heal";
     if (tacticalCooldown(one("capacitor")) >= tacticalCooldown(bare)) return "mod scenario: the capacitor does not shorten the arc's wait";
     if (reviveTime(one("medlink")) >= reviveTime(bare) || helpTime(one("carrier")) >= helpTime(bare)) return "mod scenario: the link or the belt does not shorten a revive";
@@ -3917,7 +3928,7 @@ function checkBattle(): string | null {
 // `RINGFALL_SIM_CHECK=checkFront,checkIsland` runs only the checks named and stops after them: for mending one.
 const onlyChecks = process.env.RINGFALL_SIM_CHECK?.split(",") ?? null;
 const broken: string[] = [];
-for (const check of [checkFront, checkPushPull, checkBattle, checkSupport, checkSortie, checkSortieSettle, checkJump, checkFactions, checkIntercept, checkSplit, checkPatrols, checkMods, checkThreat, () => checkTerrainIndex(20_000), checkParties, checkPacks, checkTools, checkTimeToKill, checkStagger, checkWindupMoves, checkDepots, checkDepotBudget, checkPlates, checkUnlocks, checkHideout, checkBoltNoTunnel, checkPickupWavesRouted, checkLaterWaveFights, checkSidestepHit, checkReturnFire, checkWallStops, checkPinch, checkPursuit, checkHealHeard, checkPositionMatters, checkPullWhenAiming, checkVault, checkIsland, checkStrength, checkSaveCompat, checkLoadout, checkSettle, checkWipeClearsAir, checkArcOnTitan, checkGoldReload, checkArcIgnoresFacing, checkDeathEndsRaid, checkBleedoutWipe, checkReinforce, checkReinforceHidden, checkSearchBreaks, checkBagSwap, checkBagSwapCheapest, checkRaiders, checkValuableBin, checkAllyRescue, checkAllyDownWipes, checkHelpAlly, checkAllyHoldsFire, checkFlareExtract, checkShipCall, checkBoatCall, checkSecondPickup, checkEntries, checkCamp, checkKnownEntries, checkConnections, checkAllySelfUp, checkStompHeight, checkFieldsReused, checkFieldsFollowRunner, checkCliffsStop, checkNoPits, checkWalkableIsland, checkReinforceEverywhere, checkRoamersHearOnlyGunfire, checkReinforceWaitsForTitan, checkWeakPointBehindBody, checkHelpBeforeLoot, checkAllyTitanKill, checkLeap, checkLeapLeavesAllyBelow, checkLeapDowned, checkLeapAllyCatchesUp, checkLeapAllyDowned, checkLeapWithItem, checkLeapClocks, checkLeapOffHighGround, checkLeapUnderRoof]) {
+for (const check of [checkFront, checkPushPull, checkBattle, checkSupport, checkSortie, checkSortieSettle, checkJump, checkFactions, checkIntercept, checkSplit, checkPatrols, checkMods, checkThreat, () => checkTerrainIndex(20_000), checkParties, checkPacks, checkTools, checkTimeToKill, checkStagger, checkWindupMoves, checkDepots, checkDepotBudget, checkPlates, checkUnlocks, checkHideout, checkBoltNoTunnel, checkPickupWavesRouted, checkLaterWaveFights, checkSidestepHit, checkReturnFire, checkWallStops, checkPinch, checkPursuit, checkHealHeard, checkPositionMatters, checkPullWhenAiming, checkVault, checkIsland, checkStrength, checkSaveCompat, checkLoadout, checkSettle, checkWipeClearsAir, checkArcOnTitan, checkGoldReload, checkArcIgnoresFacing, checkDeathEndsRaid, checkBleedoutWipe, checkReinforce, checkReinforceHidden, checkSearchBreaks, checkBagSwap, checkBagSwapCheapest, checkRaiders, checkValuableBin, checkAllyRescue, checkAllyDownWipes, checkHelpAlly, checkAllyHoldsFire, checkCrafts, checkShipCall, checkBoatCall, checkSecondPickup, checkEntries, checkCamp, checkKnownEntries, checkConnections, checkAllySelfUp, checkStompHeight, checkFieldsReused, checkFieldsFollowRunner, checkCliffsStop, checkNoPits, checkWalkableIsland, checkReinforceEverywhere, checkRoamersHearOnlyGunfire, checkReinforceWaitsForTitan, checkWeakPointBehindBody, checkHelpBeforeLoot, checkAllyTitanKill, checkLeap, checkLeapLeavesAllyBelow, checkLeapDowned, checkLeapAllyCatchesUp, checkLeapAllyDowned, checkLeapWithItem, checkLeapClocks, checkLeapOffHighGround, checkLeapUnderRoof]) {
   let err: string | null | undefined;
   if (onlyChecks && !onlyChecks.includes(check.name)) continue;
   try {

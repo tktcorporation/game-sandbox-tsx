@@ -754,7 +754,7 @@ export const HIDEOUT_EFFECT = {
  * Searching a bin takes time with the hands busy and makes a noise; a top-floor bin
  * of a high-rise takes longer. Moving away, shooting or healing breaks it off.
  */
-export const SEARCH = { time: 2.2, flareTime: 3.5, vaultTime: 5, noise: 9 };
+export const SEARCH = { time: 2.2, topTime: 3.5, vaultTime: 5, noise: 9 };
 
 /**
  * Vaults: one bin per POI that holds its best (a top weapon, armour, heals and dear valuables),

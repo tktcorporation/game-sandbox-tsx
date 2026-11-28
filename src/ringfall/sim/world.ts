@@ -322,11 +322,10 @@ function openBin(s: State, binIndex: number) {
   }
   if (table.armor.length && nth !== 0 && hashed(s, b, 13) < BIN_GEAR.armor) spill(s, b.x, b.y, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
   for (let i = 0; i < table.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
-  if (b.flare) spill(s, b.x, b.y, b.z, { kind: "flare", rarity: 3 });
   // One valuable per bin; the high-rises' top floors are worth the climb.
   // In the raid's boosted POI, its own bins lean to one rare kind (`BOOST`).
   const kinds = !b.outside && b.poi === s.boost.poi ? boosted(table.valuable, s.boost.kind) : table.valuable;
-  const rolled = b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds);
+  const rolled = b.top ? weighted(s, TOP_BINS) : weighted(s, kinds);
   spillValuable(s, b, rolled, b.outside ? -1 : b.poi);
 }
 
@@ -416,11 +415,6 @@ export function stepLoot(s: State, input: Input) {
       bagIn(p, l.valuable, l.from ?? -1);
       const v = VALUABLES[l.valuable];
       s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}`, valuable: l.valuable });
-      return false;
-    }
-    if (l.kind === "flare" && p.flares < 1) {
-      p.flares = 1;
-      s.events.push({ t: "pickup", kind: "flare", rarity: 3, label: "発煙筒" });
       return false;
     }
     if (l.kind === "armor" && l.rarity > p.armor) {
@@ -570,10 +564,10 @@ function stepSearch(s: State, alive: boolean) {
   }
 }
 
-export const searchTime = (b: { flare: boolean; vault: boolean }) => (b.vault ? SEARCH.vaultTime : b.flare ? SEARCH.flareTime : SEARCH.time);
+export const searchTime = (b: { top: boolean; vault: boolean }) => (b.vault ? SEARCH.vaultTime : b.top ? SEARCH.topTime : SEARCH.time);
 
 /** Seconds the player takes to search bin `b`: quicker with the probe worn. */
-export const searchFor = (p: Pick<Player, "mods">, b: { flare: boolean; vault: boolean }) => searchTime(b) * modScale(p, "probe");
+export const searchFor = (p: Pick<Player, "mods">, b: { top: boolean; vault: boolean }) => searchTime(b) * modScale(p, "probe");
 
 /** What one press of the use key acts on. The HUD shows its prompt from the same choice. */
 export type UseTarget =
@@ -912,11 +906,9 @@ export function extractHere(s: State): ExtractPoint | null {
   return EXTRACTS.find((x) => dist2d(p.pos, x) < x.radius && Math.abs(p.pos.y - groundAt(x.x, x.z, 0.4, 99)) < 1.5) ?? null;
 }
 
-/** Whether an extraction point can be used now (its pickup has come, the player has a flare). */
+/** Whether an extraction point can be used now (its pickup has come). */
 export function extractReady(s: State, x: ExtractPoint): boolean {
-  if (x.call) return callLeft(s, x.id) === 0;
-  if (x.needsFlare) return s.player.flares > 0;
-  return true;
+  return callLeft(s, x.id) === 0;
 }
 
 export function stepExtract(s: State) {
@@ -924,7 +916,7 @@ export function stepExtract(s: State) {
   const p = s.player;
   const here = p.downed > 0 ? null : extractHere(s);
   // Standing in a pickup that has to be called calls it; it comes after its time, with robots beaming in round it.
-  if (here?.call && !s.calls[here.id]) {
+  if (here && !s.calls[here.id]) {
     s.calls[here.id] = { t: here.call, wave: 0, waveT: SHIP_WAVES.first, squad: -1 };
     s.events.push({ t: "shipCalled", id: here.id });
   }
@@ -937,10 +929,8 @@ export function stepExtract(s: State) {
     if (c.waveT <= 0 && c.wave < SHIP_WAVES.waves.length) shipWave(s, x);
   }
   if (here && extractReady(s, here)) {
-    if (here.needsFlare && s.extractTime === 0) s.events.push({ t: "flareLit" });
     s.extractTime += TICK;
     if (s.extractTime >= here.hold) {
-      if (here.needsFlare) p.flares--;
       s.extractedAt = here.id;
       s.phase = "done";
       s.outcome = "extracted";

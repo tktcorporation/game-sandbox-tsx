@@ -19,15 +19,6 @@ export const clockIcon = (c = "currentColor") => svg(`<circle cx="8" cy="8" r="6
 /** A way off, the map's yellow diamond. */
 export const exitIcon = (c: string = UI.hot) => svg(`<path d="M8 1.5 L14.5 8 L8 14.5 L1.5 8 Z" fill="${c}" stroke="${alpha(UI.night, 0.85)}" stroke-width="1.2"/>`, "exit");
 
-/** A flare: a lit stick. Hollow and grey when the player has none. */
-export const flareIcon = (lit: boolean) =>
-  svg(
-    lit
-      ? `<rect x="6.5" y="7" width="3" height="8" rx="1" fill="${UI.ring}"/><path d="M8 1 C10.5 3.5 10.5 6 8 7 C5.5 6 5.5 3.5 8 1 Z" fill="${UI.hotLight}"/>`
-      : `<rect x="6.5" y="7" width="3" height="8" rx="1" fill="none" stroke="${UI.slate}" stroke-width="1.2"/><path d="M8 1 C10.5 3.5 10.5 6 8 7 C5.5 6 5.5 3.5 8 1 Z" fill="none" stroke="${UI.slate}" stroke-width="1.2"/>`,
-    "flare",
-  );
-
 /** The craft a call brings (the dropship, the boat): an arrow coming down. */
 export const callIcon = (c = "currentColor") => svg(`<path d="M8 1.5 V11 M4 7.5 L8 11.5 L12 7.5" stroke="${c}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 14.5 H13.5" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`, "call");
 

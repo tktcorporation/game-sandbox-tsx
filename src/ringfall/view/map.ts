@@ -4,7 +4,7 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, NODES, nodeIndex, poiIndex, poiRegion, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, regionHere, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
+import { BOXES, CAMP, NODES, nodeIndex, poiIndex, poiRegion, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, regionHere, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
 import type { PoiHold } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
@@ -58,45 +58,6 @@ export const RIVAL_CSS = UI.rival;
 
 /** The colour of a node held `h`: the enemy's, the player's, or another player's. */
 export const holdCss = (h: PoiHold) => (h === "foe" || h === "own" ? HOLD_CSS[h] : RIVAL_CSS);
-
-/**
- * A flare as the HUD's icon draws it, centred on (x, y) and `r` tall from its middle: a red stick
- * under a yellow flame, lit; a grey outline when the flare is gone (its bin searched).
- */
-export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: number, lit: boolean) {
-  g.save();
-  // A dark disc behind it, so it reads on the red and blue ground alike.
-  g.fillStyle = alpha(UI.night, 0.75);
-  g.beginPath();
-  g.arc(x, y, r * 1.15, 0, Math.PI * 2);
-  g.fill();
-  g.lineWidth = Math.max(1, r * 0.18);
-  g.strokeStyle = lit ? alpha(UI.night, 0.9) : UI.slate;
-  const stick = () => {
-    g.beginPath();
-    g.rect(x - r * 0.22, y - r * 0.05, r * 0.44, r * 1.05);
-  };
-  const flame = () => {
-    g.beginPath();
-    g.moveTo(x, y - r);
-    g.quadraticCurveTo(x + r * 0.62, y - r * 0.35, x, y - r * 0.05);
-    g.quadraticCurveTo(x - r * 0.62, y - r * 0.35, x, y - r);
-    g.closePath();
-  };
-  stick();
-  if (lit) {
-    g.fillStyle = UI.ring;
-    g.fill();
-  }
-  g.stroke();
-  flame();
-  if (lit) {
-    g.fillStyle = UI.hotLight;
-    g.fill();
-  }
-  g.stroke();
-  g.restore();
-}
 
 /**
  * What to take before node `node` can be captured, by name: a core is shielded until a node next
@@ -323,8 +284,6 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "fou
   battle?: Battle | null;
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
-  /** The raid's bins, for the flares still lying on the tall buildings' top floors; without them every flare bin is drawn as not yet searched. */
-  bins?: readonly { x: number; z: number; flare: boolean; open: boolean }[];
   /** Ways in learned by the raid just ended (the results), ringed as they turn solid. */
   learned?: readonly EntryId[];
   /** The nodes that changed hands overnight (the results): a ring in the colour they turned. */
@@ -1153,15 +1112,7 @@ export class IslandMap {
       g.fill();
       g.stroke();
       if (!this.mini) label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
-      // The plateau's pickup wants a flare: the flare's mark rides on its diamond's shoulder.
-      if (x.needsFlare) drawFlare(g, p.x + r * 1.6, p.y - r * 1.2, 7 * dpr, true);
     });
-    // Where the flares lie: the same mark on the tall buildings' top floors, grey once searched.
-    const flares = s.bins ? s.bins.filter((b) => b.flare) : EXTRA_BINS.filter((b) => b.flare).map((b) => ({ ...b, open: false }));
-    for (const b of plain ? [] : flares) {
-      const p = at(b.x, b.z);
-      drawFlare(g, p.x, p.y, 6.5 * dpr, !b.open);
-    }
     // Depots that are on: a teal square each, a place a later raid can start from.
     (plain ? [] : DEPOTS).forEach((d, i) => {
       if (!s.depots[i]) return;

@@ -203,7 +203,7 @@ export function playState(s: State, skillName: string, r: number): RaidResult {
       allyDowns: s.stats.allyDowns,
       rescues: s.stats.allyRescues,
       helped: s.stats.allyHelped,
-      exit: s.extractedAt ?? undefined,
+      exit: s.extractedAt ?? (s.home ? "home" : undefined),
       firstMeet: firstMeet < 0 ? s.time : firstMeet,
       met: met.size,
       metAway: [...met].filter((i) => s.squads[i]?.poi === -1).length,
@@ -235,7 +235,7 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
   let allyDowns = 0;
   let rescues = 0;
   let helped = 0;
-  const exits: Record<string, number> = Object.fromEntries(EXTRACTS.map((x) => [x.id, 0]));
+  const exits: Record<string, number> = { ...Object.fromEntries(EXTRACTS.map((x) => [x.id, 0])), home: 0 };
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
   const firstMeets: number[] = [];
@@ -298,7 +298,7 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
       `${Math.round(median(firstMeets))}s ${Math.round(median(quiets))}s ${(met / n).toFixed(1)}/${(metAway / n).toFixed(1)}`.padEnd(18),
       (met / Math.max(minutes, 1e-9)).toFixed(2).padEnd(5),
       `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
-      regionOf(region).exits.map((id) => `${id} ${exits[id]}`).join(" "),
+      [...regionOf(region).exits, ...(regionOf(region).home ? ["home"] : [])].map((id) => `${id} ${exits[id]}`).join(" "),
     ].join(" "),
   });
   return out;

@@ -1536,7 +1536,7 @@ function lean(t: THREE.Group, g: THREE.Object3D): void {
  * square pack with three lit windows; the syringe a long barrel with a plunger and needle; the
  * medkit a white case with a red cross and a handle; each valuable its own object (a cartridge
  * fuse with blades, a gear on its block, a spool of copper, a board leant over, an upright drive,
- * a gimbal round a lit core, a lit column between two plates, a lit drum in a cage); the mod part and the flares their own shapes. The
+ * a gimbal round a lit core, a lit column between two plates, a lit drum in a cage); the mod part its own shape. The
  * valuables, the armour and the mod part carry a part in their rarity's colour, so the
  * item itself says what the beam says. Parts of one material are merged.
  */
@@ -1698,14 +1698,6 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     t.position.y = 0.4;
     t.rotation.x = 1.1;
     lean(t, g);
-  } else if (kind === "flare") {
-    // Two road flares taped together: red tubes, dark striker caps, white end plugs, a band of tape.
-    for (const z of [-0.05, 0.05]) {
-      cyl(flat(PAL.healRed), 0.045, 0.4, 0, 0.3, z, 8, 0, 0, X);
-      cyl(dark, 0.05, 0.07, 0.235, 0.3, z, 8, 0, 0, X);
-      cyl(flat(PAL.paint), 0.047, 0.03, -0.215, 0.3, z, 8, 0, 0, X);
-    }
-    box(dark, 0.06, 0.105, 0.2, -0.05, 0.3, 0);
   } else {
     put(new THREE.OctahedronGeometry(0.16, 0), glow(RARITY_COLOR[1]), 0, 0, 0);
   }
@@ -1980,21 +1972,6 @@ export function buildBeacon(): THREE.Mesh {
   const m = new THREE.Mesh(
     new THREE.CylinderGeometry(0.9, 0.9, 260, 12, 1, true),
     new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.beacon, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
-  );
-  m.frustumCulled = false;
-  return m;
-}
-
-/**
- * The thread of flare smoke over a bin that holds a flare (the top floors of the tall buildings):
- * a thin column in the flare's red-orange (smoke, not light: it is not added to the sky), widening as
- * it rises, seen from across the region so a
- * roof with a flare on it can be picked out from the ground. The fog does not hide it.
- */
-export function buildFlareSmoke(): THREE.Mesh {
-  const m = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.8, 0.3, 70, 8, 1, true),
-    new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.ring, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide, fog: false }),
   );
   m.frustumCulled = false;
   return m;

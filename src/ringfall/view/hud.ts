@@ -16,7 +16,7 @@ import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, ZIPS, type EntryId } from "../sim/map";
 import { islandHolds } from "../meta/island";
 import { isAiOwner, rivalHold, rivalOf, type PoiHold } from "../sim/holds";
-import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
+import { bagLoad, depotBlocked, depotInReach, extractHere, homeReady, makeRoom, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
 import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
@@ -31,7 +31,7 @@ import type { World } from "./world";
 import { FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
-import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
+import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, hideoutIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
 import { capturable, momentum, siegeWaves } from "../sim/front";
 import { terrainHeight } from "../sim/terrain";
 
@@ -504,9 +504,6 @@ export class Hud {
       }
       case "shipLanded":
         this.banner(EXTRACTS.find((o) => o.id === e.id)!.short, checkIcon(), true);
-        break;
-      case "flareLit":
-        this.toast(`${flareIcon(true)}発煙筒`, 3);
         break;
       case "careDrop":
         this.banner("補給ポッド", "", true);
@@ -1074,27 +1071,16 @@ export class Hud {
     const exits = regionHere(p.pos).exits.map((id) => EXTRACTS.find((x) => x.id === id)!);
     // The phone layout keeps only a live exit's line (style.css), so the card stays above the vitals; `near` marks the nearest for the desktop.
     const nearest = exits.reduce((best, x, i) => (dist2d(p.pos, x) < dist2d(p.pos, exits[best]) ? i : best), 0);
-    // Each way off by how it works, in a mark and seconds: a craft to call (the seconds it takes,
-    // counting down once called, a tick once landed), a flare (lit when carried) and the seconds to
-    // wait, or only the wait.
+    // Each way off in a mark and seconds: a craft to call (the seconds it takes, counting down once
+    // called, a tick once landed).
     let anyLive = false;
     exits.forEach((x, i) => {
-      const ready = extractReady(s, x);
       const left = callLeft(s, x.id);
-      const state = x.call
-        ? left < 0
-          ? `${callIcon()}${x.call} 秒`
-          : left > 0
-            ? `${clockIcon()}<em>${Math.ceil(left)}</em>`
-            : checkIcon()
-        : x.needsFlare
-          ? `${flareIcon(p.flares > 0)}${x.hold} 秒`
-          : `${clockIcon()}${x.hold} 秒`;
-      const locked = x.needsFlare && !ready;
-      // A called ship or a flare in hand is news (ui.md): calm days hide the rest (Round 8 fold).
-      const live = (x.call && left >= 0) || (x.needsFlare && ready);
+      const state = left < 0 ? `${callIcon()}${x.call} 秒` : left > 0 ? `${clockIcon()}<em>${Math.ceil(left)}</em>` : checkIcon();
+      // A called craft is news (ui.md): calm days hide the rest (Round 8 fold).
+      const live = left >= 0;
       if (live) anyLive = true;
-      const cls = [locked && "locked", i === nearest && "near", live && "live"].filter(Boolean).join(" ");
+      const cls = [i === nearest && "near", live && "live"].filter(Boolean).join(" ");
       lines.push(`<div class="${cls}">${exitIcon()}<b>${x.short}</b><span>${state}</span></div>`);
     });
     // Fold: only live exits stay on the card; the map (M) holds the rest.
@@ -1267,8 +1253,7 @@ export class Hud {
     const tip = (html: string) => (many ? `${html}<i class="cycle">${isTouch() ? "切替" : "<kbd>T</kbd>"}</i>` : html);
     const x = t ? null : extractHere(s);
     if (x) {
-      if (x.call && callLeft(s, x.id) > 0) return `${exitIcon()}${x.short} ${clockIcon()}<b>${Math.ceil(callLeft(s, x.id))}</b>`;
-      if (x.needsFlare && p.flares <= 0) return `${exitIcon()}${x.short} ${flareIcon(false)}${crossIcon()}`;
+      if (callLeft(s, x.id) > 0) return `${exitIcon()}${x.short} ${clockIcon()}<b>${Math.ceil(callLeft(s, x.id))}</b>`;
       return `${exitIcon()}${x.short} <b>${Math.floor((s.extractTime / x.hold) * 100)}%</b>`;
     }
     const struck = (names: string[]) => names.map((n) => `<s>${esc(n)}</s>`).join("");
