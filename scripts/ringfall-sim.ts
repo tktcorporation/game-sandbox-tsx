@@ -4249,11 +4249,27 @@ function checkBattle(): string | null {
   return null;
 }
 
-for (const err of [checkFront(), checkPushPull(), checkBattle(), checkSupport(), checkSortie(), checkSortieSettle(), checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkUnlocks(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkStrength(), checkSaveCompat(), checkLoadout(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
-  if (err) {
-    console.error(err);
-    process.exit(1);
+// Every check runs, and every one that fails is printed: a gate left broken for a while shows all of what broke, not its first.
+// `RINGFALL_SIM_CHECK=checkFront,checkIsland` runs only the checks named and stops after them: for mending one.
+const onlyChecks = process.env.RINGFALL_SIM_CHECK?.split(",") ?? null;
+const broken: string[] = [];
+for (const check of [checkFront, checkPushPull, checkBattle, checkSupport, checkSortie, checkSortieSettle, checkFactions, checkIntercept, checkSplit, checkPatrols, checkMods, checkThreat, () => checkTerrainIndex(20_000), checkParties, checkPacks, checkRoutes, checkRouteObstacles, checkTools, checkTimeToKill, checkStagger, checkWindupMoves, checkDepots, checkDepotBudget, checkPlates, checkUnlocks, checkHideout, checkBoltNoTunnel, checkPickupWavesRouted, checkLaterWaveFights, checkSidestepHit, checkReturnFire, checkWallStops, checkPinch, checkPursuit, checkHealHeard, checkPositionMatters, checkPullWhenAiming, checkVault, checkIsland, checkStrength, checkSaveCompat, checkLoadout, checkSettle, checkWipeClearsAir, checkArcOnTitan, checkGoldReload, checkArcIgnoresFacing, checkDeathEndsRaid, checkBleedoutWipe, checkReinforce, checkReinforceHidden, checkSearchBreaks, checkBagSwap, checkBagSwapCheapest, checkRaiders, checkValuableBin, checkAllyRescue, checkAllyDownWipes, checkHelpAlly, checkAllyHoldsFire, checkFlareExtract, checkShipCall, checkBoatCall, checkSecondPickup, checkEntries, checkCamp, checkKnownEntries, checkConnections, checkAllySelfUp, checkStompHeight, checkFieldsReused, checkFieldsFollowRunner, checkCliffsStop, checkNoPits, checkWalkableIsland, checkReinforceEverywhere, checkRoamersHearOnlyGunfire, checkReinforceWaitsForTitan, checkWeakPointBehindBody, checkHelpBeforeLoot, checkAllyTitanKill, checkLeap, checkLeapLeavesAllyBelow, checkLeapDowned, checkLeapAllyCatchesUp, checkLeapAllyDowned, checkLeapWithItem, checkLeapClocks, checkLeapOffHighGround, checkLeapUnderRoof]) {
+  let err: string | null | undefined;
+  if (onlyChecks && !onlyChecks.includes(check.name)) continue;
+  try {
+    err = check();
+  } catch (e) {
+    err = `${check.name || "check"} threw: ${e instanceof Error ? e.stack ?? e.message : String(e)}`;
   }
+  if (err) broken.push(err);
+}
+if (broken.length) {
+  console.error(broken.join("\n"));
+  process.exit(1);
+}
+if (onlyChecks) {
+  console.log(`checks ok: ${onlyChecks.join(", ")}`);
+  process.exit(0);
 }
 
 // How the player moves: the quarry's ways up, the course times, the climbs and the ziplines.
