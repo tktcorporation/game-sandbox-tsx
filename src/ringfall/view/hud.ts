@@ -1359,6 +1359,7 @@ export class Hud {
       if (whoHub) return tip(`${key("E")}${coreIcon(c)}${esc(attackCapturePrompt(whoHub))} ${noiseIcon()}`);
       return tip(`${key("E")}${coreIcon(c)}${PHRASE.captureStart} ${esc(n.name)} ${noiseIcon()}`);
     }
+    if (t.kind === "jump") return tip(`${key("E")}${coreIcon(SIDE.rival)}${esc(PHRASE.jumpPrompt)}`);
     if (t.kind === "zip") {
       // The way the rider would go: the end the player faces, and how far along the cable it is.
       const l = ZIPS[t.line];

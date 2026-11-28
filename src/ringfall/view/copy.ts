@@ -198,6 +198,10 @@ export const PHRASE = {
   sortieDo: `${TERM.sortie}する`,
   /** The departure set to 攻める with no holding on its list. */
   noAttackTarget: "攻め先なし",
+  /** The core's sortie (view/jump.ts): its sheet's title, its way back, the prompt at the core and the banners on the way out and back. */
+  jumpBack: "戻る",
+  jumpPrompt: `別プレイヤーを${TERM.attack}`,
+
   /** A sortie's results: the core taken, or the holding held against it. */
   sortieTaken: TERM.captureCore,
   sortieHeld: "攻めきれず",
@@ -400,6 +404,16 @@ export function nextFrontCapture(name: string): string {
 /** Next-hand line for a rival hold on the front (E4: 攻める). */
 export function nextAttack(name: string): string {
   return `${TERM.nextHand}${TERM.gate}から${TERM.sortie} · ${name}を${TERM.attack}`;
+}
+
+/** The core's sortie sheet's title (view/jump.ts): 「浄水場の核から攻める」. */
+export function jumpTitle(hub: string): string {
+  return `${hub}の核から${TERM.attack}`;
+}
+
+/** Back from the core's sortie: 「浄水場の核に戻った」. */
+export function jumpHome(hub: string): string {
+  return `${hub}の核に戻った`;
 }
 
 /**

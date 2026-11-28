@@ -13,7 +13,7 @@ import { capturedIds, frontNodes, garrisonOf, takeNode, useCore } from "./sim/fr
 import { isAiOwner } from "./sim/holds";
 import { atRisk, battleMarks, departNow, landNow, lostToRaiders, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, settleSortie, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { leagueChanged, rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
@@ -41,7 +41,10 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
-import { aiLabel, attackGoal, awaySheetParts, goalIsAt, incomeLine, landedIn, newsIncursion, PHRASE, TERM } from "./view/copy";
+import { aiLabel, attackGoal, awaySheetParts, goalIsAt, incomeLine, jumpHome, landedIn, newsIncursion, PHRASE, raidStarsLine, TERM } from "./view/copy";
+import { JumpSheet } from "./view/jump";
+import { jumpBack, jumpOut } from "./sim/jump";
+import { sortieStart, type SortieTarget } from "./meta/sortie";
 import { Hud, setRevenge } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -194,6 +197,11 @@ addEventListener("keydown", (e) => {
     e.preventDefault();
     return;
   }
+  // The core's sortie sheet: 1 to 3 choose a player, Esc goes back to the raid.
+  if (jumpSheet.key(e.code)) {
+    e.preventDefault();
+    return;
+  }
   // Esc closes 倉庫の整理 mid-way (it reopens until 確定); pending stays saved.
   if (e.code === "Escape" && organize.open) {
     organize.hide();
@@ -280,6 +288,9 @@ function readInput(): Input {
 // --- sound and feel for each event
 const sound = new Soundscape();
 function onEvent(e: GameEvent, s: State) {
+  if (e.t === "sortieOut") return offerJump(e.node);
+  // A sortie from a core ends back at that core: the raid of the island is settled when it ends itself.
+  if (e.t === "done" && parked) return endJump(s);
   hud.event(e, s);
   sound.event(e, s);
   if (e.t === "coreTaken") music?.music.phrase("capture");
@@ -289,7 +300,7 @@ function onEvent(e: GameEvent, s: State) {
     analysed = null;
     const before = hub.profile;
     profileBefore = before;
-    const settled = settle(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before))));
+    const settled = withJumps(settle(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before)))));
     settlement = settled;
     hub.reload(settled.profile);
     saveProfile(hub.profile);
@@ -329,6 +340,100 @@ function onEvent(e: GameEvent, s: State) {
     islandNews = [...aiNews];
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
+}
+
+/** The raid of the island, waiting as it stands while a sortie from one of its cores is played (sim/jump.ts). */
+let parked: State | null = null;
+/** What the sorties from this raid's cores won (`settleSortie()`), for its results. */
+let jumpWon: Settlement[] = [];
+const jumpSheet = new JumpSheet((t) => {
+  paused = false;
+  if (t) goJump(t);
+  else if (!touchMode && !bot && !manual) lock();
+});
+
+/** The use key at a core other players hold too: the raid waits while the player chooses whom to attack. */
+function offerJump(node: number) {
+  if (parked || state.phase !== "play" || bot) return;
+  const targets = hub.jumpTargets(NODES[node].id);
+  if (!targets.length) return;
+  paused = true;
+  fire = ads = adsLatch = false;
+  jumpSheet.show(NODES[node].name, targets);
+  if (document.pointerLockElement === stage) document.exitPointerLock();
+}
+
+/** Shows the run now played from its start: the view's robots, loot and sounds are the other run's. */
+function showRun() {
+  world.reset();
+  sound.reset();
+  world.prebuild([state.player.pos]);
+  acc = hitstop = slowmo = 0;
+}
+
+/** Sets out from the core to `t`'s same holding: the raid of the island waits, its clock standing. */
+function goJump(t: SortieTarget) {
+  parked = state;
+  state = jumpOut(parked, sortieStart(t), hub.profile.routes);
+  hud.setRivalNames([]);
+  showRun();
+  hud.banner(attackGoal(t.title), `${TERM.relayBox}で帰る · 時間切れでも帰る`, false, 3.6);
+  if (!touchMode && !bot && !manual) lock();
+}
+
+/** The sortie from a core ended: what it won is settled at once, and the player is back at the core a moment later. */
+function endJump(s: State) {
+  const before = hub.profile;
+  const won = settleSortie(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before))));
+  jumpWon.push(won);
+  hub.update(won.profile);
+  saveProfile(hub.profile);
+  if (s.sortie && !isAiOwner(s.sortie.owner)) void reportRaid(s.sortie.owner, NODES[s.sortie.node].id, capturedIds(s).includes(NODES[s.sortie.node].id), won.trophies?.stars, won.trophies?.gained, s.replay);
+  setTimeout(() => backFromJump(s, won), s.outcome === "extracted" ? 1400 : 2400);
+}
+
+function backFromJump(s: State, won: Settlement) {
+  const island = parked;
+  if (!island || state !== s) return;
+  parked = null;
+  const on = jumpBack(island, s);
+  state = island;
+  // A holding taken is no target for a while: the cores a sortie may set out from are read again.
+  state.jumps = hub.jumpNodes().map((id) => nodeIndex(id));
+  hud.setRivalNames(raidersFor().map((r) => [r.code, r.name] as [string, string]));
+  hud.setTrophies(hub.profile.trophies ?? 0);
+  showRun();
+  if (!on) return onEvent({ t: "done" }, state);
+  const t = won.trophies;
+  hud.banner(jumpHome(NODES[s.sortie!.node].name), t?.stars !== undefined ? raidStarsLine(t.stars, t.gained - (t.failed ?? 0)) : "", false, 3.6);
+}
+
+/** `st`, the settlement of the island's raid, with what the sorties from its cores won beside it. */
+function withJumps(st: Settlement): Settlement {
+  const won = jumpWon;
+  jumpWon = [];
+  const trop = won.flatMap((w) => (w.trophies ? [w.trophies] : []));
+  if (!won.length) return st;
+  const sum = (f: (t: NonNullable<Settlement["trophies"]>) => number | undefined) => [...trop, ...(st.trophies ? [st.trophies] : [])].reduce((n, t) => n + (f(t) ?? 0), 0);
+  const takenRival = [...won.flatMap((w) => w.takenRival ?? []), ...(st.takenRival ?? [])];
+  const winBonus = won.reduce((n, w) => n + (w.winBonus ?? 0), 0) + (st.winBonus ?? 0);
+  return {
+    ...st,
+    ...(trop.length
+      ? {
+          trophies: {
+            before: trop[0].before,
+            after: st.trophies?.after ?? trop[trop.length - 1].after,
+            gained: sum((t) => t.gained),
+            lost: sum((t) => t.lost),
+            ...(sum((t) => t.failed) > 0 ? { failed: sum((t) => t.failed) } : {}),
+            stars: trop[trop.length - 1].stars,
+          },
+        }
+      : {}),
+    ...(takenRival.length ? { takenRival } : {}),
+    ...(winBonus > 0 ? { winBonus } : {}),
+  };
 }
 
 /** The island's news from the server that came in after the raid ended, for its results. */
@@ -894,6 +999,8 @@ function dropLookPing() {
 /** `from`: the camp the player walked out of, carried over into the raid where they stand. */
 function start(go: Launch, from?: State) {
   kit = go.kit;
+  parked = null;
+  jumpWon = [];
   region = go.region;
   settlement = null;
   profileBefore = null;
@@ -942,6 +1049,7 @@ function start(go: Launch, from?: State) {
           const prog = goalProgress(hub.profile, g);
           return { goal: g, goalHave: prog.have, goalNeed: prog.need };
         })(),
+        jumps: hub.jumpNodes(),
         battle: {
           factory: hub.profile.factory,
           raiders: raiders.map((r) => r.code),
@@ -1050,6 +1158,8 @@ document.addEventListener("pointerlockchange", () => {
   if ($("hud").classList.contains("map-open")) return;
   // 起動時の一枚: ポインタを外しても pause にしない（campFrozen にも awaySheetOpen を含めている）。
   if (awaySheetOpen) return;
+  // The core's sortie sheet frees the pointer itself; the raid already waits under it.
+  if (jumpSheet.open) return;
   if (document.pointerLockElement !== stage && ((running && state.phase !== "done") || camping)) setPaused(true);
 });
 // Closing the map takes the look lock again (hud.toggleMap releases it on open).
@@ -1238,6 +1348,7 @@ declare global {
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
+    ringfallJump: { nodes: () => string[]; stand: (id: string) => boolean; away: () => boolean; walkOff: () => void };
     ringfallMove: {
       quiet: () => void;
       look: (pitch: number) => void;
@@ -1563,6 +1674,29 @@ window.ringfallPlace = (x, z, yaw) => {
   p.zipFall = false;
   p.sliding = false;
   placeAlly(state);
+};
+
+/**
+ * Automation only, for the core's sortie (sim/jump.ts): `nodes` are the nodes a sortie may set out
+ * from, `stand` puts the player at the core of one, facing it, `away` tells whether a sortie is
+ * being played, and `walkOff` walks the player off its holding, which ends it alive.
+ */
+window.ringfallJump = {
+  nodes: () => state.jumps.map((i) => NODES[i].id),
+  stand: (id) => {
+    const i = nodeIndex(id as PoiId);
+    if (i < 0) return false;
+    const c = NODES[i].core;
+    window.ringfallPlace(c.x + 2.2, c.z, -Math.PI / 2);
+    return true;
+  },
+  away: () => !!parked,
+  walkOff: () => {
+    const q = state.sortie;
+    if (!q) return;
+    const c = NODES[q.node].core;
+    window.ringfallPlace(c.x + q.leave + 4, c.z, 0);
+  },
 };
 
 /**

@@ -940,6 +940,18 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
 }
 
 /**
+ * What a sortie set out from a core during a raid won (sim/jump.ts): the stars move the trophies,
+ * 核 · 制圧 pays the attack's reward into the stash and records the holding, and what the sortie's
+ * depot sent home arrives. The raid of the island goes on, so nothing the player carries comes home
+ * here and no raid is counted: that is `settle()`'s, when the island's raid ends.
+ */
+export function settleSortie(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
+  const bare: State = { ...s, player: { ...s.player, weapons: [], armor: 0, heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, 0])) as State["player"]["heals"], haul: [], haulAt: [], keys: [], tools: [], mods: [] } };
+  const r = settle(p, bare, rivalTrop);
+  return { ...r, profile: { ...r.profile, raids: p.raids, extracted: p.extracted, time: p.time, seed: p.seed, goal: p.goal ?? null, lastKit: p.lastKit } };
+}
+
+/**
  * Of the valuables seized this raid, those that actually entered the stash after `store()`
  * (stash after − before budget). Pending overflow is dropped so the results' 「倉庫へ届いた」 and
  * 「倉庫に入らなかった」 never claim the same item.

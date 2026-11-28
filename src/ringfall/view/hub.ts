@@ -2,7 +2,7 @@ import { PLAYER } from "../sim/config";
 import { attacksHtml, playAttack } from "./attacks";
 import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
-import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
+import { jumpNodes, jumpTargets, sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
 import type { Start } from "../sim/state";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
@@ -984,6 +984,16 @@ export class Hub {
   sortieTargets(): SortieTarget[] {
     const p = this.profile;
     return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings());
+  }
+
+  /** The nodes whose core, while the player's, a sortie may set out from: another player holds the same node (`Start.jumps`). */
+  jumpNodes(): NodeId[] {
+    return jumpNodes(this.sortieTargets());
+  }
+
+  /** The other players a sortie from the core of node `id` may go to, a few at most. */
+  jumpTargets(id: NodeId): SortieTarget[] {
+    return jumpTargets(this.sortieTargets(), id);
   }
 
   /** The holding chosen for a sortie, while it is still on the list. */

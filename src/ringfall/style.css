@@ -3668,6 +3668,51 @@ body.touch #camp-prompt {
   height: 18px;
   margin-right: 4px;
 }
+/* The core's sortie: the other players who hold the same node, a few to choose from, side by side. */
+#jump {
+  place-items: center;
+  padding: 12px;
+  background: rgb(var(--ink-rgb) / 0.78);
+}
+#jump .title-inner {
+  align-items: center;
+  width: min(860px, 100%);
+  max-width: none;
+  max-height: 100%;
+  padding: 0;
+  gap: 12px;
+}
+#jump h2 {
+  margin: 0;
+  font-size: 20px;
+}
+#jump-list {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.screen #jump-list .attack-row {
+  flex: 1 1 236px;
+  width: auto;
+  max-width: 280px;
+}
+.screen .attack-list .attack-row kbd {
+  margin-left: auto;
+  align-self: center;
+}
+body.touch #jump kbd {
+  display: none;
+}
+/* The raid waits under the sheet: its HUD and the phone's buttons are put away. */
+body.jumping #hud,
+body.jumping #banner,
+body.jumping #touch {
+  visibility: hidden;
+}
 #depart.attack #depart-points {
   display: none;
 }
@@ -3692,7 +3737,7 @@ body.touch #camp-prompt {
   min-height: 0;
   overflow-y: auto;
 }
-.screen #depart-attack-list .attack-row {
+.screen .attack-list .attack-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -3709,65 +3754,65 @@ body.touch #camp-prompt {
   box-shadow: none;
   transform: none;
 }
-.screen #depart-attack-list .attack-row:hover:not(:disabled):not(.shut) {
+.screen .attack-list .attack-row:hover:not(:disabled):not(.shut) {
   background: rgb(var(--ink-rgb) / 0.9);
   transform: none;
   box-shadow: none;
 }
-.screen #depart-attack-list .attack-row.on {
+.screen .attack-list .attack-row.on {
   background: rgb(var(--rival-rgb) / 0.35);
   box-shadow: inset 3px 0 0 var(--rival);
 }
-.screen #depart-attack-list .attack-row.shut {
+.screen .attack-list .attack-row.shut {
   opacity: 0.65;
   cursor: default;
 }
-#depart-attack-list .attack-row .ico {
+.attack-list .attack-row .ico {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
   margin-top: 2px;
 }
-#depart-attack-list .attack-row .pick-lock {
+.attack-list .attack-row .pick-lock {
   flex: 0 0 auto;
   margin-top: 1px;
 }
-#depart-attack-list .attack-row .pick-lock .ico {
+.attack-list .attack-row .pick-lock .ico {
   width: 14px;
   height: 14px;
 }
-#depart-attack-list .attack-body {
+.attack-list .attack-body {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
-#depart-attack-list .attack-title {
+.attack-list .attack-title {
   display: flex;
   flex-wrap: wrap;
   gap: 0;
   font-size: 14px;
   font-weight: 800;
 }
-#depart-attack-list .attack-title b {
+.attack-list .attack-title b {
   font-size: 14px;
   font-weight: 800;
 }
-#depart-attack-list .attack-body small {
+.attack-list .attack-body small {
   font-size: 12px;
   font-weight: 800;
   color: var(--muted);
 }
-#depart-attack-list .attack-body .scout-trop {
+.attack-list .attack-body .scout-trop {
   color: var(--hot);
 }
-#depart-attack-list .attack-body .scout-bonus {
+.attack-list .attack-body .scout-bonus {
   color: var(--amber);
 }
-#depart-attack-list .attack-body .scout-bounty {
+.attack-list .attack-body .scout-bounty {
   color: var(--amber);
 }
-#depart-attack-list .attack-body .scout-gate {
+.attack-list .attack-body .scout-gate {
   color: var(--peach);
 }
 #depart-list {

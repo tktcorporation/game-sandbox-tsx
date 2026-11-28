@@ -122,7 +122,7 @@
           <p id="depart-start"></p>
           <p id="depart-hint" hidden></p>
           <section id="depart-attack" hidden>
-            <div id="depart-attack-list"></div>
+            <div id="depart-attack-list" class="attack-list"></div>
           </section>
           <div id="depart-carry"></div>
           <dl id="depart-list"></dl>
@@ -167,6 +167,14 @@
         <button id="resume" type="button">クリックで再開</button>
         <ul class="keys" id="pause-keys"></ul>
         <div class="settings"><label class="sens">マウス感度 <input id="sens2" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label><label class="sens vol">音量 <input id="vol2" type="range" min="0" max="1" step="0.05" value="0.8" /></label><label class="sens vol">曲 <input id="music2" type="range" min="0" max="1" step="0.05" value="0.7" /></label><label class="sens adsmode">覗き方（F） <select id="adsmode2"><option value="hold">押している間</option><option value="toggle">押すたびに切り替え</option></select></label><label class="sens quality">画質 <select id="quality2"><option value="auto">自動</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div>
+      </div>
+    </section>
+
+    <section id="jump" class="screen" hidden>
+      <div class="title-inner">
+        <h2 id="jump-title"></h2>
+        <div id="jump-list" class="attack-list"></div>
+        <button id="jump-back" type="button"></button>
       </div>
     </section>
 

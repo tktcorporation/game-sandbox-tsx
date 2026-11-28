@@ -484,6 +484,7 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "swap") swapInto(s, t.loot);
   else if (t?.kind === "depot") useDepot(s, t.index);
   else if (t?.kind === "core") useCore(s, t.node);
+  else if (t?.kind === "jump") s.events.push({ t: "sortieOut", node: t.node });
   else if (t?.kind === "zip") grabZip(s, t.line, t.at);
   else if (t?.kind === "armor") {
     const shed: Loot[] = [];
@@ -644,6 +645,7 @@ export type UseTarget =
   | { kind: "tool"; loot: Loot }
   | { kind: "mod"; loot: Loot }
   | { kind: "core"; node: number }
+  | { kind: "jump"; node: number }
   | { kind: "zip"; line: number; at: number };
 
 /** One candidate for the use key: a stable id, a score (lower wins), the target, and where to draw its mark. */
@@ -699,10 +701,14 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
   // Every reachable core, nearest-facing first (not `NODES` order).
   const coreReach = PLAYER.interactRange + FRONT.half + 0.5;
   NODES.forEach((n, i) => {
-    if (s.nodes[i] === "own") return;
     const d = dist2d(n.core, p.pos);
     if (d >= coreReach) return;
     if (p.pos.y <= n.core.y - 1.5 || p.pos.y >= n.core.y + 2) return;
+    if (s.nodes[i] === "own") {
+      // A core of the player's that other players hold too: a sortie sets out from it, never under fire.
+      if (s.jumps?.includes(i) && !depotBlocked(s)) push(`jump:${i}`, d, USE.prefer.core, { kind: "jump", node: i }, n.core.x, n.core.y, n.core.z, coreReach);
+      return;
+    }
     push(`core:${i}`, d, USE.prefer.core, { kind: "core", node: i }, n.core.x, n.core.y, n.core.z, coreReach);
   });
   if (zips) {
