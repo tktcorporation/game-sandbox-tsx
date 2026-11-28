@@ -1,5 +1,5 @@
 import { CONTESTED_OUTER_IDS } from "../meta/contested-outer-table";
-import { ENEMIES, FACTORY, FACTORY_TOP, PLATE, STRENGTH, THREAT, type EnemyKind } from "./config";
+import { ENEMIES, FACTORY, FACTORY_TOP, PLATE, STRENGTH, type EnemyKind } from "./config";
 import { rivalOf, type PoiHold } from "./holds";
 import { NODES, PACKS, POIS, REGIONS, regionHere, TIER, nodeIndex, type Member, type NodeId, type Squad } from "./map";
 import { mix } from "./state";
@@ -106,12 +106,6 @@ export function activePacks(seed: number, level: number): Squad[] {
   }
   return PACKS.filter((sq) => keep.has(sq));
 }
-
-/** Whether a plain grunt or heavy numbered `id` in a raid from `seed` wears a tier-1 plate at threat `threat`. */
-export const netPlated = (seed: number, id: number, threat = 0) => {
-  const share = THREAT.levels[threat].plate;
-  return share > 0 && (seeded(seed, 0x9a, id) % 10_000) / 10_000 < share;
-};
 
 /** The tier of POI `poi`'s garrison plates: its node's tier (`TIER`), 0 for the titan's pad. */
 export const poiTier = (poi: number): number => TIER[POIS[poi]?.id as NodeId] ?? 0;

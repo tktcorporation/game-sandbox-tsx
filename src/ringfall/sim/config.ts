@@ -862,8 +862,7 @@ export const MOD_START = MOD_KINDS.filter((k) => MODS[k].start);
  * Where mod parts come from and how many a body holds. A body wears `slots` of them; they take no
  * bag slots. A bin other than a vault holds one with `bin`, of a kind the profile knows; a robot
  * drops one as it falls with `robot`, a raider with `elite` and the
- * titan always, of any kind, so new kinds are found on robots. Each chance is multiplied by the
- * raid's threat (`THREAT.levels[].mods`). Which bin or robot holds one, and of which kind, is
+ * titan always, of any kind, so new kinds are found on robots. Which bin or robot holds one, and of which kind, is
  * decided from the raid's seed and the bin or robot, never from the raid's random numbers, so a
  * raid in which nothing is picked up plays out as one without mods. A core the player takes lays
  * out `core` parts of any kind not worn, of which the use key takes one and the rest are gone:
@@ -879,34 +878,6 @@ export const MOD = {
   ring: 2.6,
   /** Seconds the slipstream part's speed lasts after a kill from behind or unseen. */
   haste: 4,
-};
-
-/**
- * The threat (脅威度) applied to a raid, 0 to `max`: on top of the
- * enemy's strength (`STRENGTH.levels`), the reinforcements come `reinforce` times as soon and as
- * often, the raiders `raiders` times as soon, `plate` of the plain grunts and heavies wear a
- * tier-1 plate, and robots answer shots from afar `range` times as far (`RETURN`). In return the
- * taken contract pays `reward` times its credits, and mod parts turn up `mods` times as often.
- * Threat 0 is the raid as the enemy's strength alone sets it.
- */
-export interface ThreatLevel {
-  reinforce: number;
-  raiders: number;
-  plate: number;
-  range: number;
-  reward: number;
-  mods: number;
-}
-export const THREAT = {
-  max: 5,
-  levels: [
-    { reinforce: 1, raiders: 1, plate: 0, range: 1, reward: 1, mods: 1 },
-    { reinforce: 0.9, raiders: 0.92, plate: 0.05, range: 1.1, reward: 1.15, mods: 1.25 },
-    { reinforce: 0.8, raiders: 0.84, plate: 0.1, range: 1.2, reward: 1.3, mods: 1.5 },
-    { reinforce: 0.72, raiders: 0.76, plate: 0.15, range: 1.3, reward: 1.5, mods: 1.75 },
-    { reinforce: 0.64, raiders: 0.68, plate: 0.22, range: 1.4, reward: 1.75, mods: 2 },
-    { reinforce: 0.56, raiders: 0.6, plate: 0.3, range: 1.5, reward: 2, mods: 2.5 },
-  ] satisfies ThreatLevel[],
 };
 
 export type ToolKind = "cutter" | "charge";

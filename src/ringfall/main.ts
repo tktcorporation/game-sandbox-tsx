@@ -13,7 +13,7 @@ import { capturedIds, frontNodes, garrisonOf, takeNode, useCore } from "./sim/fr
 import { isAiOwner } from "./sim/holds";
 import { atRisk, battleMarks, departNow, landNow, lostToRaiders, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, settleSortie, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
+import { analyse, goalKind, goalProgress, needsOrganize, settle, settleSortie, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { leagueChanged, rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
@@ -1042,7 +1042,6 @@ function start(go: Launch, from?: State) {
         entry: go.entry,
         routes: hub.profile.routes,
         island: holds(hub.profile),
-        threat: raidThreat(hub.profile),
         known: hub.profile.known,
         // Free stash slots after takeKit — 中継ボックス sends only what fits.
         stashRoom: stashRoom(hub.profile),
@@ -1401,13 +1400,12 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt({ ...p.pos, yaw: p.yaw })?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: islandDay(hub.profile), poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: islandDay(hub.profile), poiState: hub.profile.poiState, known: hub.profile.known, factory: hub.profile.factory },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     strength: s.strength,
-    threat: s.threat,
     mods: p.mods,
     modsAround: s.loot.filter((l) => l.kind === "mod").map((l) => ({ mod: l.mod, x: +l.pos.x.toFixed(1), y: +l.pos.y.toFixed(1), z: +l.pos.z.toFixed(1) })),
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, threat: settlement.threat, analysable: settlement.analysable, analysed },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,

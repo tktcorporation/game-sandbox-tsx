@@ -313,8 +313,6 @@ export const ROGUE_CSS = UI.rogue;
 export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "routes" | "found"> & {
   player?: Pick<Player, "pos" | "yaw">;
   ally?: Pick<Ally, "active" | "pos" | "down">;
-  /** The highest threat each POI was freed at (by POI index), shown by its mark when above 0. */
-  best?: readonly number[];
   /** The squads the player has seen or heard out between the POIs, and the raid's clock they are timed by. */
   contacts?: readonly Contact[];
   time?: number;
@@ -343,7 +341,7 @@ type Rect = { x0: number; y0: number; x1: number; y1: number };
 export const SIDE_CSS: Record<Side, string> = { 0: UI.ownBright, 1: UI.alert, 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; day?: number; seed?: number }): MapScene {
   return {
     seen: decodeSeen(p.seen),
     cleared: POIS.map(() => false),
@@ -351,7 +349,6 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     depots: DEPOTS.map((d) => p.depots.includes(d.poi)),
     routes: [...p.routes],
     found: [],
-    best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
   };
 }
@@ -1337,19 +1334,6 @@ export class IslandMap {
         g.beginPath();
         g.arc(p.x, p.y, r * 0.38, 0, Math.PI * 2);
         g.fill();
-      }
-      // The highest threat it was freed at, as a gold number on a dark tab at the mark's lower right.
-      const best = s.best?.[i] ?? 0;
-      if (best > 0 && !plain) {
-        g.font = `900 ${10 * dpr}px system-ui, sans-serif`;
-        g.textAlign = "center";
-        g.textBaseline = "middle";
-        const bx = p.x + r * 1.15;
-        const by = p.y + r * 0.9;
-        g.fillStyle = alpha(UI.night, 0.92);
-        g.fillRect(bx - 6 * dpr, by - 6 * dpr, 12 * dpr, 12 * dpr);
-        g.fillStyle = UI.r3;
-        g.fillText(String(best), bx, by + 0.5 * dpr);
       }
       g.restore();
     });

@@ -1,4 +1,4 @@
-import { ALLY, BOOST, DEPOT, SORTIE, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { ALLY, BOOST, DEPOT, SORTIE, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
 import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, nodeIndex, poiIndex, poiRegion, regionOf, UNLOCKS, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
@@ -686,8 +686,6 @@ export interface State {
   raiderT: number;
   /** The enemy's strength the raid is played at (`STRENGTH.levels`), from the nodes it holds: it sets the hunters' times and numbers. */
   strength: number;
-  /** The threat the player chose for the raid (`THREAT.levels`), on top of the enemy's strength. */
-  threat: number;
   /** The mod kinds the profile knows: the bins hold only these (`binMod()`). */
   known: ModKind[];
   /** A factor on every mod part's chance: 1, or 0 for a raid without parts (the sim gate's check of their independence). */
@@ -938,8 +936,6 @@ export interface Start {
   routes?: RouteId[];
   /** Who holds each POI (meta/island.ts); left out, every POI is held. The titan's pad is always held. */
   island?: Partial<Record<PoiId, PoiHold>>;
-  /** The threat for this raid, 0 to `THREAT.max`; left out, 0. */
-  threat?: number;
   /** The mod kinds the profile knows; left out, `MOD_START`. */
   known?: ModKind[];
   /** No mod part anywhere in the raid (for the sim gate's check that they draw on nothing). */
@@ -1013,13 +1009,11 @@ export const strengthFor = (held: number) => STRENGTH.byShare.find(([share]) => 
 
 /**
  * The reinforcements' first time and interval and the raiders' time of a raid at the enemy's
- * strength `strength` and threat `threat`: the strength's numbers, sooner by the threat's factors (to the second).
+ * strength `strength`.
  */
-export function raidClock(strength: number, threat: number) {
+export function raidClock(strength: number) {
   const l = STRENGTH.levels[strength];
-  const t = THREAT.levels[threat];
-  const at = (n: number, k: number) => (k === 1 ? n : Math.round(n * k));
-  return { first: at(l.reinforce.first, t.reinforce), every: at(l.reinforce.every, t.reinforce), raiders: at(l.raiders, t.raiders) };
+  return { first: l.reinforce.first, every: l.reinforce.every, raiders: l.raiders };
 }
 
 /**
@@ -1039,8 +1033,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   const nodes = nodeHolds((id) => hold[poiIndex(id)]);
   // A raid whose start names no island is the one the balance tables are played on.
   const strength = start.island ? strengthFor(ownNodes(nodes)) : STRENGTH.play;
-  const threat = Math.max(0, Math.min(THREAT.max, Math.round(start.threat ?? 0)));
-  const clock = raidClock(strength, threat);
+  const clock = raidClock(strength);
   const owned = (poi: PoiId) => hold[poiIndex(poi)] === "own";
   // An owned POI's depot is on, so a raid may start from it too.
   const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || owned(d.poi) || sortie?.id === d.poi);
@@ -1182,7 +1175,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     reinforceN: 0,
     raiderT: sortie ? Infinity : clock.raiders,
     strength,
-    threat,
     known: [...(start.known ?? MOD_START)],
     modOdds: start.noMods ? 0 : 1,
     boost: boostFor(seed, region),

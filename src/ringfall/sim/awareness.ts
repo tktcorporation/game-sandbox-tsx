@@ -3,12 +3,12 @@ import { EXTRACTS, POIS, regionHere } from "./map";
 import { dist2d, los, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
-import { modScale, threatOf } from "./mods";
+import { modScale } from "./mods";
 import { hypot2, hypot3 } from "./hypot";
 import { squadMembers } from "./members";
 
-/** How far a robot answers shots from afar (see RETURN): further at a higher threat. */
-const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range;
+/** How far a robot answers shots from afar (see RETURN). */
+const returnRange = (_s: State, e: Enemy) => RETURN.range[e.kind];
 
 /** Scratch ends for `sense()`'s line of sight: rewritten each call, never retained. */
 const senseFrom: Vec3 = { x: 0, y: 0, z: 0 };

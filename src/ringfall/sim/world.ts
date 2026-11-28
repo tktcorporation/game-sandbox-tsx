@@ -90,7 +90,7 @@ export function stepReinforce(s: State) {
     s.reinforceT = 5; // try again shortly
     return;
   }
-  s.reinforceT = raidClock(s.strength, s.threat ?? 0).every;
+  s.reinforceT = raidClock(s.strength).every;
   s.reinforceN++;
 }
 

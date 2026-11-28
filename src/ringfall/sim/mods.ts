@@ -1,4 +1,4 @@
-import { MOD, MOD_KINDS, MODS, THREAT, type ModKind } from "./config";
+import { MOD, MOD_KINDS, MODS, type ModKind } from "./config";
 import { magSize } from "./combat";
 import { terrainHeight } from "./terrain";
 import { mix, type Bin, type Enemy, type Loot, type Player, type State } from "./state";
@@ -16,8 +16,6 @@ export const hasMod = (p: Pick<Player, "mods">, k: ModKind) => !!p.mods?.include
 /** The factor mod `k` puts on its number while worn (`MODS[k].value`), else 1. */
 export const modScale = (p: Pick<Player, "mods">, k: ModKind) => (hasMod(p, k) ? MODS[k].value : 1);
 
-/** What the raid's threat sets (`THREAT.levels`). */
-export const threatOf = (s: Pick<State, "threat">) => THREAT.levels[s.threat ?? 0];
 
 /** A uniform number in [0, 1) from the raid's seed, a salt and an id, drawing nothing from `rand`. */
 const hashed = (seed: number, salt: number, id: number) => mix(Math.imul(seed ^ 0x6d2b79f5, 0x9e3779b1) + Math.imul(id, 7919) + Math.imul(salt + 1, 104729)) / 4294967296;
@@ -25,8 +23,8 @@ const hashed = (seed: number, salt: number, id: number) => mix(Math.imul(seed ^ 
 /** The kind picked from `pool` by a hash, or null for an empty pool. */
 const pickKind = (pool: readonly ModKind[], h: number): ModKind | null => (pool.length ? pool[Math.min(pool.length - 1, Math.floor(h * pool.length))] : null);
 
-/** The chance a source of base chance `base` holds a part this raid: more at a higher threat, none in a raid without parts. */
-const chance = (s: State, base: number) => (s.modOdds ?? 1) * threatOf(s).mods * base;
+/** The chance a source of base chance `base` holds a part this raid: none in a raid without parts. */
+const chance = (s: State, base: number) => (s.modOdds ?? 1) * base;
 
 /** The mod part bin `b` holds this raid, of a kind the profile knows (`State.known`), or null. Vaults hold none. */
 export function binMod(s: State, b: Bin): ModKind | null {

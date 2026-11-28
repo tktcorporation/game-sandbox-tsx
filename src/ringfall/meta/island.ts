@@ -48,8 +48,6 @@ export interface RaidDay {
   captured?: NodeId[];
   visited: PoiId[];
   titan: boolean;
-  /** The threat the raid was played at (`THREAT`); left out, 0. */
-  threat?: number;
   /** The day's battle (sim/battle.ts), reckoned to its end; left out, the raid had none. */
   battle?: BattleDay;
 }
@@ -75,14 +73,13 @@ export interface BattleDay {
  * has visited none. The titan fell when its pad was cleared: its fall takes the pad's other
  * robots with it. With a battle, the nodes are as the battle ended (`finishBattle()` first).
  */
-export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[]; threat?: number; battle?: Battle | null; nodes?: NodeHold[] }): RaidDay => ({
+export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[]; battle?: Battle | null; nodes?: NodeHold[] }): RaidDay => ({
   alive: s.outcome === "extracted",
   cleared: s.stats.cleared.map((i) => POIS[i].id),
   captured: capturedIds(s),
   battle: s.battle && s.nodes ? battleDay(s.battle, s.nodes) : undefined,
   visited: POIS.filter((_, i) => s.visited?.[i]).map((p) => p.id),
   titan: s.stats.cleared.some((i) => !!POIS[i].boss),
-  threat: s.threat ?? 0,
 });
 
 /** What a battle reckoned to its end leaves for the island (`BattleDay`). */
@@ -222,7 +219,7 @@ function reckonOvernight<P extends IslandDay>(p: P, r: RaidDay): { profile: P; c
 
 /**
  * The overnight change alone: which nodes the player gained or lost after raid `r`, without
- * writing the next day onto the profile. Used when settle needs the list (contracts, `freedAt`)
+ * writing the next day onto the profile. Used when settle needs the list
  * before the stash is packed onto today's island.
  */
 export const raidChange = (p: IslandDay, r: RaidDay): DayChange => reckonOvernight(p, r).change;

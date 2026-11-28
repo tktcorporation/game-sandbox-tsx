@@ -21,7 +21,7 @@ import { SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, strengthFor } from "../src/ringfall/sim/state";
 import { holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
 import { frontNodes, ownNodes } from "../src/ringfall/sim/front";
-import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, raidThreat, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { shopRarity } from "../src/ringfall/meta/island";
 import { FACTORY, FACTORY_TOP, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
@@ -156,7 +156,7 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
     p = { ...p, stores: made.stores, cash: p.cash + made.credits };
     const came = away.news.length > 0;
     const aiTook = away.news.filter((e) => e.t === "taken").length;
-    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory }, threat: raidThreat(p) });
+    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], battle: { factory: p.factory } });
     const res = playState(s, skill, 500 + d);
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
     const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
