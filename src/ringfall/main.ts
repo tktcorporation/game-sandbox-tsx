@@ -187,8 +187,9 @@ addEventListener("keydown", (e) => {
   if (departing) {
     if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "KeyE") answerDepart(true);
     else if (e.code === "Escape" || e.code === "Backspace") answerDepart(false);
-    // The arrows (and A / D) step the start chosen on the map.
-    else if (["ArrowRight", "ArrowDown", "KeyD", "Tab"].includes(e.code)) picker.cycle(e.shiftKey && e.code === "Tab" ? -1 : 1);
+    // Tab switches between the two ways out (漁る / 攻める); the arrows (and A / D) step the start or holding chosen.
+    else if (e.code === "Tab") picker.toggleMode();
+    else if (["ArrowRight", "ArrowDown", "KeyD"].includes(e.code)) picker.cycle(1);
     else if (["ArrowLeft", "ArrowUp", "KeyA"].includes(e.code)) picker.cycle(-1);
     e.preventDefault();
     return;

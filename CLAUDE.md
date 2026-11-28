@@ -116,7 +116,7 @@ known ways in as solid rings, ways in not known yet dashed and shut, depots swit
 squares with their allowance as small boxes, red past it, a padlock on a region no raid may start
 in yet), the last start chosen, and beside it the kit, the objective (`Hub.departure()`) and the
 confirm. A click or tap chooses a start (`Hub.choose()`); the confirm, Enter, the use key or a
-second click on the chosen start goes, the arrows step the choice, Esc turns back into the yard.
+second click on the chosen start goes, the arrows step the choice, Tab switches the tab, Esc turns back into the yard.
 A depot the loadout does not fit (`fitsStart()`) cannot be confirmed. From the gate, a start at
 `FIRST_ENTRY` walks out where the player stands (`walkOut()`); any other start comes after a fade.
 The chosen depot is kept by the hub between departures, not in the profile. The departure goes one of two ways, chosen by the tabs over its side (`Hub.attackMode`, `Hub.setAttackMode()`): 漁る, the island's raid as above, or 攻める, a sortie. Set to 攻める the side is the list of other players' holdings (`renderAttack()`, `Hub.sortieTargets()`, `meta/sortie.ts`), the first chosen, and the board shows the holding chosen (the ground round its core, its owner's name over it) in place of the island and its starts; choosing one (`Hub.selectSortie()`) makes the confirm a sortie there (`Launch.sortie`, after a fade; `main.ts` starts it with no battle of the island), the arrows step the holdings, and with none on the list the confirm is shut. The
