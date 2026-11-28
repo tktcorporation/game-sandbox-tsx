@@ -61,6 +61,10 @@ export function jumpOut(island: State, sortie: NonNullable<Start["sortie"]>, rou
   if (island.ally.active && out.ally.active) {
     out.ally.hp = island.ally.hp;
     out.ally.shield = island.ally.shield;
+    // A teammate down at the core goes along still down: the revive is owed there as here.
+    out.ally.down = island.ally.down;
+    out.ally.helped = 0;
+    out.ally.rescue = 0;
   }
   return out;
 }
