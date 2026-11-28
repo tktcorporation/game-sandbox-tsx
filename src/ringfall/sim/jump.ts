@@ -31,7 +31,6 @@ function carry(from: Player, to: Player) {
   to.weapons = from.weapons.map((w) => (w ? { ...w } : null));
   to.slot = from.slot;
   to.heals = { ...from.heals };
-  to.flares = from.flares;
   to.haul = [...from.haul];
   to.haulAt = from.haul.map(() => -1);
   to.mods = [...from.mods];

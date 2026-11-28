@@ -4,7 +4,7 @@ import { frontNodes } from "./front";
 import { currentStep, objectiveSteps } from "./objective";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
-import { EXTRACTS, NODES, POIS, poiIndex, regionHere, regionOf, TIER, type ExtractPoint, type NodeId, type PoiId } from "./map";
+import { CAMP, EXTRACTS, NODES, POIS, poiIndex, regionHere, regionOf, TIER, type ExtractPoint, type NodeId, type PoiId } from "./map";
 import { clearLine, findPath, type Avoid } from "./nav";
 import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
@@ -116,6 +116,11 @@ const CORE_GIVE_UP = 60;
 
 /** Where the bot stands to work core `i`: beside it, on the ground kept clear round it. */
 const standBy = (i: number, side = 1) => ({ x: NODES[i].core.x + 1.4 * side, z: NODES[i].core.z });
+
+/** The camp's yard as a way home: a few steps inside its gate. Nothing is called there; walking in ends the raid (`stepHome()`). */
+const HOME_WAY = { id: "home" as const, x: (CAMP.gate.x0 + CAMP.gate.x1) / 2, z: CAMP.gate.z + 5, radius: 3 };
+/** Where the bot leaves by: a region's craft, or the camp's yard. */
+type Way = ExtractPoint | typeof HOME_WAY;
 
 export class Bot {
   private nx = 0;
@@ -298,11 +303,11 @@ export class Bot {
     if (guard >= 0) this.guarded += TICK;
     if (guard >= 0 && (!tgt || dist2d(tgt.pos, p.pos) > 70)) {
       goal = standBy(guard);
-    } else if (aim < 0 && core < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live, inSight))) {
+    } else if (aim < 0 && core < 0 && (this.called(s) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live, inSight))) {
       // On its way out with nothing fighting it and no pickup called yet, it still searches the
       // bins in reach: the last POI it cleared is otherwise left unsearched, since leaving starts
       // as its last robot falls. In a region with one POI in its reach that is the whole haul.
-      const lg = !engaged.length && !s.calls[this.exit(s).id] ? this.lootGoal(s) : null;
+      const lg = !engaged.length && this.called(s) < 0 ? this.lootGoal(s) : null;
       goal = lg ?? this.waitSpot(s) ?? this.exit(s);
       if (lg?.weapon) inp.slot = this.spareSlot(s);
     } else if (tgt && (dist2d(tgt.pos, p.pos) < 70 || (aim >= 0 && tgt.poi === aim && (tgt.id === this.chasing || dist2d(p.pos, POIS[aim]) < 30)))) {
@@ -382,7 +387,7 @@ export class Bot {
       const broken = p.shield <= 0 && p.hp < PLAYER.hp * 0.8;
       const fighting = live.filter((e) => e.aware === "engaged" && e.kind !== "titan" && dist2d(e.pos, p.pos) < 60);
       // While its call is running the robots come to the pickup whatever it does: it holds and fights.
-      const calling = aim < 0 && !!this.exit(s).call && callLeft(s, this.exit(s).id) > 0;
+      const calling = aim < 0 && this.called(s) > 0;
       const pressed = !calling && (watching.length >= 2 || (broken && watching.length >= 1));
       if (!this.retreat && pressed && tgt.kind !== "titan" && onTerrain(p.pos) && this.retreatCool <= 0) {
         this.retreatCool = 1.5;
@@ -589,7 +594,7 @@ export class Bot {
       // Not into a pickup that has to be called while hurt with something to heal with: top up first.
       const x = this.exit(s);
       const hurt = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]) < 0.75;
-      if (aim < 0 && x.call && !s.calls[x.id] && dist2d(x, p.pos) < x.radius + 6 && (hurt || p.healing) && pickHeal(s)) inp.moveZ = 0;
+      if (aim < 0 && x.id !== "home" && !s.calls[x.id] && dist2d(x, p.pos) < x.radius + 6 && (hurt || p.healing) && pickHeal(s)) inp.moveZ = 0;
       if (Math.abs(wrapAngle(want.yaw - p.yaw)) > 0.5) inp.moveZ = 0.4;
       if (w && w.mag < magSize(w) * 0.6 && p.reload <= 0) inp.reload = true;
       const max = PLAYER.shieldByTier[p.armor];
@@ -815,7 +820,7 @@ export class Bot {
    */
   private waitSpot(s: State): { x: number; z: number } | null {
     const x = this.exit(s);
-    if (!x.call || !s.calls[x.id] || callLeft(s, x.id) <= 1.5) return null;
+    if (x.id === "home" || !s.calls[x.id] || callLeft(s, x.id) <= 1.5) return null;
     // A pickup with no hidden spot near it is remembered as NaN: wait in the open then.
     if (this.wait?.id === x.id) return Number.isFinite(this.wait.x) ? this.wait : null;
     const at = x.waves ?? x;
@@ -887,17 +892,23 @@ export class Bot {
   }
 
   /**
-   * The way off, in the region it dropped into. In the reservoir: a flare's quick pickup
-   * when it has one, else beginners take the long quiet walk and the others call the
-   * dropship and hold. In the harbor: the boat, called and held for.
+   * The way home, in the region it started in: the region's craft, called and held for. In the
+   * home region beginners, and anyone while the titan stands by the dropship's pad or the raiders
+   * are in, walk back to the camp's yard instead.
    */
-  private exit(s: State): ExtractPoint {
-    const exits = regionOf(s.region).exits;
-    const pick = (id: string) => (exits.includes(id as ExtractPoint["id"]) ? EXTRACTS.find((x) => x.id === id) : undefined);
+  private exit(s: State): Way {
+    const region = regionOf(s.region);
+    const craft = EXTRACTS.find((x) => x.id === region.exits[0])!;
+    if (!region.home) return craft;
     // The dropship lands by the titan: only a bot that has beaten it goes there.
     const titanUp = s.enemies.some((e) => e.kind === "titan");
-    const quiet = this.skill.name === "beginner" || titanUp || this.raidersIn;
-    return (s.player.flares > 0 ? pick("flare") : undefined) ?? (quiet ? pick("village") : pick("ship")) ?? pick("village") ?? EXTRACTS.find((x) => x.id === exits[0])!;
+    return this.skill.name === "beginner" || titanUp || this.raidersIn ? HOME_WAY : craft;
+  }
+
+  /** The seconds left on the call of the craft it leaves by: -1 not called (or it walks home), 0 landed. */
+  private called(s: State): number {
+    const x = this.exit(s);
+    return x.id === "home" ? -1 : callLeft(s, x.id);
   }
 
   /**

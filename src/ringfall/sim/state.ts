@@ -90,8 +90,6 @@ export interface Player {
   reveal: number; // seconds left of seeing robots through walls
   stepNoise: number; // seconds until the next sprint footstep sound
   heals: Record<HealKind, number>;
-  /** Flares carried (0 or 1): they call the plateau pickup. */
-  flares: number;
   /** Valuables carried; their worth is the raid's score if the player gets off the island. */
   haul: ValuableKind[];
   /**
@@ -368,7 +366,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "mod";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "valuable" | "mod";
 
 export interface Loot {
   id: number;
@@ -396,8 +394,8 @@ export interface Bin {
   z: number;
   poi: number;
   open: boolean;
-  /** One of the high-rises' top-floor bins, which also hold a flare. */
-  flare: boolean;
+  /** One of the tall buildings' top-floor bins, which hold the best (`TOP_BINS`) and take longer to search. */
+  top: boolean;
   /** Locked: opened only with the key of its POI. */
   vault: boolean;
   /** Out on the island between the POIs: `poi` only picks its loot table, and it never holds a key. */
@@ -489,7 +487,6 @@ export type GameEvent =
   /** A pickup that has to be called (the dropship, the boat) was called, came, or had robots beam in round it. */
   | { t: "shipCalled"; id: ExtractId }
   | { t: "shipLanded"; id: ExtractId }
-  | { t: "flareLit" }
   | { t: "shipWave"; id: ExtractId }
   /** A depot was switched on by walking up to it. */
   | { t: "depotOn"; poi: PoiId }
@@ -1020,8 +1017,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   const entry = entryOf(start.entry && ways.includes(start.entry) ? start.entry : ways[0]);
   const bins: Bin[] = [];
   let id = 1;
-  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false, vault: !!b.vault, outside: false })));
-  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: poiIndex(b.table), open: false, flare: !!b.flare, vault: false, outside: true });
+  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, top: false, vault: !!b.vault, outside: false })));
+  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: poiIndex(b.table), open: false, top: !!b.top, vault: false, outside: true });
   const loot: Loot[] = [];
   POIS.forEach((p) =>
     p.floor.forEach((f) => {
@@ -1091,7 +1088,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
       reveal: 0,
       stepNoise: 0,
       heals: { ...kit.heals },
-      flares: 0,
       haul: [],
       haulAt: [],
       mods: [],

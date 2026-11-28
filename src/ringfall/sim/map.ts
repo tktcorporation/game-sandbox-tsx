@@ -297,7 +297,7 @@ const anchorBin = (fx: number, fz: number, y: number) => {
 
 /**
  * Tall buildings: where they stand in their area's frame, their size, storeys and scale. Their
- * top-floor bins (in EXTRA_BINS) hold the flares that call the plateau pickup.
+ * top-floor bins (in EXTRA_BINS) hold a POI's best (`top`).
  */
 const HIGH_RISES = (
   [
@@ -2973,13 +2973,12 @@ export interface Depot {
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
 
-export type ExtractId = "ship" | "flare" | "village" | "boat" | "plaza" | "runway" | "canyon";
+export type ExtractId = "ship" | "boat" | "plaza" | "runway";
 
 /**
- * Ways off the island, open from the landing on; the player picks one by walking to it.
- * The dropship is right there but has to be called and held for while reinforcements
- * beam in; the plateau pickup is close and quick but needs a flare (top floors of the
- * high-rises); the village pickup needs nothing but a long walk and a wait.
+ * Ways off the island, open from the start: one craft a region, called by standing in its
+ * spot and held for while robots beam in round it. (The depots and the camp's yard are the
+ * other ways home, `stepDepots()` and `stepHome()`.)
  */
 export interface ExtractPoint {
   id: ExtractId;
@@ -2990,25 +2989,21 @@ export interface ExtractPoint {
   radius: number;
   /** Seconds standing inside to leave once it is ready. */
   hold: number;
-  /** Seconds from calling until it can be used (the dropship, the boat). */
-  call?: number;
+  /** Seconds from calling until it can be used. */
+  call: number;
   /** Where the robots that beam in while it comes appear round (SHIP_WAVES.radius), for one that is called. */
   waves?: { x: number; z: number };
-  needsFlare?: true;
   note: string;
 }
 
 export const EXTRACTS: ExtractPoint[] = [
   { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: POI_AT.pad[0], z: 46 + POI_AT.pad[1], radius: 5, hold: 1.5, call: 20, waves: { x: POIS[poiIndex("pad")].x, z: POIS[poiIndex("pad")].z }, note: "呼んで 20 秒守る。増援が降りてくる" },
-  { id: "flare", name: "台地の回収地点", short: "台地", ...at("heart", { x: -92, z: -8 }), radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
-  { id: "village", name: "廃村の回収地点", short: "廃村", ...at("village", { x: -45, z: 62 }), radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
   // The harbor's way off: a boat comes up the channel to the quay.
   { id: "boat", name: "埠頭のボート", short: "ボート", ...at("bay", { x: 105, z: -580 }), radius: 5, hold: 1.5, call: 25, waves: at("bay", { x: 100, z: -563 }), note: "呼んで 25 秒守る。増援が降りてくる" },
   // The city's way off: a pickup at its north end, the far side of the station from both bridges.
-  { id: "plaza", name: "北端の回収地点", short: "北端", ...at("city", { x: 80, z: -380 }), radius: 5, hold: 12, note: "街の北の外れ。12 秒待つ" },
-  // The launch site's ways off: a craft called down onto the landing runway, and a wait on the canyon's floor.
+  { id: "plaza", name: "北端の回収機", short: "北端", ...at("city", { x: 80, z: -380 }), radius: 5, hold: 1.5, call: 25, waves: at("city", { x: 80, z: -350 }), note: "呼んで 25 秒守る。増援が降りてくる" },
+  // The launch site's way off: a craft called down onto the landing runway.
   { id: "runway", name: "滑走路の回収機", short: "滑走路", ...at("launch", { x: -75, z: 0 }), radius: 5, hold: 1.5, call: 25, waves: at("launch", { x: -75, z: 30 }), note: "呼んで 25 秒守る。増援が降りてくる" },
-  { id: "canyon", name: "渓谷の底の回収地点", short: "渓谷", x: -606, z: -185, radius: 5, hold: 15, note: "切り通しから谷底を北へ。15 秒待つ" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
@@ -3927,10 +3922,10 @@ export interface OutpostSite {
  * (`POI_DEFS`).
  */
 const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
-  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: -600, z0: -340, x1: 600, z1: WORLD.z1 } },
+  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship"], label: { x: -330, z: 300 }, bounds: { x0: -600, z0: -340, x1: 600, z1: WORLD.z1 } },
   harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], reach: [{ from: "reservoir", by: "峠道", to: "outskirts" }, { from: "reservoir", by: "鉄橋", to: "outskirts" }], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: -600, z0: WORLD.z0, x1: 600, z1: -380 } },
   city: { name: "機械都市", note: "海峡の向こうの機械仕掛けの街。拠点 {pois} つ", entries: ["bridgehead", "railyard"], reach: [{ from: "reservoir", by: "海峡の道路橋", to: "bridgehead" }, { from: "harbor", by: "海峡の鉄道橋", to: "railyard" }], exits: ["plaza"], label: { x: 870, z: -330 }, bounds: { x0: 620, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 }, ground: true },
-  launch: { name: "発射場", note: "渓谷の向こうの台地にある発射場。拠点 {pois} つ", entries: ["railhead", "cutting"], reach: [{ from: "reservoir", by: "渓谷の鉄道橋", to: "railhead" }, { from: "reservoir", by: "渓谷の切り通し", to: "cutting" }], exits: ["runway", "canyon"], label: { x: -930, z: 20 }, bounds: { x0: WORLD.x0, z0: -600, x1: -575, z1: 620 }, ground: true },
+  launch: { name: "発射場", note: "渓谷の向こうの台地にある発射場。拠点 {pois} つ", entries: ["railhead", "cutting"], reach: [{ from: "reservoir", by: "渓谷の鉄道橋", to: "railhead" }, { from: "reservoir", by: "渓谷の切り通し", to: "cutting" }], exits: ["runway"], label: { x: -930, z: 20 }, bounds: { x0: WORLD.x0, z0: -600, x1: -575, z1: 620 }, ground: true },
 };
 
 /**
@@ -4446,7 +4441,7 @@ export const GLOWS: { kind: "column" | "lamp"; x: number; z: number; y0: number;
   { kind: "lamp", x: TOWN_AT.x - 62, z: TOWN_AT.z - 50, y0: floorLevel(TOWN_AT.x, TOWN_AT.z) + 12 * STOREY + 0.6, y1: floorLevel(TOWN_AT.x, TOWN_AT.z) + 12 * STOREY + 3.05, half: 2.05 },
 ];
 
-type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true };
+type ExtraBin = { x: number; z: number; y?: number; table: PoiId; top?: true };
 
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
 export const EXTRA_BINS: ExtraBin[] = (
@@ -4469,11 +4464,11 @@ export const EXTRA_BINS: ExtraBin[] = (
     at("village", { x: -21, z: 50, y: HOME.storey, table: "quarry" }),
     at("village", { x: -37, z: -70, y: HOME.storey * 2, table: "quarry" }),
     // Top floor of each tall building, on the side away from its stairs. These hold the
-    // flares that call the plateau pickup (EXTRACTS).
-    ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * h.sc.storey, table: "relay" as const, flare: true as const })),
-    // The anchor: by its scaffold's foot inside the shaft, and on the gallery at its top (a flare).
+    // best (`top`, TOP_BINS).
+    ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * h.sc.storey, table: "relay" as const, top: true as const })),
+    // The anchor: by its scaffold's foot inside the shaft, and on the gallery at its top (a top bin).
     { ...anchorBin(7.5, 7.5, ANCHOR.ringTop), table: "relay" },
-    { ...anchorBin(-7.5, 0, ANCHOR_GALLERY), table: "relay", flare: true },
+    { ...anchorBin(-7.5, 0, ANCHOR_GALLERY), table: "relay", top: true },
     // The harbor: the town's hut and warehouse, the viaduct and the road under it, a lone bin
     // out on the salt flats, the saddle of the pass.
     at("town", { x: 14, z: -288, table: "yard" }),
@@ -4482,8 +4477,8 @@ export const EXTRA_BINS: ExtraBin[] = (
     { x: 55, z: -620, table: "smelter" },
     at("bay", { x: -20, z: -505, table: "wreck" }),
     at("pass", { x: -62, z: -220, table: "yard" }),
-    // The lighthouse's top floor, like the high-rises', holds a flare.
-    at("bay", { x: LIGHTHOUSE.x - 2.5, z: LIGHTHOUSE.z + 0.5, y: (LIGHTHOUSE.floors - 1) * STOREY, table: "wreck", flare: true }),
+    // The lighthouse's top floor, like the high-rises', is a top bin.
+    at("bay", { x: LIGHTHOUSE.x - 2.5, z: LIGHTHOUSE.z + 0.5, y: (LIGHTHOUSE.floors - 1) * STOREY, table: "wreck", top: true }),
   ] satisfies ExtraBin[]
 )
   .map((b): ExtraBin => onFloor(b))

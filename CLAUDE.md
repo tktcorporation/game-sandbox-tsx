@@ -16,9 +16,9 @@ procedure and `npm run variety:ringfall` measures it. A new page needs an entry 
 ## RINGFALL
 
 An extraction raid against robots only: walk in from the edge of one of four regions of one world,
-explore it for valuables, and get off alive by one of its extraction points, all open from the start. No ring
+explore it for valuables, and get off alive: by the region's craft, by a depot, or by walking back into the camp. No ring
 and no set order: the player chooses which POIs to take and when to leave. First person on three.js.
-The reservoir (south, +z) has six POIs and three ways off; the harbor (north, beyond a mountain
+The reservoir (south, +z) has six POIs and a dropship; the harbor (north, beyond a mountain
 belt) has six POIs and a boat. A pass road from the landing pad and a railway (an embankment from
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
 one to the other. The machine city (east, beyond a dried strait) has five POIs, the car park on its west street
@@ -27,8 +27,8 @@ the high-rise district south-east of the station (`highrise`: three glass towers
 joined by sky bridges, one unfinished under a tower crane, over a plaza with a ramp down to an
 underground car park) and the power plant on the open ground between its paved basin and the east
 coast (`powerplant`: two hollow cooling towers entered through a torn gap, the chimney, the boiler
-house, the turbine hall and the switchyard, whose line runs on pylons into the city), and a waited
-pickup beside the works; a road bridge from the relay's side and a rail
+house, the turbine hall and the switchyard, whose line runs on pylons into the city), and a craft called down
+at its north end; a road bridge from the relay's side and a rail
 bridge from the harbor's cross the strait (`STRAIT_SPANS`). The launch site (`launch`, 発射場; west,
 beyond a dry canyon 25 m deep, `docs/ringfall/brief.md`) stands on a pale caliche plateau at +8
 (`西の台地` in `LANDS`, about 800 by 1120 m round x -930, z 20) with five POIs: the control
@@ -58,8 +58,7 @@ climbed by one road, `レーダーの坂`, and by rock steps up its west end). C
 are linked in that order, and the assembly building to the fuel depot and the radar; the fuel
 depot links to the weather station across the canyon. A rail bridge from the quarry's side (`CANYON_SPANS`, on the rail
 spur's embankment) and a road cut from the terraced fields' side that climbs down into the canyon
-and out (`切り通し` in `ROADS`) cross it, a craft called down onto the plateau's runway and a wait
-on the canyon's floor are its ways off. The world is about 2460 by 1880 m
+and out (`切り通し` in `ROADS`) cross it, a craft called down onto the plateau's runway is its way off. The world is about 2460 by 1880 m
 (`WORLD` in `config.ts`): the reservoir's island (about 1120 by 820 m) with the dune coast bulging
 south of it, a mountain belt at z about -350, the harbor's land (radius about 425 m), the city's
 paved ground east of the strait and the launch site's plateau west of the canyon. A point's region
@@ -637,11 +636,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   the sim gate's `ally` column is its damage share, downs and revives, and `checkSupport()`
   (`scripts/ringfall-support.ts`) checks that the player's robots help and that a squad fighting
   them stays engaged after losing the player.
-- `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
-  `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
-  beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
-  The sim gate's `exit` column counts which one each run used; the bot leaves by a way off of the
-  region it started in, chosen by its skill, and takes only that region's POIs. The gate's raids
+- `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a craft (the dropship,
+  the boat, the city's and the runway's pickups) is called by standing in its spot and comes after its time, while robots
+  beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call). Each region has one, a craft, and no other extraction point (`checkCrafts()`): the plateau's pickup called by a flare (the flares in the tall buildings' top bins, `needsFlare`, `Player.flares`) and the pickups only waited at (the village's, the city's north end's, the canyon floor's) were **removed** (code deleted 2026-11-29; revive from Git history, not a feature flag); the tall buildings' top bins stay as `Bin.top`, slower to search and holding `TOP_BINS`.
+  The sim gate's `exit` column counts which one each run used; the bot leaves by the craft of the
+  region it started in (in the home region, beginners and anyone while the titan stands or the raiders are in walk back into the camp's yard, the column's `home`), and takes only that region's POIs. The gate's raids
   start at the region's ways in in turn (raid `r` at way `r` mod their count).
 - `nav.ts` is ground path finding for the bot only (built on first use); the game never reads it.
   Its A* estimates with landmarks (`LANDMARKS`: each POI's middle and the ways off, each with the

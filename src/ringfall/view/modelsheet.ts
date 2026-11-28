@@ -277,11 +277,11 @@ const SHEETS: Sheet[] = [
       const keys = <T extends object>(o: T) => Object.keys(o) as (keyof T & string)[];
       return [
         GUNS.map((w, i) => worldCell(`weapon ${w}`, () => buildLootItem("weapon", (i % 4) as Rarity, w), { dist: 3, yaw: 0.5, w: 420, h: 200 })),
-        [...(["armor", "mod", "flare", "shard"] as const).map((k) => near(k, () => buildLootItem(k, 1))), ...keys(HEALS).map((h) => near(h, () => buildLootItem("heal", 0, undefined, h)))],
+        [...(["armor", "mod", "shard"] as const).map((k) => near(k, () => buildLootItem(k, 1))), ...keys(HEALS).map((h) => near(h, () => buildLootItem("heal", 0, undefined, h)))],
         [...keys(VALUABLES).map((v) => near(v, () => buildLootItem("valuable", 3, undefined, undefined, v)))],
         // The same at 12 m, drawn at the game's pixels and enlarged 4 times: what is told apart from across a room.
         [
-          ...(["armor", "mod", "flare"] as const).map((k) => far(k, () => buildLootItem(k, 1))),
+          ...(["armor", "mod"] as const).map((k) => far(k, () => buildLootItem(k, 1))),
           ...keys(HEALS).map((h) => far(h, () => buildLootItem("heal", 1, undefined, h))),
           ...keys(VALUABLES).map((v) => far(v, () => buildLootItem("valuable", VALUABLES[v].rarity, undefined, undefined, v))),
         ],
