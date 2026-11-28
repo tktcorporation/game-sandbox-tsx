@@ -7,22 +7,22 @@ import type { Start } from "../sim/state";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { armed, build, keepParcels, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 // buyPrice / canStartIn / onSale used by sourceGuide
 import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
 import { departDepots, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
-import { ExpeditionPanel } from "./expeditions";
-import { logLine, newsVisible, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
+import { SignalPanel } from "./signal";
+import { logLine, type IslandLogEntry } from "../meta/island-sync";
 import { frontNodes, NEIGHBOURS, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { rarityText } from "./palette";
 import { islandDay } from "../meta/days";
 import { collect } from "../meta/income";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, expOutLine, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
@@ -80,8 +80,8 @@ export function nextHandFor(p: Profile): string {
   return pick ? nextFront(pick.name) : PHRASE.nextGate;
 }
 
-/** Whether the camp tip is a defend / attack hand (one beat of juice, no new key). */
-export const tipIsDefence = (tip: string) => tip.includes(TERM.incomingExpedition) || tip.includes(TERM.attack);
+/** Whether the camp tip is an attack hand (one beat of juice, no new key). */
+export const tipIsDefence = (tip: string) => tip.includes(TERM.attack);
 
 export function itemName(i: Item): string {
   switch (i.t) {
@@ -294,20 +294,6 @@ const $ = (id: string) => document.getElementById(id)!;
 /** A starter weapon's mark before its name: a pin, since it stays in the stash. "" for anything else. */
 const starterMark = (i: Item | undefined) => (isStarter(i) ? `<i class="starter">${pinIcon()}</i>` : "");
 
-/** What became of one of this island's expeditions out: it holds its node (held), was wiped out attacking it (wiped), or lost the node it held (lost). */
-interface ExpNews {
-  t: "held" | "wiped" | "lost";
-  code: string;
-  name: string;
-  node: NodeId;
-}
-
-/** That as a sentence, for its title. */
-export function expLine(n: ExpNews): string {
-  const at = NODES[nodeIndex(n.node)]?.name ?? n.node;
-  return expOutLine({ t: n.t, name: n.name, node: at });
-}
-
 const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
@@ -476,8 +462,6 @@ export class Hub {
   private module: ModuleId | null = null;
   /** A stash row a module still needs, pressed once to sell: the next press sells it. Not `armed()` (loadout weapons). */
   private sellConfirm = "";
-  /** What became of this island's expeditions out (each that took its node, or was wiped out or lost it), newest first, for the signal station. */
-  private expNews: ExpNews[] = [];
   /** Whether the factory's ladder of every level is unfolded. */
   private factoryLadder = false;
   /** Valuable whose どこで取れる guide is open in a cost row (null = none). */
@@ -489,8 +473,8 @@ export class Hub {
   focusPoi: PoiId | null = null;
   /** The neighbour's holding the departure's 攻める list has chosen (a sortie), or null for a raid of the island. */
   sortieFocus: { owner: string; id: NodeId } | null = null;
-  /** The factory's expeditions section, which draws itself (`#hub-exped`). */
-  private exped: ExpeditionPanel;
+  /** The signal station's top section, which draws itself (`#hub-exped`). */
+  private exped: SignalPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
   private news: IslandLogEntry[] = [];
   private newsSeen = true;
@@ -503,7 +487,7 @@ export class Hub {
     this.entry = this.entryIn(profile.region);
     this.load = recallLoadout(profile);
     this.fixStart();
-    this.exped = new ExpeditionPanel(
+    this.exped = new SignalPanel(
       () => this.profile,
       (p) => this.set(p),
       (n) => this.takeNews(n),
@@ -566,12 +550,11 @@ export class Hub {
 
   /** Takes the island's news from the server (its log's new entries): the signal station lists them and its mark tells of them until it is opened. */
   takeNews(entries: readonly IslandLogEntry[]) {
-    const visible = entries.filter(newsVisible);
-    if (!visible.length) return;
-    this.news = [...visible, ...this.news].slice(0, NEWS_KEEP);
-    this.recordNews(visible.map(logLine));
+    if (!entries.length) return;
+    this.news = [...entries, ...this.news].slice(0, NEWS_KEEP);
+    this.recordNews(entries.map(logLine));
     this.newsSeen = this.station === "signal";
-    // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
+    // News that comes while the signal station is open is drawn at once, apart from its top section (and the code being typed there).
     const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
     if (el) el.innerHTML = this.signalNews();
     const rec = this.station === "signal" ? document.getElementById("hub-attacks") : null;
@@ -603,31 +586,6 @@ export class Hub {
   }
 
   /**
-   * Notes what became of the expeditions out between profile `prev` and `next`: one that came to
-   * hold its node, and one that was gone after attacking (wiped out) or after holding (its node
-   * taken back). One called home, or one never sent, says nothing. The signal station's mark tells
-   * of them until it is opened.
-   */
-  /** 遠征の結果行。呼び出し側が `p.news` にマージする（代入前に record すると上書きで消える）。 */
-  private noteOutgoing(prev: readonly Outgoing[], next: readonly Outgoing[]): string[] {
-    const names = new Map(neighboursFor(this.profile).map((n) => [n.code, n.name]));
-    const fresh: ExpNews[] = [];
-    for (const o of next) {
-      const was = o.id > 0 ? prev.find((x) => x.code === o.code && x.id === o.id) : undefined;
-      if (!was || was.state === o.state) continue;
-      const t = o.state === "holding" ? "held" : o.state === "gone" && was.state === "holding" ? "lost" : o.state === "gone" && (was.state === "attacking" || was.state === "coming" || was.state === "waiting") ? "wiped" : null;
-      if (t) fresh.push({ t, code: o.code, name: names.get(o.code) ?? o.code, node: o.node });
-    }
-    if (!fresh.length) return [];
-    this.expNews = [...fresh, ...this.expNews].slice(0, NEWS_KEEP);
-    this.newsSeen = this.station === "signal";
-    const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
-    if (el) el.innerHTML = this.signalNews();
-    return fresh.map((n) => expLine(n));
-  }
-
-  /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
-  /**
    * The AI players' attacks on the holdings while the player was away (`awayFor()`): the profile as
    * they left it, their lines in 島の知らせ, a trophy line for what was lost and the defences paid.
    * Null when nothing came.
@@ -638,7 +596,7 @@ export class Hub {
     saveProfile(this.profile);
     if (!r.news.length) return null;
     this.takeNews(r.news);
-    const lines = r.news.filter(newsVisible).map(logLine);
+    const lines = r.news.map(logLine);
     if (r.lost) this.recordNews([trophyLine(before, this.profile.trophies ?? TROPHY.start, 0, r.lost, 0)]);
     const def = this.awardDefence(r.news.filter((e) => e.t === "wiped"));
     return { lines, before, after: this.profile.trophies ?? TROPHY.start, lost: r.lost, defended: def?.defended ?? 0 };
@@ -652,9 +610,10 @@ export class Hub {
     return credits;
   }
 
+  /** Takes a profile the server's answer changed (the holds, the log read), keeping the loadout. */
   update(p: Profile) {
     this.set(p);
-    // The signal station open shows the expeditions out as they now stand.
+    // The signal station open shows the profile as it now stands.
     if (this.station === "signal") this.exped.redraw();
   }
 
@@ -667,16 +626,14 @@ export class Hub {
     this.sourceKind = null;
     this.sellConfirm = "";
     this.exped.cancel();
-    // A field typed in (the factory's island code) gives up the keys with the panel.
+    // A field typed in (the signal station's island code) gives up the keys with the panel.
     if (document.activeElement instanceof HTMLElement && $("hub").contains(document.activeElement)) document.activeElement.blur();
     $("hub").hidden = true;
     if (tell) this.closed();
   }
 
   private set(given: Profile) {
-    const p = this.parcelsBack(given);
-    const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
-    this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
+    this.profile = this.parcelsBack(given);
     saveProfile(this.profile);
     this.load = this.fit(this.load);
   }
@@ -689,10 +646,7 @@ export class Hub {
 
   /** Takes a profile settled after a raid: the last loadout picked again from the stash, the start kept where the profile allows it. */
   reload(given: Profile) {
-    const p = this.parcelsBack(given);
-    const extra = this.noteOutgoing(this.profile.expeditions, p.expeditions);
-    this.profile = extra.length ? { ...p, news: pushNews(p.news ?? [], extra) } : p;
-    if (extra.length) saveProfile(this.profile);
+    this.profile = this.parcelsBack(given);
     this.load = recallLoadout(this.profile);
     this.fixStart();
   }
@@ -1084,7 +1038,7 @@ export class Hub {
     // The signal station wants looking at while news of the other islands is unread.
     // 島の守り (parcels) is not counted on the signal mark — toast and リザルト「〜に回った」cover it.
     // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
-    const unread = this.news.length + this.expNews.length;
+    const unread = this.news.length;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : "";
     // Shelves: the radio's report (warehouse growth is at the workshop).
     const stash = p.hideout.radio ? "無線" : "";
@@ -1186,8 +1140,8 @@ export class Hub {
   }
 
   /**
-   * The signal station's panel (信号所): チーム・お隣・島の知らせの控え（遠征ボタンなし・E4）.
-   * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
+   * The signal station's panel (信号所): トロフィーと別プレイヤーの島、攻められた記録、島の知らせの控え.
+   * The top section draws itself (`#hub-exped`); under it the records and one 島の知らせ list.
    */
   private signalPanel(): string {
     return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-attacks">${this.attacksList()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
@@ -1212,11 +1166,6 @@ export class Hub {
       return `<li>${esc(line)}${btn}</li>`;
     });
     return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
-  }
-
-  /** Lines of 島の知らせ for the results screen (outgoing expeditions, same sentences as the signal station). */
-  expeditionNews(): string[] {
-    return this.expNews.map((n) => expLine(n));
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */

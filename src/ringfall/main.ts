@@ -1,17 +1,17 @@
 import { spawnEnemy } from "./sim/enemies";
 import { islandDay } from "./meta/days";
-import { AWARE, CONQUEST, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
+import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { collide, dist2d, groundAt } from "./sim/geom";
 import { huntSpot } from "./sim/objective";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type NodeId, type PoiId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { capturedIds, contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { isAiOwner } from "./sim/holds";
-import { atRisk, battleMarks, departNow, landNow, lostToRaiders, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
+import { atRisk, battleMarks, departNow, landNow, lostToRaiders, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, goalKind, goalProgress, needsOrganize, raidThreat, settle, stashRoom, wanted, type Profile, type Settlement } from "./meta/profile";
 import { leagueChanged, rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
@@ -23,11 +23,10 @@ import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { postRaidSummary } from "./post-raid-summary";
-import { aiSalt, awayFor, incomingFor, lossesFor, raidersFor, reportRaid, flushRecalls, leaseOwn, neighboursFor, neighboursOnMap, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiSalt, awayFor, lossesFor, raidersFor, reportRaid, neighboursFor, neighboursOnMap, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
-import { raidTraces } from "./view/traces";
 import { isIslandProtected } from "./meta/outer-guard";
-import { dropStale, LEASE_LATE, lentResults, lentRivals, logLine, newsVisible, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
+import { logLine, type IslandLogEntry } from "./meta/island-sync";
 import { Hub, revengeFor, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -287,10 +286,6 @@ function onEvent(e: GameEvent, s: State) {
     // Settle and save at once; only the results screen waits for the moment to play out.
     knownBefore = [...hub.profile.known];
     analysed = null;
-    // The expeditions on the game's own islands brought up to the clock first: the settle pays the nodes they hold now.
-    // (through the hub, which tells of each expedition that took its node or was lost).
-    const fresh = refreshAi(hub.profile);
-    if (fresh !== hub.profile) hub.update(fresh);
     const before = hub.profile;
     profileBefore = before;
     const settled = settle(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before))));
@@ -338,24 +333,6 @@ function onEvent(e: GameEvent, s: State) {
 /** The island's news from the server that came in after the raid ended, for its results. */
 let islandNews: string[] = [];
 
-/**
- * Other players' expeditions on this island, as the server lent them when the departure opened
- * (island-net.ts `leaseOwn()`): the raid that starts takes them in, and the island's server leaves
- * them alone until its report or `until`. Null with none asked for or answered.
- */
-let lease: Lease | null = null;
-type Lease = Awaited<ReturnType<typeof leaseOwn>> extends infer A ? (A extends { ok: true; body: infer B } ? B : never) : never;
-/**
- * The departure whose lease was asked for, and what became of it: still up (`open`), turned back
- * from (`gone`), or the raid that started from it (`raid`). An answer that comes once the raid has
- * started still joins it in its first `LEASE_LATE` seconds, before any expedition sets off; one
- * that no raid can use is given back, so the island does not hold the expeditions off for nothing.
- */
-let leaseReq: { on: "open" | "gone" | "raid"; raid: State | null } | null = null;
-/** Whether lease `l` outlasts the battle left to play in raid `s`, with a minute to report it. */
-const leaseLasts = (l: Lease, s: State | null) => l.until - Date.now() > (CONQUEST.time - (s?.battle?.now ?? 0) + 60) * 1000;
-/** The expeditions the raid under way took in: its report says what became of them. */
-let raidLent: LentIn[] = [];
 /** What the game's own islands brought to the raid under way, and the slots they stood in as it started (meta/ai-islands.ts); null with none. */
 /** The game's own islands' news from the raid just settled, before the server's. */
 let aiNews: string[] = [];
@@ -370,24 +347,16 @@ let aiNews: string[] = [];
 function syncIsland(p: Settlement["profile"], settled: State) {
   islandNews = [];
   aiNews = [];
-  // What the raid made of the other players' expeditions it took in goes with the report.
   const who = loadIdentity();
   const from = who.code ? { code: who.code, name: who.name } : { code: "local", name: who.name };
   const raid = {
-    lent: lentResults(raidLent, settled.battle),
     // Defence stock from deposits this raid (silent; no separate "aid" verb).
     // A sortie's depot is the neighbour's: nothing left there becomes this island's stock.
     parcels: who.code && !settled.sortie ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
     contestedFailed: contestedFailed(settled),
   };
-  raidLent = [];
   void syncOwn(p, true, raid).then((r) => {
-    // The islands of expeditions called home (the factory's panel) are told, now or at the next sync.
-    void flushRecalls(
-      () => hub.profile,
-      (q) => hub.update(q),
-    );
     if (!r.ok) return;
     // The next raid is under way only once a new run replaced the settled one: the results of the
     // settled raid (still `running` until finish()) take the sync whole; an answer a later sync
@@ -402,9 +371,8 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     // The sync read the neighbours again: the horizon shows them as they now stand.
     world.setNeighbours(neighboursOnMap(hub.profile).map((n) => n.slot));
     if (!news.length) return;
-    const shown = news.filter(newsVisible);
     hub.takeNews(news);
-    islandNews = [...aiNews, ...shown.map(logLine)];
+    islandNews = [...aiNews, ...news.map(logLine)];
     if (!$("results").hidden) hud.setNews(islandNews);
   });
 }
@@ -594,7 +562,7 @@ let analysed: ModKind | null = null;
 const loaded = loadProfile();
 const salt0 = aiSalt();
 // The island starts its calendar the first time it is opened (meta/days.ts): no raid moves it.
-const loadedHub = { ...loaded, since: loaded.since || Date.now(), expeditions: dropStale(loaded.expeditions, Date.now()) };
+const loadedHub = { ...loaded, since: loaded.since || Date.now() };
 // A send whose answer never came (the tab closed while it was out) gives its squad back on load.
 const hub = new Hub(loadedHub, () => {
   // 地図で見る: goal already set in the hub; open the departure framed on that POI / nearest start.
@@ -710,11 +678,8 @@ function openCamp() {
     } else lock();
     return;
   }
-  // The expeditions on the game's own islands stand as their clock has them, so the settle pays the nodes they hold.
   const beforeNews = [...(hub.profile.news ?? [])];
   const beforeSnap: Profile = { ...hub.profile, news: beforeNews, poiState: { ...hub.profile.poiState } };
-  const fresh = refreshAi(hub.profile);
-  if (fresh !== hub.profile) hub.update(fresh);
   departing = inside = null;
   picker.show(false);
   hud.endResults();
@@ -770,10 +735,6 @@ function openCamp() {
  */
 function deliverAwayNews(before: Profile, awayLines: readonly string[] = []) {
   void syncOwn(before, false).then((r) => {
-    void flushRecalls(
-      () => hub.profile,
-      (q) => hub.update(q),
-    );
     // A raid begun meanwhile takes the island as it started; its end collects instead.
     if (!camping || running) return;
     // The holdings other players took while the player was away are lost first: they pay nothing.
@@ -792,7 +753,7 @@ function deliverAwayNews(before: Profile, awayLines: readonly string[] = []) {
       if (news.length) hub.takeNews(news);
       saveProfile(hub.profile);
       // 同期で届いた行＋トロフィー行をそのまま一枚に（文の一致だけに頼らない）。
-      const shown = news.filter(newsVisible).map(logLine);
+      const shown = news.map(logLine);
       fromSync = shown.length || notes.length ? awaySheetParts([], [...awayLines, ...shown, ...notes, ...extra]) : null;
     }
     const parts = fromSync ?? awaySheetParts(before.news ?? [], [...(hub.profile.news ?? []), ...extra]);
@@ -831,20 +792,6 @@ function askDepart(walk: boolean) {
     return;
   }
   departing = { walk, back: walk ? inside : null };
-  // The raid about to start takes in the expeditions on the island; nothing waits on the answer.
-  lease = null;
-  const req: NonNullable<typeof leaseReq> = { on: "open", raid: null };
-  leaseReq = req;
-  void leaseOwn().then((r) => {
-    // A newer departure asks for itself, and the island answers it with the same lease.
-    if (!r.ok || leaseReq !== req) return;
-    if (req.on === "open") lease = r.body;
-    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions))) {
-      raidLent = r.body.expeditions;
-      hud.addRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
-    }
-    else if (r.body.expeditions.length) void releaseLease();
-  });
   keys.clear();
   stick.x = stick.z = 0;
   fire = ads = adsLatch = false;
@@ -864,12 +811,6 @@ async function answerDepart(go: boolean) {
   departing = null;
   picker.show(false);
   sfx.click();
-  if (!go && leaseReq?.on === "open") {
-    // Turned back: a lease already answered is given back; one still on its way is when it comes.
-    leaseReq.on = "gone";
-    if (lease?.expeditions.length) void releaseLease();
-    lease = null;
-  }
   if (go) {
     if (d.walk && hub.walksOut()) {
       const launch = hub.launch();
@@ -970,19 +911,10 @@ function start(go: Launch, from?: State) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  // A lease with less than the battle's length left would run out under the raid: the island reckons those expeditions itself.
-  // A sortie is no battle of the island: the island's expeditions are given back for it to reckon.
-  if (go.sortie && lease?.expeditions.length) void releaseLease();
-  const lent = !go.sortie && lease && leaseLasts(lease, null) ? lease : null;
-  raidLent = lent?.expeditions ?? [];
-  // The expeditions on the game's own islands brought up to the clock: one that has ended gives its squad back to this raid.
-  const fresh = refreshAi(hub.profile);
-  if (fresh !== hub.profile) hub.update(fresh);
-  // The names of the islands whose squads come or stand in this raid, for its banners.
+  // The names the squads that come in this raid go by, for its banners.
   // The AI players next door: the enemy's squads that come at the player's holdings go by their names (決定 B).
   const raiders = go.sortie ? [] : raidersFor();
-  hud.setRivalNames([...raiders.map((r) => [r.code, r.name] as [string, string]), ...raidLent.map((l) => [l.by.code, l.by.name] as [string, string])]);
-  lease = null;
+  hud.setRivalNames(raiders.map((r) => [r.code, r.name] as [string, string]));
   state = go.sortie
     ? // A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): played there alone, no battle of the island.
       newRun(go.seed, kit, region, {
@@ -1012,25 +944,11 @@ function start(go: Launch, from?: State) {
         })(),
         battle: {
           factory: hub.profile.factory,
-          away: squadsAway(hub.profile),
-          rivals: lentRivals(raidLent),
           raiders: raiders.map((r) => r.code),
         },
       });
   hud.setContract();
-  // A lease still on its way joins this raid if it comes in its first seconds.
-  if (leaseReq?.on === "open") {
-    if (go.sortie) leaseReq.on = "gone";
-    else if (lent) leaseReq = null;
-    else {
-      leaseReq.on = "raid";
-      leaseReq.raid = state;
-    }
-  }
   hud.setRaidsDone(hub.profile.raids);
-  // Passive traces only: rivals / incoming, no legend or new noun (ux-design M5).
-  const owners = [...new Set(raidLent.map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
-  hud.setTraces(raidTraces(go.seed, state.bins, owners));
   hud.setRemotePings([]);
   world.campMode = false;
   if (from) walkOut(state, from);
@@ -1083,7 +1001,6 @@ function finish() {
   hud.show(false);
   organize.resetSession();
   const next = settlement ? hub.nextHand() : "";
-  const expLines = hub.expeditionNews();
   if (settlement?.takenRival?.length) {
     const tropPer = settlement.trophies?.gained
       ? Math.max(1, Math.round(settlement.trophies.gained / settlement.takenRival.length))
@@ -1093,8 +1010,7 @@ function finish() {
       settlement.takenRival.map((t) => newsIncursion(nameOf(t.owner), NODES[nodeIndex(t.id)]?.name ?? t.id, true, tropPer)),
     );
   }
-  // 遠征の知らせ closes on the return screen (my help mattered) — same heading as the signal station.
-  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, expLines);
+  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next);
   if (state.outcome === "extracted") {
     // One SE for 生還: finish owns it (soundscape skips victory on `done` to avoid a double).
     sfx.extracted();
@@ -1118,7 +1034,7 @@ $("home").addEventListener("click", (e) => {
   hub.reload(next);
   saveProfile(hub.profile);
   sfx.click();
-  hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand(), hub.expeditionNews());
+  hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand());
 });
 
 function setPaused(on: boolean) {
@@ -1192,7 +1108,7 @@ $("organize").addEventListener("click", (e) => {
   if (r.done) {
     // Refresh results with what organize sold, then go back to camp.
     if (settlement) {
-      hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand(), hub.expeditionNews());
+      hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand());
     }
     openCamp();
   }
@@ -1347,7 +1263,6 @@ declare global {
       take: (i: number, soon?: boolean) => void;
     };
     ringfallNews: (entries: IslandLogEntry[]) => void;
-    ringfallAge: (ms: number) => void;
     ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; keys?: string[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
@@ -1802,12 +1717,6 @@ window.ringfallBot = (skill: string) => {
 
 /** Automation only: the island's news as a sync would bring it (the signal station lists it). */
 window.ringfallNews = (entries) => hub.takeNews(entries);
-/** Automation only: the expeditions out sent `ms` earlier, those on the game's own islands brought up to that clock (as a sync would, through the hub). */
-window.ringfallAge = (ms) => {
-  const p = hub.profile;
-  hub.update(refreshAi({ ...p, expeditions: p.expeditions.map((o) => ({ ...o, sentAt: o.sentAt - ms })) }));
-};
-
 /**
  * Automation only: mod parts. `wear` puts these kinds on the player in the raid under way (up to
  * the slots); `drop` lays a part of `kind` on the ground `ahead` metres in front of the player.

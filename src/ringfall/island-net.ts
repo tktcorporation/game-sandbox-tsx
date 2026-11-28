@@ -1,6 +1,6 @@
 /*
- * The island API's requests (docs/ringfall/multiplayer.md, 島の番号と遠征の API): claiming this
- * player's island, the owner's report and log, any island's public view, and sending an expedition.
+ * The island API's requests (docs/ringfall/multiplayer.md): claiming this player's island, the
+ * owner's report and log, any island's public view, and a sortie's report to the island it attacked.
  * Browser only, beside post-raid-summary.ts: the sim and the scripts never import it. Every answer comes back as
  * data, a failure as its error code (meta/island-errors.ts), and nothing throws or logs, so play is
  * the same with no server. Under a browser driver (the shots gate) nothing is sent and every request
@@ -10,12 +10,12 @@ import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
-import { aiByCode, aiChanges, aiIslands, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { aiByCode, aiChanges, aiIslands, aiView, withAi } from "./meta/ai-islands";
 import { awayAttacks, battleLosses } from "./meta/away-attacks";
 import { aiLabel } from "./meta/neighbours";
 import { islandDay } from "./meta/days";
 import { playerNodes } from "./meta/island";
-import { answerRecall, applySync, incomingOf, outerGuardFromView, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
+import { applySync, outerGuardFromView, parseLog, parseView, reportedHolds, reportHolds, type IslandLogEntry, type IslandView, type Synced } from "./meta/island-sync";
 import type { Profile } from "./meta/profile";
 import { clawBackLine, pushNews } from "./view/copy";
 import { clawBack } from "./meta/income";
@@ -28,13 +28,6 @@ import type { Replay } from "./sim/replay-data";
 export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | NetError };
 
 const failed = (error: ApiError | NetError): { ok: false; error: ApiError | NetError } => ({ ok: false, error });
-
-/**
- * Milliseconds each request of a send (the own island's view, then the expedition) waits before it
- * gives up as `network`: the two together end well inside `SENDING_MS`, so a send still out is never
- * dropped as unanswered and then answered.
- */
-export const SEND_TIMEOUT_MS = 20_000;
 
 /**
  * One request to the API, its body as JSON; a refusal (a status other than 200 or 201, or `ok: false`)
@@ -200,8 +193,7 @@ export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSour
 
 /**
  * Neighbours drawn on maps / horizon (2026-11-26 early-MP).
- * Always shown from the first session — sea-route open/shut still gates expeditions (`routeOpen`),
- * but the islands themselves stay visible so multiplayer is not gated behind first outer ownership.
+ * Always shown from the first session, so multiplayer is not gated behind first outer ownership.
  */
 export function neighboursOnMap(p: Pick<Profile, "since" | "poiState">): Neighbour[] {
   return neighboursFor(p);
@@ -209,9 +201,6 @@ export function neighboursOnMap(p: Pick<Profile, "since" | "poiState">): Neighbo
 
 /** Raid / live map neighbours for the page's profile (`useAi`), gated like `neighboursOnMap`. */
 export const neighboursNowOnMap = (): Neighbour[] => (aiSource ? neighboursOnMap(aiSource()) : []);
-
-/** The expeditions coming at this island: the server's warnings. */
-export const incomingFor = (p: Profile): Incoming[] => p.incoming;
 
 /** The AI players' attacks on the holdings since the profile last looked, up to `now` (meta/away-attacks.ts). */
 /** The AI players' attacks since `p.attackedAt`; `before`, the profile as those hours began, when `p` has settled a raid since. */
@@ -229,13 +218,6 @@ const raiderIslands = () => {
 /** The holdings a raid's battle lost, as the AI players' attacks (`battleLosses()`). */
 // Against every one of the game's islands, not the slots free now: the neighbours may have changed since the raid began.
 export const lossesFor = (p: Profile, lost: readonly { node: NodeId; by: string }[], now = Date.now()) => battleLosses(p, aiIslands(aiSalt()), lost, now);
-
-/** The expeditions with those on the game's islands brought up to now: the profile itself when none changes. */
-export function refreshAi(p: Profile): Profile {
-  // Every slot's: an island the server's neighbour has since replaced still ends its expeditions on their clock.
-  const expeditions = aiRefresh(p.expeditions, aiSalt(), [], Date.now());
-  return expeditions === p.expeditions ? p : { ...p, expeditions };
-}
 
 /** What changed overnight on neighbour `n` if it is one of the game's own islands (its nodes taken and lost on day `day`); null for a player's. */
 export function aiOvernight(n: Neighbour, day: number): { took: NodeId[]; lost: NodeId[] } | null {
@@ -266,7 +248,7 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
   const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
   if (ai) {
     const p = aiSource!();
-    return { ok: true, body: aiView(ai, aiSalt(), islandDay(p), p.expeditions, loadIdentity().code ?? "", Date.now(), []) };
+    return { ok: true, body: aiView(ai, aiSalt(), islandDay(p)) };
   }
   const r = await call(`/api/islands/${encodeURIComponent(code)}`, {}, timeout);
   if (!r.ok) return r;
@@ -274,9 +256,8 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
   return v ? { ok: true, body: v } : failed("bad-response");
 }
 
-/** What a raid's report says beside the island's holds: what became of the expeditions it took in. */
+/** What a raid's report says beside the island's holds. */
 export interface RaidReport {
-  lent: { id: number; left: number; waiting?: true }[];
   /** Aid parcels left at depots this raid (ux-design C2). */
   parcels?: { poi: string; kind: string; from: { code: string; name: string } }[];
   /** Aid parcel ids taken this raid. */
@@ -286,63 +267,6 @@ export interface RaidReport {
    * (TKT-201): defender gets 「… · 守りきった」.
    */
   contestedFailed?: { shore: string; owner: string }[];
-}
-
-/**
- * The owner's raid takes in the expeditions on the island (`POST …/lease`): the island leaves them
- * alone until the raid's report, or until `until`. With no island yet, or no server, nothing.
- */
-export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[] }>> {
-  await releasing;
-  const who = loadIdentity();
-  if (!who.code) return failed("no-own-island");
-  const r = await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "POST", headers: { authorization: `Bearer ${who.id}` } }, timeout);
-  if (!r.ok) return r;
-  const l = parseLease(r.body);
-  return l ? { ok: true, body: l } : failed("bad-response");
-}
-
-/** Gives back a lease no raid will use (`DELETE …/lease`): the island goes on reckoning its expeditions at once. Nothing waits on it. */
-export function releaseLease(): Promise<void> {
-  releasing = releasing.then(async () => {
-    const who = loadIdentity();
-    if (!who.code) return;
-    await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "DELETE", headers: { authorization: `Bearer ${who.id}` } }, SEND_TIMEOUT_MS);
-  });
-  return releasing;
-}
-
-/**
- * The releases on their way, one after another. A lease is asked for only once they have been
- * answered: a release still out when the next departure opens would otherwise reach the island after
- * that departure's lease and take it away from the raid that uses it.
- */
-let releasing: Promise<void> = Promise.resolve();
-
-/* postMark / sendAid removed from the player-facing loop (ux-design Round 3 simplify).
- * Island DO may still accept report parcels from deposits; defence spend stays server-side. */
-
-/** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
-export async function recallExpedition(code: string, id: number): Promise<Answer<unknown>> {
-  // Every slot's: an island the server's neighbour has since replaced still lets its expeditions go.
-  if (aiSource && aiByCode(aiSalt(), code)) return { ok: true, body: { ok: true } };
-  const who = loadIdentity();
-  if (!who.code) return failed("no-own-island");
-  return call(`/api/islands/${encodeURIComponent(code)}/expeditions/${id}`, { method: "DELETE", body: JSON.stringify({ from: { ...player(who), code: who.code } }) }, SEND_TIMEOUT_MS);
-}
-
-/**
- * Tells the islands of the expeditions called home (`recalling`), one after another: each the island
- * let go, or no longer had, leaves the list. One that could not be told stays, to be told at the next sync.
- */
-export async function flushRecalls(get: () => Profile, put: (p: Profile) => void): Promise<void> {
-  for (const o of get().expeditions.filter((e) => e.state === "recalling")) {
-    const r = await recallExpedition(o.code, o.id);
-    if (!r.ok && r.error !== "no-expedition" && r.error !== "no-island") continue;
-    const p = get();
-    const expeditions = answerRecall(p.expeditions, o);
-    if (expeditions.length !== p.expeditions.length) put({ ...p, expeditions });
-  }
 }
 
 /** What a sync of this player's own island read: the view, and what to take into the profile. */
@@ -364,8 +288,8 @@ let applied = 0;
  * report of `p` when `report` (after a settled raid, naming every node taken back still pending,
  * `Profile.retaken`; a first claim always reports, so the server's island starts as the profile's),
  * then reads the log after `p.logSeq` and the island's view. The report resets the server's
- * garrisons, so it is sent only after a raid. `raid` is what the raid made of the expeditions it took
- * in (`lent`), which go with the report.
+ * garrisons, so it is sent only after a raid. `raid` is what else the raid has to tell (島の守り left
+ * and taken), which goes with the report.
  */
 export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): Promise<Answer<OwnSync>> {
   const ticket = ++lastSync;
@@ -388,7 +312,6 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         retaken,
         factory: p.factory,
         day: islandDay(p),
-        ...(raid?.lent.length ? { lent: raid.lent } : {}),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
         ...(raid?.contestedFailed?.length ? { contestedFailed: raid.contestedFailed } : {}),
@@ -403,7 +326,6 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
   const view = await readView(who.code!);
   if (view.ok) {
     synced.holds = view.body.nodes;
-    synced.incoming = incomingOf(view.body);
     synced.parcels = view.body.parcels;
     synced.raided = view.body.raided;
     synced.outerGuard = outerGuardFromView(view.body);

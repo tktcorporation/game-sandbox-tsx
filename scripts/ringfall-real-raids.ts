@@ -9,7 +9,7 @@
  */
 import assert from "node:assert/strict";
 import { islandOp, NODE_IDS, shieldNode, type IslandOp, type IslandState } from "../worker/island";
-import { applySync, parseLog, parseView, type IslandLogEntry } from "../src/ringfall/meta/expeditions";
+import { applySync, parseLog, parseView, type IslandLogEntry } from "../src/ringfall/meta/island-sync";
 import { raidOdds, rivalTrophies, starGain } from "../src/ringfall/meta/trophies";
 import { keepParcels, newProfile, parseProfile } from "../src/ringfall/meta/profile";
 import { addAttacks, ATTACKS_KEPT } from "../src/ringfall/meta/attacks";

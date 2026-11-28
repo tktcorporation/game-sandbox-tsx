@@ -30,8 +30,6 @@ const SAVE = {
   seen: "f".repeat(4000),
   quests: { progress: {}, done: [] },
   poiState: Object.fromEntries(HELD.map((id) => [id, { state: "freed" }])),
-  incoming: [],
-  expeditions: [],
   logSeq: 0,
   retaken: [],
 };

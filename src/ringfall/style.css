@@ -4953,7 +4953,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 #hub .factory-card .mod-head {
   cursor: default;
 }
-/* The factory's expeditions (view/expeditions.ts): this island's code, the expeditions out, and the form that sends one. */
+/* The signal station's top section (view/signal.ts): the trophies, the other players' islands, this island's code. */
 .exp-card {
   margin-top: 10px;
   background: var(--plate);
@@ -4988,13 +4988,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .exp-code {
   font-family: var(--num);
   letter-spacing: 0.12em;
-}
-/* The signal station's section: what is out under its own heading, this island's code at the foot. */
-.exp-sub {
-  margin: 12px 0 4px;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--muted);
 }
 .exp-foot {
   margin-top: 12px;
@@ -5126,76 +5119,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
   padding: 3px 12px;
   font-size: 13px;
 }
-.exp-own .exp-in {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  font-weight: 800;
-}
-.exp-own .exp-in b {
-  font-family: var(--num);
-  font-size: 16px;
-  color: var(--white);
-}
-.exp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.mod-body .exp-out span {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-}
-/* The island an expedition is out on: its owner's name in the other islands' green, then its code. */
-.mod-body .exp-out span > b:not(.exp-code) {
-  color: var(--rival-light);
-}
-.mod-body .exp-out span b.exp-code {
-  font-size: 16px;
-  color: var(--muted);
-}
-.mod-body .exp-out > b {
-  font-family: var(--jp);
-  font-size: 13px;
-  color: var(--white);
-}
-.mod-body .exp-out.holding > b {
-  color: var(--hot);
-}
-/* An expedition gone or being called home is drawn in the muted colour, not faded: its words stay readable. */
-.mod-body .exp-out.gone,
-.mod-body .exp-out.recalling {
-  background: rgb(var(--white-rgb) / 0.03);
-}
-.mod-body .exp-out.gone *,
-.mod-body .exp-out.recalling * {
-  color: var(--muted) !important;
-  border-color: var(--muted);
-}
-.mod-body .exp-out.waiting > b {
-  color: var(--muted);
-}
-#hub .mod-body .exp-out .exp-recall {
-  grid-column: 2;
-  grid-row: 2;
-  justify-self: end;
-  width: auto;
-  margin: 0;
-  padding: 3px 12px;
-  font-family: var(--jp);
-  font-size: 12px;
-  background: rgb(var(--shade-rgb) / 0.3);
-  color: var(--white);
-  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.25);
-}
-.mod-body .exp-out small {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-family: var(--num);
-}
 .exp-cost {
   display: flex;
   gap: 16px;
@@ -5250,13 +5173,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
   font-family: var(--num);
   font-size: 12px;
   color: var(--rival-light);
-}
-#hub .exp-near button.shut {
-  border-left-color: var(--slate);
-  background: rgb(var(--white-rgb) / 0.05);
-}
-.exp-near small.shut {
-  color: var(--muted);
 }
 #hub .exp-near small.exp-n-trop {
   color: var(--muted);

@@ -17,7 +17,7 @@ import {
   utcDay,
   utcDayEnd,
 } from "../src/ringfall/meta/outer-guard";
-import { applySync } from "../src/ringfall/meta/expeditions";
+import { applySync } from "../src/ringfall/meta/island-sync";
 import {
   EXPEDITION,
   islandOp,

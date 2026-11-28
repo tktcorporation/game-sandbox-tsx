@@ -11,7 +11,7 @@ import { nodeIndex, POIS, type NodeId } from "../sim/map";
 import { FACTORY_TOP } from "../sim/config";
 import { DEFENCE_AID } from "../sim/island";
 import { aiIslands, type AiIsland } from "./ai-islands";
-import type { IslandLogEntry } from "./expeditions";
+import type { IslandLogEntry } from "./island-sync";
 import { playerNodes, type Island } from "./island";
 import { aiLabel } from "./neighbours";
 import { canLoseOuter, emptyOuterGuard, recordOuterLoss, type OuterGuard } from "./outer-guard";

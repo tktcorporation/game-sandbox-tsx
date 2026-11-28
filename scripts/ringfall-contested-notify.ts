@@ -4,7 +4,7 @@
  *   npx tsx scripts/ringfall-contested-notify.ts
  */
 import assert from "node:assert/strict";
-import { applySync, logLine, newsVisible } from "../src/ringfall/meta/expeditions";
+import { applySync, logLine } from "../src/ringfall/meta/island-sync";
 import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { newProfile } from "../src/ringfall/meta/profile";
 import { TROPHY } from "../src/ringfall/meta/trophies";
@@ -44,7 +44,6 @@ const attacker = { code: "ATK001", name: "ツバキ" };
   assert.equal(entry.by.name, attacker.name);
   const line = logLine(entry);
   assert.equal(line, newsWipedEnemy(shoreName, attacker.name));
-  assert.ok(newsVisible(entry));
 
   const p = newProfile(1);
   const before = p.trophies ?? TROPHY.start;

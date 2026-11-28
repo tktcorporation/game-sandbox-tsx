@@ -210,7 +210,6 @@ if (PHRASE.sideWorkshop !== TERM.workshop) problems.push("copy.ts: PHRASE.sideWo
 if (PHRASE.sideFactory !== TERM.factory) problems.push("copy.ts: PHRASE.sideFactory must be TERM.factory");
 if (TERM.raiseLevel !== "レベルを上げる") problems.push("copy.ts: TERM.raiseLevel must be レベルを上げる (glossary; one-line revert if disagreed)");
 if (TERM.attack !== "攻める") problems.push("copy.ts: TERM.attack must be 攻める (E4; glossary adopted)");
-if (TERM.sendExpedition !== "遠征に出す") problems.push("copy.ts: TERM.sendExpedition must be 遠征に出す (legacy term; button removed under E4)");
 if (TERM.sendToWarehouse !== "倉庫へ送る") problems.push("copy.ts: TERM.sendToWarehouse must stay 倉庫へ送る (中継ボックス; distinct from expedition verb)");
 if (!PHRASE.nextWorkshopRaise.includes(TERM.workshop) || !PHRASE.nextWorkshopRaise.includes(TERM.raiseLevel)) {
   problems.push("copy.ts: PHRASE.nextWorkshopRaise must use 作業場 · レベルを上げる");
