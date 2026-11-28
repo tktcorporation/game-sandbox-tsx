@@ -193,7 +193,7 @@ console.log(`field measured (${secs()})`);
 // the same way.
 const variety = varietyNumbers(measureVariety(centre, R));
 const varietyBase = `${baseDir}/variety.json`;
-const varietyMeta = { version: 1, r: R };
+const varietyMeta = { version: 2, r: R };
 const varietySaved = existsSync(varietyBase) ? (JSON.parse(readFileSync(varietyBase, "utf8")) as typeof varietyMeta & { numbers: typeof variety }) : null;
 worldLines.push(`variety: ${varietyLine(measureVariety(centre, R))}`);
 if (rebase || !varietySaved) {

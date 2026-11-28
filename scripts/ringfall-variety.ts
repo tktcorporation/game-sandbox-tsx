@@ -91,11 +91,13 @@ export function signature(p: Piece): string {
   return `${what} ${w}x${d}x${half(p.top - p.boxes.reduce((m, c) => Math.min(m, c.y0), Infinity))}${parts}`;
 }
 
-/** A structure's shape: footprint (either way round) and height to a metre, box count and kinds. */
+/** A structure's shape: footprint (either way round) and height over its own lowest box to a metre,
+ * box count and kinds, so the same shape standing on higher ground is the same shape. */
 export function shapeKey(p: Piece): string {
   const [w, d] = [Math.round(p.x1 - p.x0), Math.round(p.z1 - p.z0)].sort((a, c) => a - c);
   const kinds = [...new Set(p.boxes.map((b) => b.kind))].sort().join("+");
-  return `${w}x${d}x${Math.round(p.top)} ${p.boxes.length} ${kinds}`;
+  const bottom = Math.min(...p.boxes.map((b) => b.y0));
+  return `${w}x${d}x${Math.round(p.top - bottom)} ${p.boxes.length} ${kinds}`;
 }
 
 function touches(a: Box, b: Box): boolean {
