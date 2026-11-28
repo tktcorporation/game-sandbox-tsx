@@ -11,8 +11,8 @@ import { isIslandProtected } from "../meta/outer-guard";
 /*
  * The departure (DOM, `#depart`): the island drawn whole, every place a raid may start set on it,
  * and beside it the kit, the objective and the confirm. A way in known is a solid ring, one not
- * known yet a dashed ring; a depot switched on is a teal square with its allowance as small boxes,
- * red when the loadout is past it; a region no raid may start in yet carries a padlock. Clicking a
+ * known yet a dashed ring; a depot switched on is a teal square;
+ * a region no raid may start in yet carries a padlock. Clicking a
  * point chooses it (`Hub.choose()`); clicking the chosen one, the confirm or Enter departs. Clicking
  * a shut one or a padlock shows it beside the map with why it is shut and how to open it
  * (`Hub.peek()`), and the confirm then says the reason and does not go. It changes only the hub's
@@ -27,8 +27,6 @@ import { isIslandProtected } from "../meta/outer-guard";
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** At most this many allowance boxes under a depot's mark; a larger allowance shows its number instead. */
-const MINI_BOXES = 6;
 /** How far, in CSS pixels, a shut region's padlock keeps from every POI's mark and name (across counts 0.6). */
 const LOCK_CLEAR = 34;
 
@@ -123,7 +121,7 @@ export class DepartPicker {
     $("depart-start").innerHTML = peek
       ? `${lockIcon()}<b>${esc(hint!.name)}</b>`
       : on
-        ? `${on.kind === "depot" ? depotIcon() : entryIcon()}<b>${esc(on.name)}</b>${on.kind === "depot" ? `<small>Lv${on.level}</small>` : ""}`
+        ? `${on.kind === "depot" ? depotIcon() : entryIcon()}<b>${esc(on.name)}</b>`
         : "";
     const how = $("depart-hint");
     how.hidden = !hint;
@@ -139,8 +137,6 @@ export class DepartPicker {
         : `${lockIcon()}<b>${esc(reach!.ownerName)}</b>${esc(reachAfter(at.name))}`
       : "";
     $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
-    // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
-    $("depart-carry").innerHTML = hub.departBoxes();
     const w = $("depart-warn");
     w.hidden = !d.warn.length;
     w.textContent = d.warn.join("・");
@@ -207,11 +203,11 @@ export class DepartPicker {
     const buttons = marks.map(({ q, x, y }) => {
       // While a shut start is shown, it is ringed and the chosen one stands unlit.
       const shown = peek?.kind === q.kind && peek.id === q.id;
-      const cls = ["pick", q.kind, q.on && !peek ? "on" : "", q.open ? "" : "shut", shown ? "peek" : "", q.over ? "over" : ""].filter(Boolean).join(" ");
+      const cls = ["pick", q.kind, q.on && !peek ? "on" : "", q.open ? "" : "shut", shown ? "peek" : ""].filter(Boolean).join(" ");
       const icon = q.kind === "depot" ? depotIcon() : entryIcon(q.open);
       const lock = q.kind === "depot" && !q.open ? `<span class="pick-lock">${lockIcon()}</span>` : "";
       const pin = q.on && !peek ? `<span class="pin">${startIcon()}</span>` : "";
-      return `<button type="button" class="${cls}" data-kind="${q.kind}" data-id="${q.id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="${esc(q.name)}">${icon}${lock}${pin}${q.kind === "depot" && q.open ? this.mini(q) : ""}</button>`;
+      return `<button type="button" class="${cls}" data-kind="${q.kind}" data-id="${q.id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="${esc(q.name)}">${icon}${lock}${pin}</button>`;
     });
     // A region no raid may start in yet: a padlock in it, clear of its POIs' names.
     const locks = REGIONS.filter((r) => locked.includes(r.id)).map((r) => {
@@ -246,15 +242,5 @@ export class DepartPicker {
         if (d < score) [best, score] = [p, d];
       }
     return best;
-  }
-
-  /** A depot's allowance under its mark: a box a point, filled by what the loadout costs, red past it. */
-  private mini(q: StartPoint): string {
-    const budget = q.budget ?? 0;
-    const cost = q.cost ?? 0;
-    if (budget > MINI_BOXES) return `<span class="mini${q.over ? " over" : ""}"><b>${cost}/${budget}</b></span>`;
-    const n = Math.max(budget, cost);
-    const boxes = Array.from({ length: n }, (_, i) => `<i class="${i >= budget ? "over" : i < cost ? "full" : ""}"></i>`).join("");
-    return `<span class="mini${q.over ? " over" : ""}">${boxes || "<i class=\"none\"></i>"}</span>`;
   }
 }

@@ -406,21 +406,6 @@ export const DEPOT = {
   cell: 20,
   /** Cells uncovered round the player's own, each way. */
   sight: 1,
-  /**
-   * Credits' worth sent home through one depot, over all raids, that each level of it needs.
-   * A start at a depot skips the walk in from the region's edge and begins beside a POI with the teammate, so the gear it
-   * may carry is earned at that depot: the more it has been trusted with, the more it lets in.
-   */
-  levels: [0, 1500, 5000, 12000],
-  /** Loadout points a raid started from a depot may carry, by that depot's level. A start at a way in has no limit. */
-  budget: [2, 4, 6, 9],
-  /**
-   * Points a stash weapon costs, by rarity. The starter weapons and every heal cost nothing: a
-   * start with them alone is always allowed, so a depot never locks the player out.
-   */
-  weaponCost: [1, 2, 3, 4],
-  /** Points armour costs, by tier (tier 0 is no armour). */
-  armorCost: [0, 1, 2, 3],
 };
 
 /**

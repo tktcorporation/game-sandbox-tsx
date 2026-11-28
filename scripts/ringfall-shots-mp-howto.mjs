@@ -43,7 +43,6 @@ const SAVE = {
   retaken: [],
   trophies: 1000,
   known: [],
-  depotSent: {},
   lastKit: null,
   // 案 E: 制圧した行. 案 F: 取られた行 → やり返す (hub still rival-held).
   news: [

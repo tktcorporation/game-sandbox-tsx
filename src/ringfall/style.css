@@ -1906,31 +1906,6 @@ body.touch #hub-close kbd {
   color: var(--ring);
   font-weight: 800;
 }
-/* A depot start's allowance, teal like the depot's start button; red once the loadout is over it. */
-.hub-list .slot.depot {
-  flex-wrap: wrap;
-  row-gap: 2px;
-  box-shadow: inset 3px 0 0 var(--mate);
-}
-.hub-list .slot.depot span b {
-  margin-left: 12px;
-  font-family: var(--num);
-  font-size: 24px;
-}
-.hub-list .slot.depot > small:last-child {
-  flex-basis: 100%;
-  padding-left: calc(7em + 12px);
-  color: var(--muted);
-  font-weight: 500;
-}
-.hub-list .slot.depot.over {
-  box-shadow: inset 3px 0 0 var(--ring);
-}
-.hub-list .slot.depot.over span b,
-.hub-list .slot.depot.over > small:last-child {
-  color: var(--ring);
-  font-weight: 800;
-}
 /* The signal station's trophy: primary ranking readout (map table removed). */
 .exp-trophy {
   display: flex;
@@ -1959,11 +1934,6 @@ body.touch #hub-close kbd {
   color: var(--sky);
   font-size: 13px;
   font-weight: 800;
-}
-/* What a pick costs of a depot start's allowance. */
-#hub .item b.cost {
-  color: var(--mate-light);
-  font-size: 16px;
 }
 /* The hideout: a card per module, opened to show what its next level takes. */
 .hub-list .mod {
@@ -3491,44 +3461,6 @@ body.touch #camp-prompt {
     translate: 0 -4px;
   }
 }
-/* A depot's allowance under its mark: a box a point, filled by the loadout, red past it. */
-#depart-points .mini {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: rgb(var(--night-rgb) / 0.82);
-  pointer-events: none;
-}
-#depart-points .mini i {
-  width: 6px;
-  height: 6px;
-  border: 1px solid rgb(var(--white-rgb) / 0.7);
-}
-#depart-points .mini i.full {
-  background: var(--mate-light);
-  border-color: var(--mate-light);
-}
-#depart-points .mini i.over {
-  background: var(--ring);
-  border-color: var(--ring);
-}
-#depart-points .mini i.none {
-  width: 10px;
-  border-color: rgb(var(--white-rgb) / 0.35);
-  border-style: dashed;
-}
-#depart-points .mini b {
-  font-family: var(--num);
-  font-size: 11px;
-  line-height: 1;
-}
-#depart-points .mini.over b {
-  color: var(--ring);
-}
 .screen #depart-points .region-lock {
   position: absolute;
   display: grid;
@@ -4111,7 +4043,7 @@ body.touch #obj-raid .short {
   background: var(--pouch);
 }
 
-/* Slot boxes: a box a point (a carry-in allowance) or a slot (the pouch); an item fills as many as it takes. */
+/* Slot boxes: a box a slot (the pouch). */
 .boxes {
   display: inline-flex;
   flex-wrap: wrap;
@@ -4127,14 +4059,6 @@ body.touch #obj-raid .short {
   background: rgb(var(--white-rgb) / 0.12) repeating-linear-gradient(90deg, transparent 0 25px, rgb(var(--white-rgb) / 0.45) 25px 27px, transparent 27px 30px);
   background-origin: border-box;
 }
-.boxes .seg.empty {
-  border-color: rgb(var(--white-rgb) / 0.32);
-  background: transparent;
-}
-.boxes .seg.over {
-  border-color: var(--ring);
-  background-color: rgb(var(--ring-rgb) / 0.3);
-}
 .boxes .seg.pouch {
   border: 2px dashed var(--pouch);
   background: rgb(var(--pouch-rgb) / 0.16);
@@ -4143,33 +4067,7 @@ body.touch #obj-raid .short {
   width: 22px;
   height: 22px;
 }
-/* What costs no box goes beside the boxes, loose. */
-.carry {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-}
-.carry .free {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding-left: 12px;
-  border-left: 2px solid rgb(var(--white-rgb) / 0.25);
-  font-family: var(--num);
-  font-size: 16px;
-}
-.carry .free span {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.hub-list .slot.depot .carry {
-  flex-basis: 100%;
-  padding: 4px 0 2px calc(7em + 12px);
-}
-.hub-list .slot.pouch small .ico,
-.depart-carry small .ico {
+.hub-list .slot.pouch small .ico {
   margin-right: 4px;
   vertical-align: -2px;
 }
@@ -4178,31 +4076,6 @@ body.touch #obj-raid .short {
   font-size: 18px;
   color: var(--pouch);
 }
-.depart-carry {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  font-size: 14px;
-  font-weight: 800;
-}
-.depart-carry > small {
-  color: var(--muted);
-}
-.depart-carry > b {
-  font-family: var(--num);
-  font-size: 20px;
-}
-.depart-carry.over > b {
-  color: var(--ring);
-}
-.depart-carry .carry {
-  flex-basis: 100%;
-}
-#depart-carry:empty {
-  display: none;
-}
-
 /* A wipe's results: what the pouch kept, in the pouch's colour and stitched, beside what was lost. */
 #haul-line .pouch-kept,
 #home .pouch-kept {

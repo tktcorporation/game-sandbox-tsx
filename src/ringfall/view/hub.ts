@@ -3,11 +3,11 @@ import { attacksHtml, playAttack } from "./attacks";
 import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { jumpNodes, jumpTargets, sortieTargets, type SortieTarget } from "../meta/sortie";
-import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
+import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, depotIcon, gunIcon, healIcon, issueIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildBuying, keepParcels, buildFactory, buy, buyPrice, canBuild, canBuildFactory, shortPrice, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+import { armed, build, buildBuying, keepParcels, buildFactory, buy, buyPrice, canBuild, canBuildFactory, shortPrice, factoryNeeded, nextFactory, canStartIn, emptyLoadout, FIRST_ENTRY, isStarter, issuedHeals, healCount, healRoom, kitPicks, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 // buyPrice / canStartIn used by sourceGuide
 import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
@@ -279,7 +279,6 @@ const $ = (id: string) => document.getElementById(id)!;
 /** A starter weapon's mark before its name: a pin, since it stays in the stash. "" for anything else. */
 const starterMark = (i: Item | undefined) => (isStarter(i) ? `<i class="starter">${pinIcon()}</i>` : "");
 
-const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : ""}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
 
@@ -294,8 +293,7 @@ const PANELS: Record<StationId, { title: string; stash: boolean }> = {
 
 /**
  * A place the departure's map offers: a way in or a depot switched on. `open`: it may be chosen
- * (a way in known, a depot a node held opens a start from); `on`: it is chosen. A depot has its
- * level, allowance (`budget`) and what the loadout costs of it; `over` when that is past it.
+ * (a way in known, a depot a node held opens a start from); `on`: it is chosen.
  */
 export interface StartPoint {
   kind: "entry" | "depot";
@@ -306,10 +304,6 @@ export interface StartPoint {
   region: RegionId;
   open: boolean;
   on: boolean;
-  over: boolean;
-  budget?: number;
-  cost?: number;
-  level?: number;
 }
 
 /**
@@ -815,27 +809,17 @@ export class Hub {
     return armed(this.profile, this.load);
   }
 
-  /** The depot start's allowance and what the loadout costs of it, or null when starting at a way in. */
-  private allowance() {
-    if (!this.from) return null;
-    const a = depotAllowance(this.profile, this.from);
-    return { ...a, cost: loadoutCost(this.profile, this.startLoad()) };
-  }
-
   /** Where the raid starts, as a name. */
   rideTo(): string {
     this.fixStart();
     return this.from ? relayOf(POIS[poiIndex(this.from)].name) : entryOf(this.entry ?? this.profile.entry).name;
   }
 
-  /** Why the chosen start cannot be departed from now (整理待ち, or the loadout over the depot's allowance), or "" when it can. */
+  /** Why the chosen start cannot be departed from now (整理待ち, or a shut start shown), or "" when it can. */
   rideRefused(): string {
     this.fixStart();
     if (needsOrganize(this.profile)) return TERM.organize;
-    // 攻める with no holding to attack: nothing to depart to.
-    if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
-    const a = this.allowance();
-    return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
+    return this.peeked ? (this.lockHint(this.peeked)?.why ?? "") : "";
   }
 
   /** Whether the chosen start is the gate's own way in: walking out of the gate then starts the raid where the player stands. */
@@ -847,20 +831,16 @@ export class Hub {
   /**
    * Every place a raid may start, for the departure's map: each way in (`open` once known, in a
    * region a raid may start in) and each depot switched on (`open` while a node held opens a start
-   * from it), with the chosen one `on`. A depot carries its allowance and what the loadout costs of
-   * it (`over` past it, when it cannot be departed from).
+   * from it), with the chosen one `on`.
    */
   startPoints(): StartPoint[] {
     this.fixStart();
     const p = this.profile;
     const may = departDepots(p);
-    const cost = loadoutCost(p, this.startLoad());
-    const ways: StartPoint[] = ENTRIES.map((e) => ({ kind: "entry", id: e.id, name: e.name, x: e.x, z: e.z, region: e.region, open: p.entries.includes(e.id) && canStartIn(p, e.region), on: !this.from && this.region === e.region && this.entry === e.id, over: false }));
+    const ways: StartPoint[] = ENTRIES.map((e) => ({ kind: "entry", id: e.id, name: e.name, x: e.x, z: e.z, region: e.region, open: p.entries.includes(e.id) && canStartIn(p, e.region), on: !this.from && this.region === e.region && this.entry === e.id }));
     // Only depots a held node could open a start from: one that never opens one is no start to show.
     const depots: StartPoint[] = DEPOTS.filter((d) => p.depots.includes(d.poi) && departNodesIn(poiRegion(d.poi).id).includes(d.poi)).map((d) => {
-      const open = may.includes(d.poi);
-      const a = depotAllowance(p, d.poi);
-      return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
+      return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open: may.includes(d.poi), on: this.from === d.poi };
     });
     return [...ways, ...depots];
   }
@@ -907,7 +887,7 @@ export class Hub {
 
   /**
    * What the column beside the departure's map tells of why it will not go: the shut start shown
-   * (`peek()`), or a depot chosen whose allowance the loadout is past, with how the allowance grows.
+   * (`peek()`).
    */
   departHint(): (LockHint & { at: LockedPick }) | null {
     this.fixStart();
@@ -915,11 +895,7 @@ export class Hub {
       const h = this.lockHint(this.peeked);
       return h && { ...h, at: this.peeked };
     }
-    const a = this.allowance();
-    if (!a || !this.from || fitsStart(this.profile, this.startLoad(), this.from)) return null;
-    // Take less, or send more home through this depot to raise its level: a coin and the credits still to send.
-    const grow = a.next === null ? "" : `<span class="how">${depotIcon()}${ARROW}<b class="cash">${coinIcon()}${yen(a.next)}</b>${ARROW}${upIcon()}Lv</span>`;
-    return { name: relayOf(POIS[poiIndex(this.from)].name), why: `持ち込み枠 ${a.cost} / ${a.budget}`, how: [`<span class="how">${stashIcon()}−</span>`, ...(grow ? [grow] : [])], at: { kind: "depot", id: this.from } };
+    return null;
   }
 
   /** Chooses where the next raid starts: a way in known, or a depot that opens a start. False when it may not start there. */
@@ -977,7 +953,7 @@ export class Hub {
 
   /**
    * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
-   * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
+   * Null when the start may not be departed from (`rideRefused()`).
    */
   launch(): Launch | null {
     this.fixStart();
@@ -1184,48 +1160,6 @@ export class Hub {
     );
   }
 
-  /** The depot start's allowance, as a slot: the depot's level, what the loadout uses of it, and the way to the next level. */
-  private depotSlot(): string {
-    const allow = this.allowance();
-    if (!allow) return "";
-    // Over the allowance it turns red with what it is over by; under it, the credits' worth still to send through this depot for its next level.
-    return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>${depotIcon()}Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span>${this.carryBoxes(allow.budget)}<small>${
-      allow.cost > allow.budget ? `${crossIcon()}+${allow.cost - allow.budget}` : allow.next === null ? "MAX" : `${upIcon()}Lv${allow.level + 1}　${yen(allow.next)}`
-    }</small></div>`;
-  }
-
-  /**
-   * A depot start's allowance as boxes, one a point: each weapon, armour and key the loadout takes
-   * fills as many boxes as it costs, in its rarity's colour, and one past the allowance stands out
-   * in red. What costs nothing (the starter weapons, every heal) sits beside the boxes, outside.
-   */
-  carryBoxes(budget: number): string {
-    const p = this.profile;
-    const l = this.startLoad();
-    const all = [...new Set(l.weapons)].slice(0, 2).concat(l.armor === null ? [] : [l.armor]).map((n) => p.stash[n]).filter((i): i is Item => !!i);
-    const taken = all.filter((i) => itemCost(i) > 0);
-    let used = 0;
-    const segs = taken.map((i) => {
-      const n = itemCost(i);
-      used += n;
-      return `<i class="seg${used > budget ? " over" : ""}" style="--n:${n}">${itemMark(i)}</i>`;
-    });
-    const empty = Array.from({ length: Math.max(0, budget - used) }, () => `<i class="seg empty" style="--n:1"></i>`);
-    const issued = issuedHeals(p);
-    const free = [
-      ...all.filter((i) => itemCost(i) === 0).map((i) => itemMark(i)),
-      ...HEAL_KINDS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}${l.heals[k] + issued[k]}</span>`),
-    ];
-    return `<span class="carry"><span class="boxes">${segs.join("")}${empty.join("")}</span>${free.length ? `<span class="free">${free.join("")}</span>` : ""}</span>`;
-  }
-
-  /** The departure's carry-in boxes when the raid starts at a depot, else "". */
-  departBoxes(): string {
-    this.fixStart();
-    const a = this.allowance();
-    return a ? `<div class="depart-carry${a.cost > a.budget ? " over" : ""}"><small>${depotIcon()}持ち込み枠</small><b>${a.cost} / ${a.budget}</b>${this.carryBoxes(a.budget)}</div>` : "";
-  }
-
   /**
    * Shelves' side column: the next raid's kit.
    * Warehouse capacity is raised at the workshop, not here.
@@ -1244,7 +1178,6 @@ export class Hub {
     // A row stands only for what the stash can fill: no armour and no heal of a kind means no row for it.
     const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
     const kit =
-      this.depotSlot() +
       weapons +
       (has("armor") ? slot("アーマー", this.load.armor) : "") +
       HEAL_KINDS.filter((k) => healCount(p, k) + issued[k] > 0)
@@ -1369,11 +1302,9 @@ export class Hub {
       $("hub-stash").innerHTML =
         withSectionHeaders(list, ({ item, index }) => {
           const on = kit && used.has(index[0]);
-          // When the start is a depot, each pick shows what it costs of the depot's allowance.
-          const cost = kit && this.from && itemCost(item) > 0 ? `枠 ${itemCost(item)}` : "";
           // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
           const fixed = isStarter(item);
-          const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
+          const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
           const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor") ? "pick" : undefined;
           return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
         }) || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;

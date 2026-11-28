@@ -42,7 +42,7 @@ import { SHIP_SQUAD, bagLoad, bagUsed, makeRoom, useTarget } from "../src/ringfa
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { build, buildBuying, buildFactory, buy, canBuild, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, bestFitValuables, price, sell, sellPrice, settle, shortPrice, buyPrice, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { build, buildBuying, buildFactory, buy, canBuild, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, FIRST_ENTRY, newProfile, parseProfile, bestFitValuables, price, sell, sellPrice, settle, shortPrice, buyPrice, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
@@ -1533,7 +1533,7 @@ function checkSettle(): string | null {
   if (wiped.stash.filter(isStarter).length !== 2 || next.weapons.length !== 2 || !next.weapons.every((n) => isStarter(wiped.stash[n]))) return `starter scenario: after a wipe the stash holds ${JSON.stringify(wiped.stash.filter(isStarter))} and the shelves pick ${JSON.stringify(next.weapons)}`;
   // Not for sale, no room taken, no allowance: and a save with one missing or doubled has exactly the two again.
   const pin = p.stash.findIndex(isStarter);
-  if (sell(p, pin) !== p || itemCost(p.stash[pin]) !== 0 || stashUsed(p) !== start - 2) return "starter scenario: a starter weapon was sold, costs a depot's allowance or takes stash room";
+  if (sell(p, pin) !== p || stashUsed(p) !== start - 2) return "starter scenario: a starter weapon was sold, costs a depot's allowance or takes stash room";
   const odd = parseProfile(JSON.parse(JSON.stringify({ ...p, stash: [p.stash[0], p.stash[0], { t: "weapon", kind: "lance", rarity: 3, starter: true }, ...p.stash.slice(2)] })));
   const pins = odd?.stash.filter(isStarter).map((i) => (i.t === "weapon" ? `${i.kind}${i.rarity}` : "?")).sort().join();
   if (pins !== "pike0,talon0" || odd?.stash.some((i) => i.t === "weapon" && i.kind === "lance")) return `starter scenario: a save with a doubled starter and a forged one loaded as ${JSON.stringify(odd?.stash)}`;
@@ -1745,97 +1745,24 @@ function checkDepots(): string | null {
 }
 
 /**
- * A start from a depot carries a limited loadout: stash weapons, armour and keys cost points
- * (`DEPOT`), the starter weapons and heals cost nothing, and a depot's allowance grows with the
- * credits' worth sent home through that depot alone. A start at a way in has no limit.
+ * A start from a depot (`DEPOT`): only from one that is on and that a node held opens a start
+ * from, and with the same loadout as a start at a way in (the depots' allowance is gone, v59).
  */
 function checkDepotBudget(): string | null {
-  // What each pick costs.
-  for (const r of [0, 1, 2, 3] as const) if (itemCost({ t: "weapon", kind: "pike", rarity: r }) !== DEPOT.weaponCost[r]) return `depot budget: a rarity ${r} weapon costs ${itemCost({ t: "weapon", kind: "pike", rarity: r })}`;
-  if (DEPOT.weaponCost.join() !== "1,2,3,4" || DEPOT.armorCost.join() !== "0,1,2,3" || DEPOT.budget.join() !== "2,4,6,9" || DEPOT.levels.join() !== "0,1500,5000,12000") return "depot budget: the numbers in DEPOT are not the agreed ones";
-  if (itemCost({ t: "armor", tier: 3 }) !== 3 || itemCost({ t: "heal", kind: "medkit" }) !== 0) return "depot budget: armour or heals cost the wrong points";
   const base: Profile = {
     ...bareProfile(3),
-    // Starts from a depot need the node that opens them held (`UNLOCKS`): the yard and the supply depot.
     poiState: { ...bareProfile(3).poiState, yard: { state: "own" }, supply: { state: "own" } },
     depots: ["yard", "supply"],
-    depotSent: { yard: 0, supply: 0 },
-    stash: [
-      { t: "weapon", kind: "pike", rarity: 2 },
-      { t: "weapon", kind: "hornet", rarity: 0 },
-      { t: "armor", tier: 2 },
-      { t: "valuable", kind: "fuse" },
-      { t: "valuable", kind: "fuse" },
-      { t: "valuable", kind: "fuse" },
-      { t: "heal", kind: "cell" },
-      { t: "heal", kind: "medkit" },
-      ...withStarters([]),
-    ],
+    stash: [{ t: "weapon", kind: "pike", rarity: 3 }, { t: "weapon", kind: "hornet", rarity: 2 }, { t: "armor", tier: 3 }, ...withStarters([])],
   };
-  const heals = { cell: 1, battery: 0, syringe: 0, medkit: 1 };
-  const free = { ...emptyLoadout(), heals };
-  if (loadoutCost(base, free) !== 0 || loadoutCost(base, { ...free, weapons: [8, 9] }) !== 0) return `depot budget: the starter weapons with heals cost ${loadoutCost(base, free)}`;
-  // The same weapon picked twice counts once.
-  const full = { weapons: [0, 1, 0], armor: 2, heals };
-  if (loadoutCost(base, full) !== 3 + 1 + 2) return `depot budget: an epic, a common and tier 2 armour cost ${loadoutCost(base, full)}, not 6`;
-
-  // The level, the allowance and what the next level still needs, from the credits sent through the depot.
-  const at = (sent: number) => depotAllowance({ ...base, depotSent: { yard: sent } }, "yard");
-  for (const [sent, level, budget, next] of [[0, 0, 2, 1500], [1499, 0, 2, 1], [1500, 1, 4, 3500], [4999, 1, 4, 1], [5000, 2, 6, 7000], [12000, 3, 9, null], [99999, 3, 9, null]] as const) {
-    const a = at(sent);
-    if (a.level !== level || a.budget !== budget || a.next !== next || a.sent !== sent) return `depot budget: ${sent} credits sent gave ${JSON.stringify(a)}`;
-  }
-  if (depotAllowance(base, "wreck").level !== 0) return "depot budget: a depot with nothing recorded is not level 0";
-
-  // Sending through the yard's depot raises the yard's level, across raids, and never the supply depot's.
-  const YARDD = depotIndex("yard");
-  const d = DEPOTS[YARDD];
-  const press = idleInput();
-  press.interact = true;
-  const raidSending = (haul: State["player"]["haul"]) => {
-    const s = padRun();
-    s.depots[YARDD] = true;
-    s.depots[depotIndex("supply")] = true;
-    s.player.pos = { x: d.x, y: groundAt(d.x, d.z, PLAYER.radius, d.y + 0.3), z: d.z };
-    s.player.onGround = true;
-    s.player.haul = [...haul];
-    step(s, press, false);
-    s.outcome = "dead";
-    return s;
-  };
-  const r1 = raidSending(["core", "board"]);
-  if (r1.sentVia[YARDD] !== 1300 || r1.sentVia.some((v, i) => i !== YARDD && v !== 0)) return `depot budget: sending a core and a board through the yard recorded ${r1.sentVia.join()}`;
-  const p1 = settle(base, r1).profile;
-  if (p1.depotSent.yard !== 1300 || p1.depotSent.supply !== 0 || depotAllowance(p1, "yard").level !== 0) return `depot budget: after one raid the profile holds ${JSON.stringify(p1.depotSent)}`;
-  const p2 = settle(p1, raidSending(["board"])).profile;
-  if (p2.depotSent.yard !== 1600 || depotAllowance(p2, "yard").level !== 1 || depotBudget(p2, "yard") !== 4 || depotAllowance(p2, "supply").level !== 0 || depotBudget(p2, "supply") !== 2) return `depot budget: after two raids the profile holds ${JSON.stringify(p2.depotSent)}`;
-  // A raid that sends nothing keeps the record, and a depot switched on in it starts at 0.
-  const quiet = padRun();
-  quiet.depots[depotIndex("wreck")] = true;
-  quiet.outcome = "dead";
-  const p3 = settle(p2, quiet).profile;
-  if (p3.depotSent.yard !== 1600 || p3.depotSent.wreck !== 0) return `depot budget: a raid sending nothing left ${JSON.stringify(p3.depotSent)}`;
-  if (JSON.stringify(parseProfile(JSON.parse(JSON.stringify(p3)))?.depotSent) !== JSON.stringify(p3.depotSent)) return "depot budget: the sent record does not survive a save";
-
-  // A v7 save loads with nothing sent through each depot on (and its explored map, over the smaller world, dropped); a current save keeps only its depots' records.
-  const { depotSent: _ds, ...v7 } = { ...p3, v: 7 };
-  const m7 = parseProfile(JSON.parse(JSON.stringify(v7)));
-  if (m7?.v !== SAVE_V || JSON.stringify(m7.depotSent) !== JSON.stringify(Object.fromEntries(p3.depots.map((x) => [x, 0]))) || m7.seen !== "") return `depot budget: a v7 save loaded as ${JSON.stringify(m7 && { v: m7.v, depotSent: m7.depotSent })}`;
-  const odd = parseProfile(JSON.parse(JSON.stringify({ ...p3, depotSent: { yard: 2000, supply: -5, nowhere: 9, quarry: 7000 } })));
-  if (JSON.stringify(odd?.depotSent) !== JSON.stringify({ supply: 0, wreck: 0, yard: 2000 })) return `depot budget: a save's odd records loaded as ${JSON.stringify(odd?.depotSent)}`;
-
-  // takeKit refuses a depot start over its allowance, and takes the same loadout as a drop.
-  const epic = { ...emptyLoadout(), weapons: [0] };
-  if (takeKit(base, epic, "yard") !== null || fitsStart(base, epic, "yard")) return "depot budget: an epic weapon (3) started from a level 0 depot (2)";
-  const dropped = takeKit(base, epic, null);
-  if (!dropped || dropped.kit.weapons[0]?.kind !== "pike" || dropped.profile.stash.length !== base.stash.length - 1) return "depot budget: the same loadout was not taken for a start at a way in";
-  if (takeKit(base, epic).kit.weapons[0]?.kind !== "pike") return "depot budget: takeKit without a start no longer takes the loadout";
-  if (!takeKit(base, free, "yard") || !takeKit(base, { ...emptyLoadout(), weapons: [1] }, "yard")) return "depot budget: a loadout within the allowance (the starter weapons; a common) was refused";
-  if (takeKit(base, { ...emptyLoadout(), weapons: [1], armor: 2 }, "yard") !== null) return "depot budget: a common and tier 2 armour (3) started from a level 0 depot (2)";
-  if (takeKit(base, epic, "wreck") !== null) return "depot budget: a start from a depot that is not on was allowed";
-  const levelled = takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "yard");
-  if (!levelled || levelled.kit.weapons.length !== 2) return "depot budget: a level 1 depot (4) refused an epic and a common (4)";
-  if (takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "supply") !== null) return "depot budget: the supply depot was levelled by sends through the yard";
+  const full = { ...emptyLoadout(), weapons: [0, 1], armor: 2 };
+  const fromDepot = takeKit(base, full, "yard");
+  const fromWay = takeKit(base, full, null);
+  if (!fromDepot || !fromWay || JSON.stringify(fromDepot.kit) !== JSON.stringify(fromWay.kit) || fromDepot.kit.weapons.length !== 2 || fromDepot.kit.armor !== 3) return "depot start: the best of the stash did not go along from a depot as from a way in";
+  if (!fitsStart(base, "yard") || !fitsStart(base, null) || fitsStart(base, "wreck") || takeKit(base, full, "wreck") !== null) return "depot start: a start from a depot that is not on was allowed, or one that is on refused";
+  if (fitsStart({ ...base, poiState: bareProfile(3).poiState }, "yard")) return "depot start: a depot whose node is not held opened a start";
+  const old = parseProfile(JSON.parse(JSON.stringify({ ...base, v: 58, depotSent: { yard: 2000, supply: 0 } })));
+  if (!old || old.v !== SAVE_V || "depotSent" in old || old.depots.join() !== "yard,supply") return `depot start: a v58 save with a depot's record loaded as ${JSON.stringify(old && [old.v, old.depots, "depotSent" in old])}`;
   return null;
 }
 
@@ -3703,7 +3630,7 @@ function checkFront(): string | null {
  * landed and bound for it, which takes it back when nobody holds it. Nodes stay as the battle ended.
  */
 /** The profile's version (`Profile.v`): what a new profile is, and what every older save loads as. Raised here with each migration. */
-const SAVE_V = 58;
+const SAVE_V = 59;
 
 /** A new profile on an island all the enemy's: a new island starts with the four shores (`ROUTE_SHORES`) the player's, which the scenarios about one node's taking leave out. */
 const bareProfile = (seed?: number): Profile => ({ ...newProfile(seed), poiState: blankIsland() });
