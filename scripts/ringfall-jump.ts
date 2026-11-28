@@ -120,6 +120,14 @@ function parts(): { name: string; err: string | null; line: string }[] {
     o.phase = "done";
     o.outcome = "extracted";
     const on = jumpBack(s, o);
+    // Down as the sortie's time ran out: back at the core still down, the revive owed.
+    const d = atCore([HOME]);
+    const fell = jumpOut(d, target, []);
+    fell.player.hp = 0;
+    fell.player.downed = 7;
+    fell.phase = "done";
+    fell.outcome = "extracted";
+    jumpBack(d, fell);
     const w = atCore([HOME]);
     const dead = jumpOut(w, target, []);
     dead.phase = "done";
@@ -139,6 +147,8 @@ function parts(): { name: string; err: string | null; line: string }[] {
           ? `health ${s.player.hp}, not the 40 brought back`
           : dist2d(s.player.pos, at) > 0.01
             ? "the player is not back where they left"
+            : d.player.downed !== 7 || d.phase !== "play"
+              ? "a player down as the sortie ended came back standing"
             : gone || w.phase !== "done" || w.outcome !== "dead"
               ? "a wipe in the sortie did not end the raid as a wipe"
               : !b.battle?.done
