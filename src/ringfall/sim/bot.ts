@@ -9,7 +9,7 @@ import { clearLine, findPath, type Avoid } from "./nav";
 import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
-import { canOpen, makeRoom, useTarget } from "./world";
+import { makeRoom, useTarget } from "./world";
 import { offLowGround, offshore, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
 
@@ -216,7 +216,6 @@ export class Bot {
     inp.heal = false;
     inp.touch = false;
     inp.keepArmor = true;
-    inp.leaveTools = true;
     inp.leaveMods = true;
     inp.noClimb = true;
     // Ornstein-Uhlenbeck aim error: wanders, stationary std = aimErr.
@@ -1161,7 +1160,7 @@ export class Bot {
       return d < r || (d < r * 2.5 && `${Math.round(c.x)},${Math.round(c.z)}` === this.lootKey);
     };
     const cands: { x: number; z: number; d: number; weapon?: true; care?: true }[] = [];
-    for (const b of s.bins) if (!b.open && canOpen(s, b) && reach(b, 26) && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
+    for (const b of s.bins) if (!b.open && reach(b, 26) && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
     if (s.care && s.care.landed && !s.care.open) cands.push({ x: s.care.x, z: s.care.z, d: dist2d(s.care, p.pos), care: true });
     for (const l of s.loot) {
       if (l.age < 0.6 || !reach(l.pos, 22) || !reachable(l.pos)) continue;
@@ -1169,7 +1168,7 @@ export class Bot {
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       // A valuable the bag can take, or one worth throwing cheaper things out for.
-      if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, [])) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+      if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
     const best = cands.sort((a, b) => a.d - b.d)[0] ?? null;
     // A thing at the edge of its reach whose way round leads off first drops out of reach and

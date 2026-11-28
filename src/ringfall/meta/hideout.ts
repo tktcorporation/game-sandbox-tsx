@@ -67,10 +67,6 @@ export function sources(kind: ValuableKind): Source[] {
   return out.sort((a, b) => b.share - a.share);
 }
 
-/** POIs whose vault may hold `kind`, for the 鍵は…の補給箱 line. */
-export const vaultPoisFor = (kind: ValuableKind): PoiId[] =>
-  POIS.filter((p) => p.bins.some((b) => b.vault) && VAULT.valuables.some((set) => set.includes(kind))).map((p) => p.id);
-
 /**
  * POIs that yield `kind` for the raid map / minimap goal marks: bins and fixed robot drops
  * (タイタン → 発着場). Vaults and unplaced robot drops have no POI and are left out.

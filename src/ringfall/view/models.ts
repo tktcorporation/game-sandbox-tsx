@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
+import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import type { LootKind } from "../sim/state";
 import { PROP, type Box } from "../sim/map";
 import type { TrimPiece } from "./trim";
@@ -1536,12 +1536,11 @@ function lean(t: THREE.Group, g: THREE.Object3D): void {
  * square pack with three lit windows; the syringe a long barrel with a plunger and needle; the
  * medkit a white case with a red cross and a handle; each valuable its own object (a cartridge
  * fuse with blades, a gear on its block, a spool of copper, a board leant over, an upright drive,
- * a gimbal round a lit core, a lit column between two plates, a lit drum in a cage); the vault's key
- * a real key in its rarity's gold; the tools, the mod part and the flares their own shapes. The
- * valuables, the armour, the key and the mod part carry a part in their rarity's colour, so the
+ * a gimbal round a lit core, a lit column between two plates, a lit drum in a cage); the mod part and the flares their own shapes. The
+ * valuables, the armour and the mod part carry a part in their rarity's colour, so the
  * item itself says what the beam says. Parts of one material are merged.
  */
-export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind, tool?: ToolKind): THREE.Group {
+export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind): THREE.Group {
   const g = new THREE.Group();
   const color = RARITY_COLOR[rarity];
   const { box, cyl, put } = parts(g);
@@ -1688,30 +1687,6 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
       cyl(dark, 0.12, 0.07, 0, 0.67, 0, 8);
       for (const x of [-0.2, 0.2]) box(steel, 0.04, 0.09, 0.14, x, 0.68, 0);
     }
-  } else if (kind === "key") {
-    // The vault's key standing on its tip: the bow a ring, the collar, the shank, two bits, and a dark tag on the ring.
-    const metal = flat(color);
-    put(new THREE.TorusGeometry(0.08, 0.032, 4, 10), metal, 0, 0.62, 0);
-    box(metal, 0.09, 0.045, 0.05, 0, 0.51, 0);
-    box(metal, 0.05, 0.3, 0.045, 0, 0.34, 0);
-    box(metal, 0.09, 0.055, 0.045, 0.065, 0.24, 0);
-    box(metal, 0.06, 0.045, 0.045, 0.05, 0.32, 0);
-    box(dark, 0.1, 0.13, 0.018, -0.13, 0.55, 0, 0, 0, 0.5);
-  } else if (kind === "tool" && tool === "cutter") {
-    // Bolt cutters lying open: two long handles with red grips, the pivot plate, the short dark jaws.
-    for (const s of [-1, 1]) {
-      box(steel, 0.5, 0.045, 0.045, -0.02, 0.14, s * 0.05, 0, s * 0.08, 0);
-      box(flat(PAL.healRed), 0.24, 0.065, 0.065, -0.3, 0.14, s * 0.075, 0, s * 0.08, 0);
-      box(dark, 0.16, 0.05, 0.05, 0.33, 0.14, s * 0.025, 0, -s * 0.18, 0);
-    }
-    box(mid, 0.12, 0.08, 0.1, 0.22, 0.14, 0);
-  } else if (kind === "tool") {
-    // A breaching charge: a squat orange case under two dark straps, the detonator on top with its red light and aerial.
-    box(flat(PAL.hazard), 0.44, 0.24, 0.3, 0, 0.22, 0);
-    for (const x of [-0.13, 0.13]) box(dark, 0.06, 0.26, 0.32, x, 0.22, 0);
-    box(dark, 0.14, 0.1, 0.12, 0.05, 0.39, 0);
-    put(new THREE.SphereGeometry(0.035, 6, 4), glow(PAL.healRed), 0.08, 0.46, 0);
-    box(steel, 0.015, 0.22, 0.015, 0.0, 0.55, 0);
   } else if (kind === "mod") {
     // A mod part: a hexagonal chip in a dark frame, its core lit in the rarity's colour, three steel clips,
     // stood up on edge so its face is seen from eye height, not only its rim.

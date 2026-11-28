@@ -1,5 +1,5 @@
 import { WORLD } from "./config";
-import { BOXES, deckAt, ROUTES, type Box } from "./map";
+import { BOXES, deckAt, type Box } from "./map";
 import { steepAt, terrainGrad, terrainHeight } from "./terrain";
 import type { Vec3 } from "./state";
 import { hypot2, hypot3 } from "./hypot";
@@ -11,8 +11,8 @@ export { hypot2, hypot3 } from "./hypot";
  * A coarse grid finds the boxes near a point, and rays walk the cells they cross.
  */
 const CELL = 8;
-/** Every box any world may hold: the map's, then each route's, closed and open. */
-const ALL = [...BOXES, ...ROUTES.flatMap((r) => [...r.closed, ...r.open])];
+/** Every box of the world. */
+const ALL = BOXES;
 const indexOf = new Map(ALL.map((b, i) => [b, i]));
 /**
  * The grid, as a flat array over the cells any box spans (a cell outside them holds none). A
@@ -88,49 +88,6 @@ function near(x: number, z: number, r: number): readonly Box[] {
     }
   return scratch;
 }
-
-/** The routes' boxes in the grid now: the obstacles of those closed and what stands on those open. */
-let routeBoxes: Box[] = [];
-/** The closed routes' obstacles among them: 1 at their places in `ALL`. */
-const obstacle = new Uint8Array(ALL.length);
-/**
- * What stands on the open routes (a roof, a gangway). Path finding (nav.ts, hunt.ts) counts these
- * as it counts the map's boxes, but not a closed route's obstacles: they stand in the cliff a
- * route will be cut through, or on the deck a gangway climbs to, where path finding already goes
- * no further. So with every route closed the walkers' grids are the ones the map alone gives.
- */
-export let routeBoxesOpen: readonly Box[] = [];
-
-/** Counts the worlds put in place (`setRouteBoxes()`): an answer of `groundAt()` kept from an earlier world is stale. */
-export let worldVersion = 0;
-
-/**
- * Puts the routes' boxes for one set of open routes into the grid (routes.ts), after the map's
- * own: a cell's boxes keep their order, so a world with every route closed meets the map's
- * boxes exactly as before, and its obstacles only where something reaches them.
- */
-export function setRouteBoxes(closed: Box[], open: Box[]) {
-  for (const b of routeBoxes)
-    for (const c of cellsOf(b)) {
-      const list = cellBoxes[c]!;
-      const ids = cellIds[c]!;
-      const keep = list.flatMap((o, n) => (o !== b ? [n] : []));
-      if (keep.length) {
-        cellBoxes[c] = keep.map((n) => list[n]);
-        cellIds[c] = keep.map((n) => ids[n]);
-      } else cellBoxes[c] = cellIds[c] = undefined;
-    }
-  for (const b of routeBoxes) obstacle[indexOf.get(b)!] = 0;
-  routeBoxes = [...closed, ...open];
-  for (const b of closed) obstacle[indexOf.get(b)!] = 1;
-  for (const b of routeBoxes) addToGrid(b);
-  routeBoxesOpen = open;
-  worldVersion++;
-}
-setRouteBoxes(
-  ROUTES.flatMap((r) => r.closed),
-  [],
-);
 
 /**
  * Height of the highest surface under a circle at (x, z) that a body with feet at
@@ -297,11 +254,10 @@ function rayBox(o: Vec3, d: Vec3, b: Box, maxT: number): number {
 }
 
 /**
- * Distance along a unit ray to the first box or the ground, capped at maxT. `paths` leaves the
- * closed routes' obstacles out, as the walkers' grids do (`routeBoxesOpen`). Fences are seen and
+ * Distance along a unit ray to the first box or the ground, capped at maxT. Fences are seen and
  * shot through, so they are left out too; `fences` asks for the fences alone, and no ground.
  */
-export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false, fences = false): number {
+export function rayWorld(o: Vec3, d: Vec3, maxT: number, fences = false): number {
   let t = maxT;
   // Walk the grid cells under the ray in order. A box in a cell entered beyond the
   // nearest hit so far cannot be nearer, so the walk stops there.
@@ -326,7 +282,6 @@ export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false, fences =
         const i = ids[n];
         if (seenBy[i] === rayId) continue;
         seenBy[i] = rayId;
-        if (paths && obstacle[i]) continue;
         // A fence of bars or mesh stops a body, not a look or a shot.
         if ((b.kind === "fence") !== fences) continue;
         const bt = rayBox(o, d, b, t);
@@ -371,11 +326,11 @@ function rayTerrain(o: Vec3, d: Vec3, maxT: number): number {
   return end < 0 ? Math.max(prev, maxT - 0.4) : maxT;
 }
 
-/** Clear sight from a to b. `paths`: as path finding sees the world, without the closed routes' obstacles (see `rayWorld`). */
 /** Scratch direction for `los()`: rewritten each call, never retained. */
 const losDir: Vec3 = { x: 0, y: 0, z: 0 };
 
-export function los(a: Vec3, b: Vec3, paths = false): boolean {
+/** Clear sight from a to b. */
+export function los(a: Vec3, b: Vec3): boolean {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const dz = b.z - a.z;
@@ -384,7 +339,7 @@ export function los(a: Vec3, b: Vec3, paths = false): boolean {
   losDir.x = dx / len;
   losDir.y = dy / len;
   losDir.z = dz / len;
-  return rayWorld(a, losDir, len, paths) >= len - 0.05;
+  return rayWorld(a, losDir, len) >= len - 0.05;
 }
 
 /** Whether a fence stands between a and b (at a's knee height): a robot that sees through one cannot walk through it. */
@@ -393,7 +348,7 @@ export function fenceBetween(a: Vec3, b: Vec3): boolean {
   const dz = b.z - a.z;
   const len = hypot2(dx, dz);
   if (len < 1e-6) return false;
-  return rayWorld({ x: a.x, y: a.y + 0.5, z: a.z }, { x: dx / len, y: 0, z: dz / len }, len, false, true) < len - 0.05;
+  return rayWorld({ x: a.x, y: a.y + 0.5, z: a.z }, { x: dx / len, y: 0, z: dz / len }, len, true) < len - 0.05;
 }
 
 /** Distance along a unit ray to a sphere, or Infinity. */

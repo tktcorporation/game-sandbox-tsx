@@ -33,7 +33,6 @@ const kit = starterKit();
 kit.weapons = [{ kind: "pike", rarity: 0, mag: -1, starter: true }, { kind: "talon", rarity: 0, mag: -1, starter: true }];
 kit.heals = { cell: 0, battery: 0, syringe: 0, medkit: 0 };
 kit.armor = 0;
-kit.keys = [];
 const s = newRun(3, kit);
 s.outcome = "extracted";
 s.player.weapons = [kit.weapons[0], kit.weapons[1]];

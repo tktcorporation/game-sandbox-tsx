@@ -48,8 +48,6 @@ export const lockIcon = (c = "currentColor") => svg(`<rect x="3.5" y="7" width="
 /** A pushpin, for a starter weapon: it stays pinned in the stash, never lost and never sold. */
 export const pinIcon = (c = "currentColor") => svg(`<path d="M5 1.5 H11 L10 6 L12.5 9 H3.5 L6 6 Z" fill="${c}"/><path d="M8 9 V15" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>`, "pin");
 
-/** A key. */
-export const keyIcon = (c = "currentColor") => svg(`<circle cx="5" cy="8" r="3.3" fill="none" stroke="${c}" stroke-width="2"/><path d="M8.2 8 H14.5 M12.2 8 V11 M14.2 8 V10.4" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`, "key");
 
 /** A bag: the slots the player carries. */
 export const bagIcon = (c = "currentColor") => svg(`<path d="M3 6 H13 L12 15 H4 Z" fill="${c}"/><path d="M5.5 6 V4.5 a2.5 2.5 0 0 1 5 0 V6" stroke="${c}" stroke-width="1.6" fill="none"/>`, "bag");
@@ -84,14 +82,6 @@ export const robotIcon = (c: string) => svg(`<rect x="4.5" y="1.5" width="7" hei
 
 /** A turret. */
 export const turretIcon = (c = "currentColor") => svg(`<rect x="3" y="10" width="10" height="5" fill="${c}"/><rect x="5" y="6" width="6" height="4.5" rx="1" fill="${c}"/><path d="M10 7.5 H15" stroke="${c}" stroke-width="2"/>`, "turret");
-
-/** A route a tool opens, as the map draws it: a solid teal line when open, a dashed orange one when shut. */
-export const routeIcon = (open: boolean) =>
-  `<svg class="ico route ${open ? "open" : "shut"}" viewBox="0 0 24 12" width="24" height="12" aria-hidden="true">${
-    open
-      ? `<path d="M1.5 6 H22.5" stroke="${UI.mateLight}" stroke-width="3" stroke-linecap="round"/>`
-      : `<path d="M1.5 6 H22.5" stroke="${UI.shut}" stroke-width="3" stroke-dasharray="3.5 2.5"/><path d="M9 2 L15 10 M15 2 L9 10" stroke="${UI.shut}" stroke-width="2"/>`
-  }</svg>`;
 
 /** A heal by what it restores: a shield cell (blue) or health (green). */
 export const healIcon = (shield: boolean) => (shield ? svg(`<path d="M8 1.5 L14 4 V8.5 C14 11.8 11.3 14 8 15 C4.7 14 2 11.8 2 8.5 V4 Z" fill="${UI.r1}"/>`, "heal") : reviveIcon(UI.good));

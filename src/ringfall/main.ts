@@ -17,7 +17,7 @@ import { analyse, goalKind, goalProgress, needsOrganize, settle, settleSortie, s
 import { leagueChanged, rivalTrophiesLookup, TROPHY, trophiesTable } from "./meta/trophies";
 import { Organize } from "./view/organize";
 import { goalTags, poisWith, pouchSlots } from "./meta/hideout";
-import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
+import { MOD, MODS, type ModKind } from "./sim/config";
 import { departDepots, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
 import { bodyCenter, eyePos, fireRay } from "./sim/combat";
@@ -377,7 +377,7 @@ function showRun() {
 /** Sets out from the core to `t`'s same holding: the raid of the island waits, its clock standing. */
 function goJump(t: SortieTarget) {
   parked = state;
-  state = jumpOut(parked, sortieStart(t), hub.profile.routes);
+  state = jumpOut(parked, sortieStart(t));
   hud.setRivalNames([]);
   hud.setJumps([]);
   showRun();
@@ -813,7 +813,7 @@ function openCamp() {
   unlock();
   world.reset();
   sound.reset();
-  state = newCamp(hub.profile.seed, hub.profile.routes);
+  state = newCamp(hub.profile.seed);
   world.campMode = true;
   world.prebuild([state.player.pos]);
   readyRaid();
@@ -1040,7 +1040,6 @@ function start(go: Launch, from?: State) {
         seen: hub.profile.seen,
         from: go.from,
         entry: go.entry,
-        routes: hub.profile.routes,
         island: holds(hub.profile),
         known: hub.profile.known,
         // Free stash slots after takeKit — 中継ボックス sends only what fits.
@@ -1374,7 +1373,7 @@ declare global {
       take: (i: number, soon?: boolean) => void;
     };
     ringfallNews: (entries: IslandLogEntry[]) => void;
-    ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; keys?: string[] }) => void;
+    ringfallBag: (haul: string[], more?: { at?: (string | null)[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
       wear: (kinds: string[]) => void;
@@ -1400,15 +1399,14 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt({ ...p.pos, yaw: p.yaw })?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: islandDay(hub.profile), poiState: hub.profile.poiState, known: hub.profile.known, factory: hub.profile.factory },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, entries: hub.profile.entries, day: islandDay(hub.profile), poiState: hub.profile.poiState, known: hub.profile.known, factory: hub.profile.factory },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     strength: s.strength,
     mods: p.mods,
     modsAround: s.loot.filter((l) => l.kind === "mod").map((l) => ({ mod: l.mod, x: +l.pos.x.toFixed(1), y: +l.pos.y.toFixed(1), z: +l.pos.z.toFixed(1) })),
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, opened: settlement.opened, learned: settlement.learned, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, analysable: settlement.analysable, analysed },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, learned: settlement.learned, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
-    keys: p.keys,
     phase: s.phase,
     time: +s.time.toFixed(1),
     outcome: s.outcome,
@@ -1417,8 +1415,7 @@ window.render_game_to_text = () => {
     cleared: s.cleared,
     hold: s.hold,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
-    haul: { items: s.player.haul, tools: s.player.tools, value: haulAndSentWorth(s), bag: bagLoad(s.player) },
-    routes: s.routes,
+    haul: { items: s.player.haul, value: haulAndSentWorth(s), bag: bagLoad(s.player) },
     depots: s.depots,
     depotSpots: DEPOTS.map((d) => ({ poi: d.poi, x: d.x, z: d.z, yaw: d.yaw })),
     sent: { items: s.sent, value: s.sent.reduce((n, k) => n + VALUABLES[k].value, 0) },
@@ -1875,15 +1872,13 @@ window.ringfallMods = {
  */
 /**
  * Automation only: fills the bag with `haul` in the raid under way, for screenshots of the bag's
- * slots; `more` sets the POI each valuable came out of (`at`, by id), the tools and keys.
+ * slots; `more` sets the POI each valuable came out of (`at`, by id).
  */
 window.ringfallBag = (haul, more = {}) => {
   if (!running) return;
   const p = state.player;
   p.haul = haul.filter((k): k is keyof typeof VALUABLES => k in VALUABLES);
   p.haulAt = p.haul.map((_, i) => (more.at?.[i] ? poiIndex(more.at[i] as PoiId) : -1));
-  if (more.tools) p.tools = more.tools.filter((k): k is ToolKind => k in TOOLS);
-  if (more.keys) p.keys = more.keys.map((k) => poiIndex(k as PoiId));
 };
 window.ringfallEnd = (how, haul = [], found = []) => {
   if (!running || state.phase === "done") return false;

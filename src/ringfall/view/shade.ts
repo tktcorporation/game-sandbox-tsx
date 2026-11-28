@@ -51,10 +51,9 @@ for (const b of BOXES)
     }
 
 /**
- * Light left on the ground at (x, y, z) by the boxes standing on it nearby: the map's and
- * `extra` (the routes' boxes in place). Under a box's footprint it is the darkest.
+ * Light left on the ground at (x, y, z) by the boxes standing on it nearby. Under a box's footprint it is the darkest.
  */
-export function contactAt(x: number, y: number, z: number, extra: readonly Box[]): number {
+export function contactAt(x: number, y: number, z: number): number {
   const reach: number = SHADE.contactReach;
   let d = reach;
   const visit = (b: Box) => {
@@ -65,7 +64,6 @@ export function contactAt(x: number, y: number, z: number, extra: readonly Box[]
   };
   for (let cx = Math.floor((x - reach) / CELL); cx <= Math.floor((x + reach) / CELL); cx++)
     for (let cz = Math.floor((z - reach) / CELL); cz <= Math.floor((z + reach) / CELL); cz++) grid.get(key(cx, cz))?.forEach(visit);
-  extra.forEach(visit);
   if (d >= reach) return 1;
   const t = d / reach;
   return SHADE.contact + (1 - SHADE.contact) * t * t * (3 - 2 * t);

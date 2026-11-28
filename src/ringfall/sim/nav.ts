@@ -1,5 +1,5 @@
 import { PLAYER, WORLD } from "./config";
-import { los, routeBoxesOpen } from "./geom";
+import { los } from "./geom";
 import { BOXES, DECKS, EXTRACTS, POIS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
@@ -25,7 +25,7 @@ const centerX = (i: number) => WX0 + (i + 0.5) * RES;
 const centerZ = (j: number) => WZ0 + (j + 0.5) * RES;
 /** Cell count of the walkers' grid: a plain search's key is `start * CELLS + goal` (fits in a safe integer). */
 const CELLS = NX * NZ;
-/** Path searches kept lately: declared early so `resetNav()` can clear them. */
+/** Path searches kept lately. */
 const SEARCHED_KEPT = 512;
 const searchedPlain = new Map<number, number[] | null>();
 const searchedAvoid = new Map<string, number[] | null>();
@@ -38,7 +38,7 @@ function blockedCells(): Uint8Array {
   // body standing in a free cell never overlaps a wall.
   const r = PLAYER.radius + 0.02;
   const stepUp = WORLD.stepUp;
-  for (const b of [...BOXES, ...routeBoxesOpen]) {
+  for (const b of BOXES) {
     // Only what stops a body standing on the ground: low steps and high floors do not.
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
     if (b.h - t <= stepUp || b.y0 - t >= 1.75) continue;
@@ -113,21 +113,6 @@ function moveMask(): Uint8Array {
   return m;
 }
 
-/** Forgets the grid, its stretches and the landmarks' fields, for a world whose open routes changed (routes.ts): all are built again on first use. */
-export function resetNav() {
-  grid = new Uint8Array(0);
-  area = new Uint16Array(0);
-  moves = new Uint8Array(0);
-  fields = [];
-  weighted = { disk: null, fields: [] };
-  landmarkCells = null;
-  searchedPlain.clear();
-  searchedAvoid.clear();
-  clearance = new Uint8Array(0);
-  navLoaded = false;
-  navSaved = false;
-}
-
 /**
  * A pack of the walkers' grids and the landmarks' plain fields, as the sim gate's store keeps
  * them between processes: every worker would otherwise build the same grids and the same fills.
@@ -172,7 +157,7 @@ function applyNav(kept: NavArrays) {
 
 /** Tries the store once, when the grid is first needed and no route's boxes are open. */
 function tryLoadNav(): boolean {
-  if (navLoaded || !navStore || routeBoxesOpen.length) return false;
+  if (navLoaded || !navStore) return false;
   navLoaded = true;
   const kept = navStore.load();
   if (!kept || kept.grid.length !== NX * NZ || kept.fields.length !== LANDMARKS.length) return false;
@@ -182,7 +167,7 @@ function tryLoadNav(): boolean {
 
 /** Writes the grids and every landmark's plain field once they are all built. */
 function trySaveNav() {
-  if (navSaved || !navStore || routeBoxesOpen.length || !grid.length || !moves.length || !area.length || !clearance.length || !landmarkCells) return;
+  if (navSaved || !navStore || !grid.length || !moves.length || !area.length || !clearance.length || !landmarkCells) return;
   if (fields.length < LANDMARKS.length) return;
   for (let n = 0; n < LANDMARKS.length; n++) if (fields[n] === undefined) return;
   navSaved = true;
@@ -332,7 +317,7 @@ function nearestFree(x: number, z: number): [number, number] | null {
       fallback ??= [i, j];
       const cx = centerX(i);
       const cz = centerZ(j);
-      if (los({ x, y, z }, { x: cx, y: terrainHeight(cx, cz) + 1, z: cz }, true)) return [i, j];
+      if (los({ x, y, z }, { x: cx, y: terrainHeight(cx, cz) + 1, z: cz })) return [i, j];
     }
   }
   return fallback;
@@ -807,8 +792,7 @@ export function findPath(
  * each search of a long way round costs as much as a whole raid's other thinking; the search
  * depends on nothing else, so its cells are taken again and only smoothed from where the bot
  * now stands. A raid's bot comes back to a way it searched minutes before (out to a POI and
- * back past it), so several hundred are kept, across raids too. resetNav() forgets them with
- * the grid.
+ * back past it), so several hundred are kept, across raids too.
  */
 const searchKeyAvoid = (start: number, goal: number, avoid: Avoid) =>
   `${start} ${goal} ${avoid.x} ${avoid.z} ${avoid.r} ${avoid.home ? `${avoid.home.x} ${avoid.home.z} ${avoid.home.r}` : "-"}`;

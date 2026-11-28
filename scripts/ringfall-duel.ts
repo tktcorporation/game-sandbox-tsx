@@ -53,7 +53,7 @@ const LIMIT = 30;
 
 /** A run with nobody about: no robots, no teammate, no timers. */
 function emptyRun(seed: number, kit: Kit): State {
-  const s = newRun(seed, { weapons: [{ kind: kit.gun, rarity: kit.rarity }], armor: kit.armor, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const s = newRun(seed, { weapons: [{ kind: kit.gun, rarity: kit.rarity }], armor: kit.armor, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } });
   s.enemies = [];
   s.phase = "play";
   s.cleared = POIS.map(() => true);

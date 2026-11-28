@@ -4,11 +4,10 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, NODES, nodeIndex, poiIndex, poiRegion, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, NODES, nodeIndex, poiIndex, poiRegion, TIER, UNLOCKS, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, regionHere, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
 import type { PoiHold } from "../sim/island";
 import { isAiOwner, rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
-import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
@@ -308,9 +307,9 @@ export const ROGUE_CSS = UI.rogue;
 
 /**
  * What the map draws: a raid's state, or the camp's picture of the island between raids (the
- * explored map, the depots on, the routes open, each POI's standing) with no one on it.
+ * explored map, the depots on, each POI's standing) with no one on it.
  */
-export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "routes" | "found"> & {
+export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "found"> & {
   player?: Pick<Player, "pos" | "yaw">;
   ally?: Pick<Ally, "active" | "pos" | "down">;
   /** The squads the player has seen or heard out between the POIs, and the raid's clock they are timed by. */
@@ -340,14 +339,13 @@ type Rect = { x0: number; y0: number; x1: number; y1: number };
 /** The sides' colours on the battle map: the player's blue, the enemy's red, the rogues' violet, another player's green. */
 export const SIDE_CSS: Record<Side, string> = { 0: UI.ownBright, 1: UI.alert, 2: ROGUE_CSS, 3: RIVAL_CSS };
 
-/** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; day?: number; seed?: number }): MapScene {
+/** The camp's picture of the island between raids, from the profile's explored map, depots and POI standings. */
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; poiState: Record<PoiId, { state: PoiHold }>; day?: number; seed?: number }): MapScene {
   return {
     seen: decodeSeen(p.seen),
     cleared: POIS.map(() => false),
     hold: POIS.map((o) => p.poiState[o.id].state),
     depots: DEPOTS.map((d) => p.depots.includes(d.poi)),
-    routes: [...p.routes],
     found: [],
     nodes: nodeHolds((id) => p.poiState[id].state),
   };
@@ -434,8 +432,8 @@ function paintLand(nodes: readonly NodeHold[]) {
   return (landPaint = { key, image: c, line });
 }
 
-/** The ground image, shared by every map on the page: drawing it takes a while, and it changes only with the world (`worldKey()`). */
-let shared: { key: string; image: HTMLCanvasElement } | null = null;
+/** The ground image, shared by every map on the page: drawing it takes a while, and the world never changes. */
+let shared: HTMLCanvasElement | null = null;
 
 export class IslandMap {
   /** One pixel per explored-map cell, redrawn each open frame and scaled over the ground. */
@@ -885,8 +883,7 @@ export class IslandMap {
     this.last = s;
     // The minimap draws as plainly as the results' map, but keeps the ways off (as marks) and the player.
     const plain = this.plain || this.mini > 0;
-    if (shared?.key !== worldKey()) shared = { key: worldKey(), image: this.build() };
-    const base = shared.image;
+    const base = (shared ??= this.build());
     const g = this.canvas.getContext("2d")!;
     const v = this.view(s);
     const aspect = (v.x1 - v.x0) / (v.z1 - v.z0);
@@ -1164,46 +1161,6 @@ export class IslandMap {
     for (const b of plain ? [] : flares) {
       const p = at(b.x, b.z);
       drawFlare(g, p.x, p.y, 6.5 * dpr, !b.open);
-    }
-    // The routes a tool opens: open ones a solid line, closed ones dashed with a cross at each obstacle.
-    for (const r of plain ? [] : ROUTES) {
-      const open = s.routes.includes(r.id);
-      g.save();
-      g.lineWidth = 3 * dpr;
-      g.strokeStyle = open ? UI.mateLight : UI.shut;
-      if (!open) g.setLineDash([4 * dpr, 4 * dpr]);
-      g.beginPath();
-      r.path.forEach((q, n) => {
-        const p = at(q.x, q.z);
-        if (n) g.lineTo(p.x, p.y);
-        else g.moveTo(p.x, p.y);
-      });
-      g.stroke();
-      g.setLineDash([]);
-      if (!open)
-        for (const a of r.at) {
-          const p = at(a.x, a.z);
-          const d = 4 * dpr;
-          g.lineWidth = 2.5 * dpr;
-          g.beginPath();
-          g.moveTo(p.x - d, p.y - d);
-          g.lineTo(p.x + d, p.y + d);
-          g.moveTo(p.x + d, p.y - d);
-          g.lineTo(p.x - d, p.y + d);
-          g.stroke();
-        }
-      g.restore();
-      // Its name beside its middle, where nothing else is.
-      const mid = r.path[Math.floor(r.path.length / 2)];
-      const m = at((r.path[0].x + mid.x) / 2, (r.path[0].z + mid.z) / 2);
-      const text = r.name;
-      g.textAlign = "left";
-      const spot = box(text, m.x + 7 * dpr, m.y, 9, true);
-      if (free(spot)) {
-        taken.push(spot);
-        label(text, m.x + 7 * dpr, m.y, open ? UI.mateLight : UI.peach, 9);
-      }
-      g.textAlign = "center";
     }
     // Depots that are on: a teal square each, a place a later raid can start from.
     (plain ? [] : DEPOTS).forEach((d, i) => {

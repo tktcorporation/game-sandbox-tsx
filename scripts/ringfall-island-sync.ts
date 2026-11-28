@@ -222,16 +222,16 @@ function island(freed: string[], rival: string[] = []): Profile {
   const { logSeq: _logSeq, retaken: _retaken, ...beforeV27 } = p;
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   console.log(`saves: current v${current?.v}, v54 -> v${v54?.v}, v27 -> v${v27?.v} seq ${v27?.logSeq}; v26 -> v${v26?.v} seq ${v26?.logSeq}`);
-  check(current?.v === 57 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its log position and nodes taken back");
-  check(v54?.v === 57 && !("expeditions" in v54) && !("incoming" in v54) && v54.logSeq === 7, "saves: a v54 save kept its expeditions / incoming");
-  check(v27?.v === 57 && !("expeditions" in v27) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep log and nodes taken back");
-  check(v26?.v === 57 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no log read and nothing taken back");
+  check(current?.v === 58 && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its log position and nodes taken back");
+  check(v54?.v === 58 && !("expeditions" in v54) && !("incoming" in v54) && v54.logSeq === 7, "saves: a v54 save kept its expeditions / incoming");
+  check(v27?.v === 58 && !("expeditions" in v27) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep log and nodes taken back");
+  check(v26?.v === 58 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no log read and nothing taken back");
   check(current?.outerGuard && current.outerGuard.lost === 0 && !current.outerGuard.island, "saves: outerGuard missing on current");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, v: 44 })))?.outerGuard.lost === 0, "saves: v44 did not gain empty outerGuard");
   check(!!current && !("team" in current) && !("teamBattle" in current), "saves: team / teamBattle kept on current");
   {
     const fromV49 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 49, team: { id: "t", salt: 1, members: [] }, teamBattle: { days: 3 } })));
-    check(!!fromV49 && fromV49.v === 57 && !("team" in fromV49) && !("teamBattle" in fromV49), "saves: a v49 save kept its team / teamBattle");
+    check(!!fromV49 && fromV49.v === 58 && !("team" in fromV49) && !("teamBattle" in fromV49), "saves: a v49 save kept its team / teamBattle");
   }
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(newProfile(1).logSeq === 0 && !("expeditions" in newProfile(1)), "saves: a new profile has a log read or expeditions");

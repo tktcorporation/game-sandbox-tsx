@@ -9,15 +9,14 @@ import { raidTrophyDelta } from "../meta/trophies";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { capturedIds } from "../sim/front";
 import { itemColor, itemName, nextHandFor } from "./hub";
-import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
-import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
-import { routeBefore } from "../sim/routes";
+import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, ZIPS, type EntryId } from "../sim/map";
 import { islandHolds } from "../meta/island";
 import { isAiOwner, rivalHold, rivalOf, type PoiHold } from "../sim/holds";
-import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
+import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
 import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
@@ -30,14 +29,11 @@ import { nodeRow } from "./row";
 import { compassUrgent, currentStep, huntSpot, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
 import type { World } from "./world";
 import { FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
-import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
+import { binPicture, modIcon, pouchIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
-import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
+import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
 import { capturable, momentum, siegeWaves } from "../sim/front";
 import { terrainHeight } from "../sim/terrain";
-
-/** The POI whose bins drop the key to POI `poi`'s vault (its `keyFrom`), by name. */
-const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
 
 import { BagView } from "./bag";
 import { UI } from "./palette";
@@ -327,20 +323,13 @@ export class Hud {
    * colour inside the pouch's outlined slots, then the rest in their rarities' colours.
    */
   private bagCells(p: State["player"]): string {
-    const kept = pouchKeep(p.haul, p.tools, this.pouch);
+    const kept = pouchKeep(p.haul, this.pouch);
     const keptAt = new Set(kept.at);
-    const keptTools = [...kept.tools];
     const fill: string[] = [];
     const rest: string[] = [];
-    for (const k of kept.tools) for (let n = 0; n < TOOLS[k].size; n++) fill.push("k");
     p.haul.forEach((k, i) => {
       for (let n = 0; n < VALUABLES[k].size; n++) (keptAt.has(i) ? fill : rest).push(keptAt.has(i) ? "k" : RARITY_CSS[VALUABLES[k].rarity]);
     });
-    for (const k of p.tools) {
-      const at = keptTools.indexOf(k);
-      if (at >= 0) keptTools.splice(at, 1);
-      else for (let n = 0; n < TOOLS[k].size; n++) rest.push(RARITY_CSS[3]);
-    }
     // The rest starts past the pouch's slots while it fits there, so the pouch's slots show what it keeps.
     const start = Math.max(fill.length, this.pouch + rest.length <= BAG.slots ? this.pouch : fill.length);
     const cells: string[] = Array.from({ length: BAG.slots }, () => "");
@@ -465,9 +454,6 @@ export class Hud {
         this.dirs.push({ el, x: e.fromX, z: e.fromZ, t: 0.9 });
         break;
       }
-      case "locked":
-        this.toast(`${keyIcon()}${POIS[e.poi].name}<span class="toast-sub">${keyIcon()}▸${esc(keySource(e.poi))}の補給箱</span>`, 0, 3600);
-        break;
       case "pickup":
         // Bag card (view/bag.ts) carries the detail; a short toast confirms the grab (Round 4 juice).
         if (e.kind === "shard") break;
@@ -478,7 +464,7 @@ export class Hud {
           this.toast(`${TERM.goal} · ${esc(VALUABLES[e.valuable].label)} ${have} / ${s.goalNeed}`, e.rarity ?? 0, 2200);
           break;
         }
-        if (["valuable", "tool", "key", "mod"].includes(e.kind)) {
+        if (["valuable", "mod"].includes(e.kind)) {
           this.toast(esc(e.label), e.rarity ?? 0, 1600);
           break;
         }
@@ -1293,23 +1279,10 @@ export class Hud {
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
       if (homeReady(s) && depotBlocked(s)) return `${TERM.camp}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
-      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
+      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.mod) return `${esc(MODS[left.mod].name)} ${checkIcon()}`;
       const full = `${bagIcon()}<b>${bagLoad(p)}/${BAG.slots}</b>`;
-      if (left?.valuable) return `${esc(VALUABLES[left.valuable].label)} ${full}`;
-      if (left?.tool) return `${esc(TOOLS[left.tool].label)} ${full}`;
-      // Before a closed route's obstacle: its name, a padlock and the tool that opens it (ticked when carried).
-      const r = routeBefore(p.pos, s.routes);
-      if (!r) return "";
-      const tool = esc(TOOLS[r.tool].label);
-      // The tool not carried: the POI whose bins hold it; carried, it opens the route once home.
-      const where = p.tools.includes(r.tool) ? checkIcon() : ` <small>▸ ${esc(POIS[poiIndex(TOOLS[r.tool].from)].name)}の補給箱</small>`;
-      return `${esc(r.name)} ${lockIcon()}<span class="r" style="color:${RARITY_CSS[3]}">${tool}</span>${where}`;
-    }
-    if (t.kind === "tool") {
-      const k = t.loot.tool!;
-      const out = (roomForTool(p, k) ?? []).map((i) => VALUABLES[p.haul[i]].label);
-      return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[3]}">${TOOLS[k].label}</span> ${bagIcon()}${TOOLS[k].size}${struck(out)}`);
+      return left?.valuable ? `${esc(VALUABLES[left.valuable].label)} ${full}` : "";
     }
     if (t.kind === "mod") {
       const k = t.loot.mod!;
@@ -1326,22 +1299,20 @@ export class Hud {
       const b = s.bins[t.index];
       const what = b.vault ? "保管庫" : "補給箱";
       if (q?.bin === t.index) return tip(`${what} <b>${Math.floor((q.t / searchFor(p, b)) * 100)}%</b>`);
-      // Shut: whose key opens it, and the POI whose bins hold that key.
-      if (!canOpen(s, b)) return tip(`${what} ${lockIcon()}${keyIcon(RARITY_CSS[3])}${esc(POIS[b.poi].name)} <small>▸ ${esc(keySource(b.poi))}の補給箱</small>`);
       return tip(`${key("E")}${what} ${noiseIcon()}`);
     }
     if (t.kind === "swap") {
       const v = t.loot.valuable!;
-      const out = (makeRoom(p.haul, v, p.tools) ?? []).map((i) => VALUABLES[p.haul[i]].label);
+      const out = (makeRoom(p.haul, v) ?? []).map((i) => VALUABLES[p.haul[i]].label);
       return tip(`${key("E")}${esc(VALUABLES[v].label)}${struck(out)}`);
     }
     if (t.kind === "care") return tip(`${key("E")}補給ポッド`);
     if (t.kind === "depot") {
       // One place, one line: what it is + what happens (brief: 中継ボックス). No internal jargon.
-      if (!p.haul.length && !p.tools.length) {
+      if (!p.haul.length) {
         return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.cutAndExtract} ${clockIcon()}${DEPOT.leave} 秒`);
       }
-      const n = p.haul.length + p.tools.length;
+      const n = p.haul.length;
       const value = p.haul.reduce((v, k) => v + VALUABLES[k].value, 0);
       const room = Number.isFinite(s.stashRoom) ? Math.max(0, Math.floor(s.stashRoom)) : null;
       if (room === 0) {
@@ -1666,14 +1637,11 @@ export class Hud {
     const lost = s.outcome !== "extracted";
     const sentValue = s.sent.reduce((n, k) => n + VALUABLES[k].value, 0);
     const value = haulAndSentWorth(s);
-    const carried = [
-      ...(Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const),
-      ...TOOL_KINDS.map((k) => [TOOLS[k].label, s.player.tools.filter((t) => t === k).length] as const),
-    ].filter(([, n]) => n > 0);
+    const carried = (Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const).filter(([, n]) => n > 0);
     // settle() lists what was sent from a depot first in `home`; it is shown on a line of its own.
     const all = settled?.home ?? [];
-    const sent = all.slice(0, s.sent.length + s.sentTools.length);
-    const home = all.slice(s.sent.length + s.sentTools.length);
+    const sent = all.slice(0, s.sent.length);
+    const home = all.slice(s.sent.length);
     // On a wipe, what the bag held splits in two: what the pouch kept, in the pouch's colour, and the rest struck through.
     const pouched = new Map<string, number>();
     if (lost) for (const i of home) pouched.set(itemName(i), (pouched.get(itemName(i)) ?? 0) + 1);
@@ -1683,7 +1651,7 @@ export class Hud {
       ...carried.filter(([label, n]) => n > kept(label, n)).map(([label, n]) => `<span class="lost">${label}${n - kept(label, n) > 1 ? ` × ${n - kept(label, n)}` : ""}</span>`),
     ];
     // The haul's worth under the day's result; what a wipe lost is struck through, what went home from a depot is kept.
-    // A sortie with nothing brought back shows no worth; what a wipe kept in the pouch or lost (tools among them) still shows.
+    // A sortie with nothing brought back shows no worth; what a wipe kept in the pouch or lost still shows.
     $("haul-line").hidden = !!sortie && value === 0 && !(lost && split.length);
     $("haul-line").innerHTML =
       `<span${lost ? ' class="lost"' : ""}>回収の価値<b>${lost ? value - sentValue : value}</b></span>` +
@@ -1765,7 +1733,6 @@ export class Hud {
           (settled.learned.length || (lost && forgot.length)
             ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span class="learned"><span class="turn">${entryIcon(false)}${entryIcon()}</span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`
             : "") +
-          (settled.opened.length ? `<h3>開いた道</h3><p>${settled.opened.map((id) => `<span>${routeIcon(true)}${routeOf(id).name}</span>`).join("")}</p>` : "") +
           (settled.pending?.length || settled.sold.length
             ? settled.soldFor > 0 && !(settled.pending?.length)
               ? `<h3>${PHRASE.organizeSold}</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span>${before ? `<span>${stashIcon()}${stashUsed(settled.profile)} / ${stashCap(settled.profile.hideout)}</span>` : ""}</p>`

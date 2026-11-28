@@ -22,7 +22,6 @@ function atDepot(room: number) {
   s.player.pos = { x: d.x, y: d.y, z: d.z };
   s.player.haul = ["wire", "reactor", "parts"];
   s.player.haulAt = [-1, -1, -1];
-  s.player.tools = [];
   s.phase = "play";
   return s;
 }

@@ -4,8 +4,8 @@
  * played at the other player's same node as a run of its own (`Start.sortie`), and takes the
  * player back at the core they left when it ends.
  *
- * What the player carries goes with them both ways: health, armour, weapons, heals, the bag, keys,
- * tools, mod parts and the leap's charge. A wipe in the sortie is the raid's wipe. Nothing here
+ * What the player carries goes with them both ways: health, armour, weapons, heals, the bag,
+ * mod parts and the leap's charge. A wipe in the sortie is the raid's wipe. Nothing here
  * reads or writes the profile; what the sortie won is settled by `settleSortie()` in meta/profile.ts.
  */
 import { finishBattle } from "./battle";
@@ -21,7 +21,6 @@ const kitOf = (p: Player): Kit => ({
   weapons: p.weapons.flatMap((w) => (w ? [{ kind: w.kind, rarity: w.rarity, ...(w.starter ? { starter: true } : {}) }] : [])),
   armor: p.armor as Rarity,
   heals: { ...p.heals },
-  keys: [...p.keys],
 });
 
 /** Moves what `from` carries onto `to`, which keeps where it stands and how it moves. */
@@ -35,8 +34,6 @@ function carry(from: Player, to: Player) {
   to.flares = from.flares;
   to.haul = [...from.haul];
   to.haulAt = from.haul.map(() => -1);
-  to.keys = [...from.keys];
-  to.tools = [...from.tools];
   to.mods = [...from.mods];
   to.ult = from.ult;
   to.tactical = from.tactical;
@@ -48,11 +45,10 @@ function carry(from: Player, to: Player) {
  * The sortie's run, set out from the raid `island` as it stands: played at `sortie`'s holding from
  * its depot, with what the player carries and the stash room the raid has left.
  */
-export function jumpOut(island: State, sortie: NonNullable<Start["sortie"]>, routes: Start["routes"]): State {
+export function jumpOut(island: State, sortie: NonNullable<Start["sortie"]>): State {
   const p = island.player;
   const out = newRun(jumpSeed(island.seed, nodeIndex(sortie.id), island.time), kitOf(p), island.region, {
     sortie,
-    routes,
     known: island.known,
     stashRoom: island.stashRoom,
     stashWant: island.stashWant,

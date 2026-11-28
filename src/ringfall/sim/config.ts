@@ -1,4 +1,4 @@
-import type { PoiId, RegionId } from "./map";
+import type { RegionId } from "./map";
 /**
  * Every tuning number of RINGFALL. Units are metres, seconds and degrees unless noted.
  * Change a number here only together with a re-run of `npm run sim:ringfall` and an
@@ -421,8 +421,6 @@ export const DEPOT = {
   weaponCost: [1, 2, 3, 4],
   /** Points armour costs, by tier (tier 0 is no armour). */
   armorCost: [0, 1, 2, 3],
-  /** Points a vault key costs: it opens a POI's best bin, worth a step of rarity in a weapon. */
-  keyCost: 1,
 };
 
 /**
@@ -697,8 +695,6 @@ export const META = {
   /** Armour by tier (1 to 3); tier 0 is none. */
   armor: [0, 400, 1200, 3000],
   heal: { cell: 60, battery: 250, syringe: 60, medkit: 250 } as Record<HealKind, number>,
-  /** What a key counts as for selling (the trader never sells keys). */
-  key: 800,
   /** Share of the price the trader pays for gear (valuables sell at their full value). */
   sellShare: 0.4,
   /**
@@ -776,12 +772,10 @@ export const HIDEOUT_EFFECT = {
 export const SEARCH = { time: 2.2, flareTime: 3.5, vaultTime: 5, noise: 9 };
 
 /**
- * Vaults: one locked bin per POI, opened only with that POI's key. A key turns up in the
- * bins of the POI before it (`(poi + 3) % 4`, so the supply depot's key is at the landing
- * pad), comes home like any other find and opens its vault on every later raid.
+ * Vaults: one bin per POI that holds its best (a top weapon, armour, heals and dear valuables),
+ * slower to search (`SEARCH.vaultTime`) and watched by a guard in a plate. Anyone may open it.
  */
 export const VAULT = {
-  keyChance: 0.15,
   weapon: [["talon", 3], ["lance", 3], ["pike", 3], ["hornet", 3], ["maul", 2]] as [WeaponKind, Rarity][],
   armor: 3 as Rarity,
   /**
@@ -879,21 +873,6 @@ export const MOD = {
   /** Seconds the slipstream part's speed lasts after a kill from behind or unseen. */
   haste: 4,
 };
-
-export type ToolKind = "cutter" | "charge";
-
-/**
- * Tools open the blocked routes (`ROUTES` in map.ts) for good once one reaches the stash.
- * Each lies in the bins of one POI (`from`): every bin there but the vault holds it with
- * `chance`, decided from the raid's seed and the bin rather than the raid's random numbers, so
- * the rest of every bin's loot is the same with tools as without. A tool fills `size` bag
- * slots, and one whose routes are all open sells for `value`.
- */
-export const TOOLS: Record<ToolKind, { label: string; size: number; value: number; from: PoiId; chance: number }> = {
-  cutter: { label: "ボルトカッター", size: 2, value: 700, from: "yard", chance: 0.1 },
-  charge: { label: "発破キット", size: 3, value: 900, from: "quarry", chance: 0.1 },
-};
-export const TOOL_KINDS = Object.keys(TOOLS) as ToolKind[];
 
 /**
  * Reinforcements: a squad beams in somewhere `dist` metres from the player, out of

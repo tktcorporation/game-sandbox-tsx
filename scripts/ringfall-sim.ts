@@ -25,10 +25,9 @@ import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { NET_EDGE, NODES, FRONT_LINKS, nodeIndex, TIER, type NodeId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type PoiId, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { NET_EDGE, NODES, FRONT_LINKS, nodeIndex, TIER, type NodeId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, STOPS, type PoiId, type RegionId, type Squad } from "../src/ringfall/sim/map";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
 import { inArea } from "../src/ringfall/sim/areas";
-import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
 import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, onMainGround, routeLength } from "../src/ringfall/sim/hunt";
 import { collide, dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
@@ -39,7 +38,7 @@ import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { haulAndSentWorth } from "../src/ringfall/sim/results";
-import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, toolIn, useTarget } from "../src/ringfall/sim/world";
+import { SHIP_SQUAD, bagLoad, bagUsed, makeRoom, useTarget } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
@@ -47,7 +46,7 @@ import { build, buildBuying, buildFactory, buy, canBuild, depotAllowance, depotB
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
-import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, VAULT } from "../src/ringfall/sim/config";
 import { blankIsland, islandHolds, applyRaid, holds, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
@@ -1436,20 +1435,20 @@ function checkAllyHoldsFire(): string | null {
  * the starter weapons, and a save before v20 has none while a v20 one keeps it (well-formed parts only).
  */
 function checkLoadout(): string | null {
-  const p: Profile = { ...newProfile(), stash: [{ t: "weapon", kind: "pike", rarity: 2 }, { t: "weapon", kind: "lance", rarity: 1 }, { t: "armor", tier: 2 }, { t: "key", poi: "quarry" }, { t: "heal", kind: "cell" }, { t: "heal", kind: "cell" }, { t: "weapon", kind: "pike", rarity: 0 }, { t: "armor", tier: 2 }, ...withStarters([])] };
+  const p: Profile = { ...newProfile(), stash: [{ t: "weapon", kind: "pike", rarity: 2 }, { t: "weapon", kind: "lance", rarity: 1 }, { t: "armor", tier: 2 }, { t: "valuable", kind: "fuse" }, { t: "heal", kind: "cell" }, { t: "heal", kind: "cell" }, { t: "weapon", kind: "pike", rarity: 0 }, { t: "armor", tier: 2 }, ...withStarters([])] };
   const starters = (q: Profile, l: { weapons: number[] }) => l.weapons.length === 2 && l.weapons.every((n) => isStarter(q.stash[n]));
-  const taken = takeKit(p, { weapons: [0, 1], armor: 2, heals: { cell: 2, battery: 0, syringe: 0, medkit: 0 }, keys: [3] });
+  const taken = takeKit(p, { weapons: [0, 1], armor: 2, heals: { cell: 2, battery: 0, syringe: 0, medkit: 0 } });
   const last = taken.profile.lastKit;
-  if (JSON.stringify(last) !== JSON.stringify({ weapons: [{ kind: "pike", rarity: 2 }, { kind: "lance", rarity: 1 }], armor: 2, keys: ["quarry"], heals: { cell: 2, battery: 0, syringe: 0, medkit: 0 } })) return `loadout scenario: the kit remembered is ${JSON.stringify(last)}`;
+  if (JSON.stringify(last) !== JSON.stringify({ weapons: [{ kind: "pike", rarity: 2 }, { kind: "lance", rarity: 1 }], armor: 2, heals: { cell: 2, battery: 0, syringe: 0, medkit: 0 } })) return `loadout scenario: the kit remembered is ${JSON.stringify(last)}`;
   // The stash after the raid holds the common PIKE, the starters and the spare armour: the epic PIKE and the LANCE are gone, so the starters are picked.
   const again = recallLoadout(taken.profile);
   const st = taken.profile.stash;
-  if (!starters(taken.profile, again) || st[again.armor ?? -1]?.t !== "armor" || again.keys.length || again.heals.cell !== 0) return `loadout scenario: after the raid the shelves picked ${JSON.stringify(again)} from ${JSON.stringify(st)}`;
+  if (!starters(taken.profile, again) || st[again.armor ?? -1]?.t !== "armor" || again.heals.cell !== 0) return `loadout scenario: after the raid the shelves picked ${JSON.stringify(again)} from ${JSON.stringify(st)}`;
   // Brought home: all picked again.
-  const home: Profile = { ...taken.profile, stash: [...st, { t: "weapon", kind: "lance", rarity: 1 }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "quarry" }, { t: "heal", kind: "cell" }] };
+  const home: Profile = { ...taken.profile, stash: [...st, { t: "weapon", kind: "lance", rarity: 1 }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "heal", kind: "cell" }] };
   const back = recallLoadout(home);
   const names = back.weapons.map((n) => { const i = home.stash[n]; return i.t === "weapon" ? `${i.kind}${i.rarity}` : "?"; }).join();
-  if (names !== "pike2,lance1" || home.stash[back.keys[0]]?.t !== "key" || back.heals.cell !== 1) return `loadout scenario: with the kit home the shelves picked ${names}, keys ${back.keys}, ${back.heals.cell} cells`;
+  if (names !== "pike2,lance1" || back.heals.cell !== 1) return `loadout scenario: with the kit home the shelves picked ${names}, ${back.heals.cell} cells`;
   // A starter and a stash weapon: remembered as such, and picked again as such (not the common PIKE for the starter one);
   // the LANCE is gone after the raid, so the other starter takes its slot and two weapons go out again.
   const mixed = takeKit(p, { ...emptyLoadout(), weapons: [p.stash.findIndex((i) => isStarter(i) && i.t === "weapon" && i.kind === "pike"), 1] });
@@ -1469,11 +1468,11 @@ function checkLoadout(): string | null {
   if (!v19 || v19.v !== SAVE_V || v19.lastKit !== null) return `loadout scenario: a v19 save loaded with ${JSON.stringify(v19?.lastKit)}`;
   const v20 = parseProfile(JSON.parse(JSON.stringify(taken.profile)));
   if (JSON.stringify(v20?.lastKit) !== JSON.stringify(last)) return `loadout scenario: a v20 save loaded with ${JSON.stringify(v20?.lastKit)}`;
-  const junk = parseProfile(JSON.parse(JSON.stringify({ ...taken.profile, lastKit: { weapons: [{ kind: "nope", rarity: 0 }, { kind: "pike", rarity: 9 }, { kind: "talon", rarity: 3, loan: true }], armor: 7, keys: ["quarry", "nowhere", "quarry"], heals: { cell: 99, medkit: -1 } } })));
-  if (JSON.stringify(junk?.lastKit) !== JSON.stringify({ weapons: [{ kind: "talon", rarity: 3 }], armor: 0, keys: ["quarry"], heals: { cell: HEALS.cell.max, battery: 0, syringe: 0, medkit: 0 } })) return `loadout scenario: a save with bad picks loaded as ${JSON.stringify(junk?.lastKit)}`;
+  const junk = parseProfile(JSON.parse(JSON.stringify({ ...taken.profile, lastKit: { weapons: [{ kind: "nope", rarity: 0 }, { kind: "pike", rarity: 9 }, { kind: "talon", rarity: 3, loan: true }], armor: 7, heals: { cell: 99, medkit: -1 } } })));
+  if (JSON.stringify(junk?.lastKit) !== JSON.stringify({ weapons: [{ kind: "talon", rarity: 3 }], armor: 0, heals: { cell: HEALS.cell.max, battery: 0, syringe: 0, medkit: 0 } })) return `loadout scenario: a save with bad picks loaded as ${JSON.stringify(junk?.lastKit)}`;
   // A v22 save went out with weapons lent when it picked none: it gains the starter weapons, and its shelves pick them.
   const { stash: oldStash } = taken.profile;
-  const v22 = parseProfile(JSON.parse(JSON.stringify({ ...taken.profile, v: 22, stash: oldStash.filter((i) => !isStarter(i)), lastKit: { weapons: [], armor: 2, keys: [], heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } } })));
+  const v22 = parseProfile(JSON.parse(JSON.stringify({ ...taken.profile, v: 22, stash: oldStash.filter((i) => !isStarter(i)), lastKit: { weapons: [], armor: 2, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } } })));
   if (!v22 || v22.v !== SAVE_V || v22.stash.filter(isStarter).length !== 2 || !starters(v22, recallLoadout(v22))) return `loadout scenario: a v22 save loaded with ${JSON.stringify(v22?.stash)}`;
   // The factory's materials count among the valuables still wanted, and claim stash room before what nothing needs.
   const fac = factoryNeeded(newProfile());
@@ -1491,7 +1490,7 @@ function checkSettle(): string | null {
   const own = (q: Profile, kind: string) => q.stash.findIndex((i) => i.t === "weapon" && i.kind === kind && !isStarter(i));
   if (p.stash.filter(isStarter).map((i) => (i.t === "weapon" ? `${i.kind}${i.rarity}` : "?")).join() !== "pike0,talon0") return `starter scenario: a new profile's starters are ${JSON.stringify(p.stash.filter(isStarter))}`;
   // Two stash weapons and a cell in; the cell is used up, a rare PIKE is picked up instead of the HORNET.
-  const taken = takeKit(p, { weapons: [own(p, "pike"), own(p, "hornet")], armor: null, heals: { cell: 1, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const taken = takeKit(p, { weapons: [own(p, "pike"), own(p, "hornet")], armor: null, heals: { cell: 1, battery: 0, syringe: 0, medkit: 0 } });
   if (taken.kit.weapons.some((w) => w.starter) || taken.kit.heals.cell - issuedHeals(p).cell !== 1) return `settle scenario: the stash kit came out wrong (${JSON.stringify(taken.kit)})`;
   if (taken.profile.stash.length !== start - 3) return `settle scenario: taking the kit left ${taken.profile.stash.length} things in the stash, not ${start - 3}`;
   const s = newRun(5, taken.kit);
@@ -1516,7 +1515,7 @@ function checkSettle(): string | null {
   if (lost.home.map((i) => (i.t === "valuable" ? i.kind : i.t)).join() !== "board") return `settle scenario: a wipe kept ${JSON.stringify(lost.home)}, not the board`;
   if (bestFitValuables(["parts", "parts", "board"]).join() !== "board" || bestFitValuables(["parts", "core", "parts"]).join() !== "parts,parts") return "pouch scenario: the pouch did not keep the most valuable fit";
   // No weapon picked: the starter weapons go and stay in the stash; getting off brings home every heal left, the issued ones too.
-  const free = takeKit(p, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const free = takeKit(p, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } });
   if (!free.kit.weapons.every((w) => w.starter) || free.kit.weapons.map((w) => w.kind).join() !== "pike,talon" || free.profile.stash.length !== start) return `starter scenario: the starter kit came out as ${JSON.stringify(free.kit)}, leaving ${free.profile.stash.length} things in the stash`;
   if (JSON.stringify(free.kit.heals) !== JSON.stringify(issuedHeals(p)) || JSON.stringify(starterKit().weapons) !== JSON.stringify(free.kit.weapons) || JSON.stringify(starterKit().heals) !== JSON.stringify(free.kit.heals)) return `starter scenario: the starter kit ${JSON.stringify(free.kit)} is not starterKit() ${JSON.stringify(starterKit())}`;
   const f = newRun(6, free.kit);
@@ -1753,8 +1752,8 @@ function checkDepots(): string | null {
 function checkDepotBudget(): string | null {
   // What each pick costs.
   for (const r of [0, 1, 2, 3] as const) if (itemCost({ t: "weapon", kind: "pike", rarity: r }) !== DEPOT.weaponCost[r]) return `depot budget: a rarity ${r} weapon costs ${itemCost({ t: "weapon", kind: "pike", rarity: r })}`;
-  if (DEPOT.weaponCost.join() !== "1,2,3,4" || DEPOT.armorCost.join() !== "0,1,2,3" || DEPOT.keyCost !== 1 || DEPOT.budget.join() !== "2,4,6,9" || DEPOT.levels.join() !== "0,1500,5000,12000") return "depot budget: the numbers in DEPOT are not the agreed ones";
-  if (itemCost({ t: "armor", tier: 3 }) !== 3 || itemCost({ t: "key", poi: "pad" }) !== 1 || itemCost({ t: "heal", kind: "medkit" }) !== 0) return "depot budget: armour, keys or heals cost the wrong points";
+  if (DEPOT.weaponCost.join() !== "1,2,3,4" || DEPOT.armorCost.join() !== "0,1,2,3" || DEPOT.budget.join() !== "2,4,6,9" || DEPOT.levels.join() !== "0,1500,5000,12000") return "depot budget: the numbers in DEPOT are not the agreed ones";
+  if (itemCost({ t: "armor", tier: 3 }) !== 3 || itemCost({ t: "heal", kind: "medkit" }) !== 0) return "depot budget: armour or heals cost the wrong points";
   const base: Profile = {
     ...bareProfile(3),
     // Starts from a depot need the node that opens them held (`UNLOCKS`): the yard and the supply depot.
@@ -1765,9 +1764,9 @@ function checkDepotBudget(): string | null {
       { t: "weapon", kind: "pike", rarity: 2 },
       { t: "weapon", kind: "hornet", rarity: 0 },
       { t: "armor", tier: 2 },
-      { t: "key", poi: "relay" },
-      { t: "key", poi: "relay" },
-      { t: "key", poi: "quarry" },
+      { t: "valuable", kind: "fuse" },
+      { t: "valuable", kind: "fuse" },
+      { t: "valuable", kind: "fuse" },
       { t: "heal", kind: "cell" },
       { t: "heal", kind: "medkit" },
       ...withStarters([]),
@@ -1776,9 +1775,9 @@ function checkDepotBudget(): string | null {
   const heals = { cell: 1, battery: 0, syringe: 0, medkit: 1 };
   const free = { ...emptyLoadout(), heals };
   if (loadoutCost(base, free) !== 0 || loadoutCost(base, { ...free, weapons: [8, 9] }) !== 0) return `depot budget: the starter weapons with heals cost ${loadoutCost(base, free)}`;
-  // The same weapon picked twice counts once; a second key to the same POI is not taken, so it costs nothing.
-  const full = { weapons: [0, 1, 0], armor: 2, heals, keys: [3, 4, 5] };
-  if (loadoutCost(base, full) !== 3 + 1 + 2 + 1 + 1) return `depot budget: an epic, a common, tier 2 armour and two keys cost ${loadoutCost(base, full)}, not 8`;
+  // The same weapon picked twice counts once.
+  const full = { weapons: [0, 1, 0], armor: 2, heals };
+  if (loadoutCost(base, full) !== 3 + 1 + 2) return `depot budget: an epic, a common and tier 2 armour cost ${loadoutCost(base, full)}, not 6`;
 
   // The level, the allowance and what the next level still needs, from the credits sent through the depot.
   const at = (sent: number) => depotAllowance({ ...base, depotSent: { yard: sent } }, "yard");
@@ -1831,7 +1830,7 @@ function checkDepotBudget(): string | null {
   const dropped = takeKit(base, epic, null);
   if (!dropped || dropped.kit.weapons[0]?.kind !== "pike" || dropped.profile.stash.length !== base.stash.length - 1) return "depot budget: the same loadout was not taken for a start at a way in";
   if (takeKit(base, epic).kit.weapons[0]?.kind !== "pike") return "depot budget: takeKit without a start no longer takes the loadout";
-  if (!takeKit(base, free, "yard") || !takeKit(base, { ...emptyLoadout(), weapons: [1], keys: [5] }, "yard")) return "depot budget: a loadout within the allowance (the starter weapons; a common and a key) was refused";
+  if (!takeKit(base, free, "yard") || !takeKit(base, { ...emptyLoadout(), weapons: [1] }, "yard")) return "depot budget: a loadout within the allowance (the starter weapons; a common) was refused";
   if (takeKit(base, { ...emptyLoadout(), weapons: [1], armor: 2 }, "yard") !== null) return "depot budget: a common and tier 2 armour (3) started from a level 0 depot (2)";
   if (takeKit(base, epic, "wreck") !== null) return "depot budget: a start from a depot that is not on was allowed";
   const levelled = takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "yard");
@@ -1879,14 +1878,14 @@ function checkHideout(): string | null {
   for (const m of MODULES) if (!HIDEOUT[m].levels.at(-1)!.items.some(([k]) => k === "core" || k === "reactor")) return `hideout scenario: ${m}'s top level asks for no core nor reactor`;
   // The starter heals and the infirmary's are issued to every kit, starter weapons or not; what is left comes home.
   const sick = { ...bareProfile(), hideout: { ...emptyHideout(), infirmary: 2 } };
-  const startKit = takeKit(sick, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] }).kit;
-  const ownKit = takeKit(sick, { weapons: [sick.stash.findIndex((i) => i.t === "weapon" && !isStarter(i))], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] }).kit;
+  const startKit = takeKit(sick, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } }).kit;
+  const ownKit = takeKit(sick, { weapons: [sick.stash.findIndex((i) => i.t === "weapon" && !isStarter(i))], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } }).kit;
   if (startKit.heals.syringe !== META.starter.heals.syringe + 1 || startKit.heals.cell !== META.starter.heals.cell + 2 || JSON.stringify(ownKit.heals) !== JSON.stringify(startKit.heals) || ownKit.weapons.some((w) => w.starter))
     return `hideout scenario: the infirmary's heals came out as ${JSON.stringify(startKit.heals)} (starters) and ${JSON.stringify(ownKit.heals)} (own)`;
   // The loadout's heal picks stop where the issued heals leave no room: every pick is taken from the stash.
   const stocked: Profile = { ...sick, stash: [{ t: "weapon", kind: "pike", rarity: 0 }, ...Array.from({ length: HEALS.cell.max }, (): Item => ({ t: "heal", kind: "cell" }))] };
   for (const weapons of [[], [0]]) {
-    const load = { weapons, armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] };
+    const load = { weapons, armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } };
     const room = healRoom(stocked, "cell");
     const kit = takeKit(stocked, { ...load, heals: { ...load.heals, cell: room } }).kit;
     const issued = issuedHeals(stocked).cell;
@@ -1953,7 +1952,7 @@ function checkHideout(): string | null {
   // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
   const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
   const m4 = parseProfile(JSON.parse(JSON.stringify(v4)));
-  if (!m4 || m4.v !== SAVE_V || stashUsed(m4) !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
+  if (!m4 || m4.v !== SAVE_V || stashUsed(m4) !== 2 || m4.cash !== 900 + 320 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
   const m5 = parseProfile(JSON.parse(JSON.stringify(top)));
   if (!m5 || !hideoutDone(m5.hideout) || m5.seed !== top.seed) return "storage scenario: a saved hideout did not load";
   // With one slot left, a valuable the hideout wants takes it ahead of gear; one it does not want is sold first.
@@ -1967,7 +1966,7 @@ function checkHideout(): string | null {
   return null;
 }
 
-/** A vault stays shut without its POI's key and opens with it. */
+/** A vault opens to anyone, after its longer search, and holds a POI's best. */
 function checkVault(): string | null {
   const s = padRun();
   const p = s.player;
@@ -1975,35 +1974,17 @@ function checkVault(): string | null {
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
-  ticks(s, SEARCH.vaultTime + 1);
-  if (s.bins[0].open || p.search) return "vault scenario: a vault opened without its key";
-  p.keys = [QUARRY];
-  step(s, press, false);
   ticks(s, SEARCH.vaultTime - 0.3);
   if (s.bins[0].open) return "vault scenario: the vault opened before its search time";
   ticks(s, 1);
-  if (!s.bins[0].open || !s.stats.vaults.includes(QUARRY)) return "vault scenario: the key did not open the vault";
+  if (!s.bins[0].open || !s.stats.vaults.includes(QUARRY)) return "vault scenario: the vault did not open";
   const rare = s.loot.some((l) => l.kind === "weapon" && l.rarity >= 2) && s.loot.some((l) => l.kind === "armor" && l.rarity === 3);
   if (!rare && !p.haul.length) return "vault scenario: the vault held no better loot than a bin";
-  // Every POI's vault has a key somewhere else on the island.
-  const keyed = POIS.map((poi) => poi.keyFrom);
-  if (new Set(keyed).size !== POIS.length || keyed.some((k, i) => k === POIS[i].id || poiIndex(k) < 0)) return `vault scenario: keys are found in ${keyed.join()}`;
   if (POIS.some((poi) => poi.bins.filter((b) => b.vault).length !== 1)) return "vault scenario: a POI does not have exactly one vault";
-  // Bins out between the POIs never hold a key, whatever loot table they use.
-  const out = padRun();
-  const extra = out.bins.filter((b) => b.outside && !b.flare);
-  let opened = 0;
-  for (let i = 0; i < 60 && extra.length; i++) {
-    const b = extra[i % extra.length];
-    b.open = false;
-    out.loot = [];
-    out.player.search = { bin: out.bins.indexOf(b), t: 99 };
-    out.player.pos = { x: b.x, y: b.y, z: b.z };
-    step(out, idleInput(), false);
-    if (b.open) opened++;
-    if (out.loot.some((l) => l.kind === "key")) return "vault scenario: a bin outside the POIs dropped a key";
-  }
-  if (opened < 30) return `vault scenario: only ${opened} of 60 bins outside the POIs were opened to check for keys`;
+  // A save that held keys loads without them, each paid back.
+  const base = newProfile(4);
+  const keyed = parseProfile(JSON.parse(JSON.stringify({ ...base, v: 57, stash: [...base.stash, { t: "key", poi: "relay" }, { t: "key", poi: "quarry" }], lastKit: { weapons: [], armor: 0, keys: ["relay"], heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } } })));
+  if (!keyed || keyed.v !== SAVE_V || keyed.stash.some((i) => (i as { t: string }).t === "key") || keyed.cash !== base.cash + 640 || (keyed.lastKit && "keys" in keyed.lastKit)) return `vault scenario: a v57 save with two keys loaded with ${keyed && keyed.cash - base.cash} credits back`;
   return null;
 }
 
@@ -2078,13 +2059,10 @@ function checkIsland(): string | null {
   if (count(m, QUARRY) !== 0 || !m.cleared[QUARRY] || !m.depots[depotIndex("quarry")]) return `island scenario: a freed quarry stands ${count(m, QUARRY)} robots, cleared ${m.cleared[QUARRY]}, depot ${m.depots[depotIndex("quarry")]}`;
   if (count(m, PADD) !== full(PADD) || m.hold[PADD] !== "foe") return "island scenario: the titan's pad was freed";
   for (const i of POIS.map((_, k) => k).filter((k) => k !== QUARRY && k !== PADD)) if (count(m, i) !== full(i)) return `island scenario: a held ${POIS[i].id} stands ${count(m, i)} robots, not ${full(i)}`;
-  // A freed POI is not cleared again in the raid, and its vault opens without the key.
+  // A freed POI is not cleared again in the raid.
   m.reinforceT = m.raiderT = 1e9;
   ticks(m, 1);
   if (m.stats.cleared.includes(QUARRY)) return "island scenario: a freed POI counted as cleared in the raid";
-  const vault = m.bins.find((b) => b.poi === QUARRY && b.vault)!;
-  const locked = m.bins.find((b) => b.poi === SUPPLY && b.vault)!;
-  if (!canOpen(m, vault) || canOpen(m, locked)) return "island scenario: a freed POI's vault took its key, or a held one's did not";
   // Saves: a v12 one has every POI the enemy's; one before v22 moves its
   // POIs own and thin to the player and the rest to the enemy, the pad the enemy's, and drops the network and the outposts.
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
@@ -2165,25 +2143,13 @@ function checkStrength(): string | null {
 }
 
 /**
- * Keys go along and come home; old quest/board/taken/records and events fields on a save are ignored.
+ * Old quest/board/taken/records and events fields on a save are ignored; the keys of old saves are paid back.
  * Profile is v42 (pending + goal; contested coastal hubs / fortify / camp vehicle / map table were never Profile fields).
  */
 function checkSaveCompat(): string | null {
-  const withKey = { ...newProfile(), stash: [...newProfile().stash, { t: "key" as const, poi: "relay" as const }] };
-  const k = takeKit(withKey, { weapons: [0], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [withKey.stash.length - 1] });
-  const ks = newRun(8, k.kit);
-  if (ks.player.keys.join() !== `${RELAY}` || k.profile.stash.some((i) => i.t === "key")) return "key scenario: the key did not go into the raid";
-  ks.outcome = "extracted";
-  // A second copy found on the island comes home as well.
-  ks.loot = [{ id: 9200, kind: "key", key: RELAY, rarity: 3, pos: { ...ks.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 }];
-  ks.phase = "play";
-  step(ks, idleInput(), false);
-  ks.outcome = "extracted";
-  const copies = settle(k.profile, ks).profile.stash.filter((i) => i.t === "key" && i.poi === "relay").length;
-  if (copies !== 2) return `key scenario: carrying a key and finding another brought home ${copies}, not 2`;
   // One slot left: a reactor, dearer than a fuse from the same raid and wanted by the hideout as much, takes it.
   const tight = { ...newProfile(), stash: Array.from({ length: META.stash - 1 }, () => ({ t: "heal" as const, kind: "cell" as const })) };
-  const tk = takeKit(tight, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const tk = takeKit(tight, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } });
   const ts = newRun(10, tk.kit, "harbor");
   ts.outcome = "extracted";
   ts.player.haul = ["fuse", "reactor"];
@@ -2193,17 +2159,16 @@ function checkSaveCompat(): string | null {
     return `stash scenario: with one slot left the stash kept ${JSON.stringify(last)} and pending ${JSON.stringify(tr.pending)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
   if (!v1 || v1.v !== SAVE_V || "quests" in v1 || v1.region !== "reservoir" || v1.pending.length || v1.goal !== null) return "storage scenario: a v1 save does not load";
-  // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
+  // The keys of a v2 or v3 save are gone, each paid back.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  const v2Key = v2?.stash.find((i) => !isStarter(i));
-  if (!v2 || v2.v !== SAVE_V || stashUsed(v2) !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
-  // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
+  if (!v2 || v2.v !== SAVE_V || stashUsed(v2) !== 0 || v2.cash !== 10 + 640) return `storage scenario: a v2 save's two keys loaded as ${JSON.stringify(v2?.stash)} and ${v2?.cash} credits`;
+  // A v3 save drops into the reservoir; the landing choice is kept.
   const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  if (!v3 || v3.v !== SAVE_V || stashUsed(v3) !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (!v3 || v3.v !== SAVE_V || stashUsed(v3) !== 0 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
   if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor", entries: ["beach", "outskirts"] })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
   // Old quest board fields on a v13 save are dropped; Profile is v42 without quests/board/taken/records.
   const v13 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 13, board: { day: 3, contracts: [{ t: "fetch", id: "x" }] }, taken: "x", records: ["tether"], stash: [{ t: "weapon", kind: "talon", rarity: 3 }, { t: "key", poi: "yard" }], quests: { progress: { drones: 2, heavies: 1, parts: 0 }, done: ["grunts", "drones", "quarry", "relay", "power"] } })));
-  if (!v13 || v13.v !== SAVE_V || stashUsed(v13) !== 2 || "quests" in v13 || "board" in v13 || "taken" in v13 || "records" in v13)
+  if (!v13 || v13.v !== SAVE_V || stashUsed(v13) !== 1 || "quests" in v13 || "board" in v13 || "taken" in v13 || "records" in v13)
     return `save compat: a v13 save with old quest/board fields loaded as ${JSON.stringify(v13 && { v: v13.v, stash: stashUsed(v13), keys: Object.keys(v13) })}`;
   // Old island-events field on a v34 save is dropped; Profile is v42 without events (map table / camp vehicle / fortify were never Profile fields).
   const v34 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 34, events: [{ t: "storm" }, { t: "crews" }] })));
@@ -3251,216 +3216,18 @@ function checkUnlocks(): string | null {
   return null;
 }
 
-/** The two ends of a route's walk. */
-const ends = (id: RouteId) => {
-  const r = ROUTES.find((o) => o.id === id)!;
-  return [r.path[0], r.path[r.path.length - 1]] as const;
-};
-
 /**
- * Walks the player up the wreck's gangway: east along the hull's north side to the top of the
- * flight, then south onto the deck. Returns the height the walk ends at.
- */
-function walkGangway(open: boolean): number {
-  const s = padRun();
-  s.routes = open ? ["gangway"] : [];
-  const [foot, top] = ends("gangway");
-  const p = s.player;
-  p.pos = { x: foot.x - 1, y: LEVEL.seabed, z: foot.z };
-  p.yaw = Math.PI / 2;
-  s.ally.pos = { x: foot.x - 8, y: LEVEL.seabed, z: foot.z - 4 };
-  const walk = { ...idleInput(), moveZ: 1, noClimb: true };
-  for (let t = 0; t < 10 * 60 && p.pos.x < top.x; t++) step(s, walk, false);
-  p.yaw = Math.PI;
-  for (let t = 0; t < 3 * 60 && p.pos.z < top.z; t++) step(s, walk, false);
-  return p.pos.y;
-}
-
-/**
- * The routes (`ROUTES`): closed, the bot's way and the robots' field between a route's ends go
- * the long way round; open, they go straight through, and the wreck's gangway is climbed to the
- * deck on foot. The authored points stand in both worlds; a trench lowers no ground under any of
- * the map's boxes and keeps clear of the cover spots; and the world with every route closed is
- * put back cell for cell.
- */
-function checkRoutes(): string | null {
-  useRoutes([]);
-  const carved = ROUTES.filter((r) => r.carve);
-  const sample = carved.flatMap((r) => {
-    const [[x, za], [, zb]] = r.carve!.line;
-    return Array.from({ length: 41 }, (_, k) => ({ x: x - 8 + (k % 9) * 2, z: za + ((zb - za) * Math.floor(k / 9)) / 4 }));
-  });
-  const before = sample.map((q) => `${terrainHeight(q.x, q.z)},${steepAt(q.x, q.z)},${floorLevel(q.x, q.z)}`).join();
-  const way = (r: (typeof ROUTES)[number]) => {
-    const [a, b] = ends(r.id);
-    return { nav: navLength(a.x, a.z, b.x, b.z), field: routeLength(fieldTo(b.x, b.z)!, a.x, a.z), straight: Math.hypot(a.x - b.x, a.z - b.z) };
-  };
-  const closed = carved.map(way);
-  const closedLayout = checkLayout();
-  if (closedLayout.length) return `route scenario: with every route closed, ${closedLayout[0]}`;
-  if (walkGangway(false) > LEVEL.seabed + 1) return "route scenario: the wreck's deck was climbed with its gangway hauled up";
-  useRoutes(ROUTES.map((r) => r.id));
-  const opened = carved.map(way);
-  const openLayout = checkLayout();
-  if (openLayout.length) return `route scenario: with every route open, ${openLayout[0]}`;
-  for (const [n, r] of carved.entries()) {
-    const c = closed[n];
-    const o = opened[n];
-    if (!(o.nav < o.straight * 1.15) || !(o.field < o.straight * 1.2)) return `route scenario: ${r.id} open is walked in ${o.nav.toFixed(0)} m by the bot and ${o.field.toFixed(0)} m by robots, for ${o.straight.toFixed(0)} m`;
-    if (!(c.nav > o.nav * 1.5) || !(c.field > o.field * 1.5)) return `route scenario: ${r.id} closed is still walked in ${c.nav.toFixed(0)} m by the bot and ${c.field.toFixed(0)} m by robots (open: ${o.nav.toFixed(0)} m)`;
-  }
-  const deck = walkGangway(true);
-  if (Math.abs(deck - (LEVEL.seabed + 13.5)) > 0.3) return `route scenario: walking up the open gangway ended at height ${deck.toFixed(2)}, not on the deck`;
-  // No box of the map hangs over ground a trench lowered, and no cover spot lies in a trench.
-  for (const r of carved) {
-    const [[x, za], [, zb]] = r.carve!.line;
-    const reach = r.carve!.floor + 30 / r.carve!.slope;
-    const z0 = Math.min(za, zb) - reach;
-    const z1 = Math.max(za, zb) + reach;
-    for (const b of BOXES) {
-      if (b.x1 < x - reach || b.x0 > x + reach || b.z1 < z0 || b.z0 > z1) continue;
-      for (const [qx, qz] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]]) {
-        const now = terrainHeight(qx, qz);
-        if (now < b.y0 - 0.3 && b.y0 - now < 6) {
-          useRoutes([]);
-          if (terrainHeight(qx, qz) >= b.y0 - 0.3) return `route scenario: ${r.id}'s trench leaves a ${b.kind} hanging at ${qx.toFixed(1)},${qz.toFixed(1)}`;
-          useRoutes(ROUTES.map((o) => o.id));
-        }
-      }
-    }
-  }
-  const cut = COVERS.map((c) => terrainHeight(c.x, c.z));
-  useRoutes([]);
-  const bad = COVERS.find((c, n) => Math.abs(cut[n] - terrainHeight(c.x, c.z)) > 0.05);
-  if (bad) return `route scenario: a cover spot at ${bad.x.toFixed(1)},${bad.z.toFixed(1)} lies in a route's trench`;
-  const after = sample.map((q) => `${terrainHeight(q.x, q.z)},${steepAt(q.x, q.z)},${floorLevel(q.x, q.z)}`).join();
-  if (after !== before || worldKey() !== "") return "route scenario: closing every route again did not put the ground back as it was";
-  return null;
-}
-
-/**
- * A raid started with a route open has no obstacle there, for bodies and for sight: the tunnel
- * is seen through and walked through from mouth to mouth. Started with it closed, the obstacle
- * stops a body and the view, and the HUD names the tool before it.
- */
-function checkRouteObstacles(): string | null {
-  const r = ROUTES.find((o) => o.id === "tunnel")!;
-  const [south, north] = ends("tunnel");
-  const eyeAt = (q: { x: number; z: number }) => ({ x: q.x, y: groundAt(q.x, q.z, 0.4, 99) + 1.6, z: q.z });
-  const centre = (b: (typeof r.closed)[number]) => ({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.h) / 2, z: (b.z0 + b.z1) / 2 });
-  const rock = r.closed.find((b) => b.kind === "rock")!;
-  const open = newRun(9, starterKit(), "reservoir", { routes: ["tunnel"] });
-  if (open.routes.join() !== "tunnel" || worldKey() !== "tunnel") return `obstacle scenario: a raid started with the tunnel open runs in world "${worldKey()}"`;
-  const c = centre(rock);
-  if (solidAt(c.x, c.y, c.z)) return "obstacle scenario: the tunnel's rubble is still solid with the tunnel open";
-  if (!los(eyeAt(south), eyeAt(north))) return "obstacle scenario: the open tunnel cannot be seen through from mouth to mouth";
-  const body = { x: c.x, y: terrainHeight(c.x, c.z), z: c.z };
-  collide(body, PLAYER.radius);
-  if (dist2d(body, c) > 0.01) return "obstacle scenario: a body in the open tunnel's mouth is pushed out of something";
-  if (routeBefore({ ...r.at[0] }, open.routes)) return "obstacle scenario: an open route still shows its prompt";
-  const shut = newRun(9);
-  if (shut.routes.length || worldKey() !== "") return "obstacle scenario: a raid started with no routes did not put the closed world back";
-  if (!solidAt(c.x, c.y, c.z) || los(eyeAt(south), eyeAt(north))) return "obstacle scenario: the closed tunnel's rubble does not stop a body or the view";
-  const front = { x: c.x, y: rock.y0 + 0.6, z: c.z };
-  collide(front, PLAYER.radius);
-  if (dist2d(front, c) < 0.3) return "obstacle scenario: a body in the closed tunnel's rubble is not pushed out";
-  for (const o of ROUTES) for (const a of o.at) if (routeBefore({ ...a }, [])?.id !== o.id) return `obstacle scenario: before ${o.id}'s obstacle the HUD does not name it`;
-  // A raid steps in its own world, whatever ran in between.
-  newRun(9, starterKit(), "reservoir", { routes: ["tunnel", "dam"] });
-  step(shut, idleInput(), false);
-  if (worldKey() !== "") return `obstacle scenario: stepping a raid with no routes open left world "${worldKey()}" in place`;
-  return null;
-}
-
-/**
- * Tools: each lies only in the bins of its POI (no vault, no bin outside a POI) about as often as
- * `TOOLS` says, without changing anything else a bin holds or the raid's random numbers. The use
- * key takes one into the bag, throwing cheaper things out to make room; the bot leaves them.
- * Home by a way off or a depot, a tool opens the first of its routes still closed and is spent;
- * lost on a wipe it opens nothing, unless the pouch kept it; one whose routes are all open sells.
- * A v8 save has every route closed.
+ * Tools and the routes they opened are gone (v58): a save that held routes opened or tools in its
+ * stash loads without them, each tool paid back at its price.
  */
 function checkTools(): string | null {
-  const any = newRun(1);
-  for (const k of TOOL_KINDS) {
-    let n = 0;
-    let found = 0;
-    for (let seed = 1; seed <= 400; seed++) {
-      const s = { ...any, seed };
-      for (const b of s.bins) {
-        const has = toolIn(s, b, k);
-        if (has && (b.vault || b.outside || POIS[b.poi].id !== TOOLS[k].from)) return `tool scenario: a ${k} lies in bin ${b.id} of ${POIS[b.poi].id}`;
-        if (!b.vault && !b.outside && POIS[b.poi].id === TOOLS[k].from) {
-          n++;
-          if (has) found++;
-        }
-      }
-    }
-    if (Math.abs(found / n - TOOLS[k].chance) > 0.03) return `tool scenario: ${k} lies in ${((found / n) * 100).toFixed(1)}% of its bins, not ${TOOLS[k].chance * 100}%`;
-  }
-  // A bin with a charge in it spills the same loot and leaves the same random state as with no tools.
-  let seed = 1;
-  let binAt = -1;
-  for (; seed < 999 && binAt < 0; seed++) binAt = any.bins.findIndex((b) => toolIn({ ...any, seed }, b, "charge"));
-  seed--;
-  const open = (chance: number) => {
-    const was = TOOLS.charge.chance;
-    TOOLS.charge.chance = chance;
-    const s = padRun();
-    s.rng = 77;
-    s.seed = seed;
-    const b = s.bins[binAt];
-    s.player.pos = { x: b.x, y: b.y, z: b.z + 1 };
-    s.player.search = { bin: binAt, t: 99 };
-    step(s, idleInput(), false);
-    TOOLS.charge.chance = was;
-    return s;
-  };
-  const withTool = open(TOOLS.charge.chance);
-  const without = open(0);
-  const strip = (s: State) => JSON.stringify(s.loot.filter((l) => l.kind !== "tool").map((l) => [l.id, l.kind, l.valuable, l.heal, l.weapon?.kind, l.key]));
-  if (!withTool.loot.some((l) => l.kind === "tool" && l.tool === "charge")) return `tool scenario: bin ${binAt} of seed ${seed} spilled no charge`;
-  if (strip(withTool) !== strip(without) || withTool.rng !== without.rng || withTool.nextId !== without.nextId) return "tool scenario: a tool in a bin changed the rest of its loot or the raid's random numbers";
-  // The use key takes it, throwing out the cheapest valuables for room; the bot leaves it.
-  const take = (leave: boolean) => {
-    const s = padRun();
-    s.player.haul = ["parts", "fuse", "board", "core", "drive", "parts"];
-    s.loot = [{ id: -1, kind: "tool", tool: "charge", rarity: 3, pos: { ...s.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 }];
-    step(s, { ...idleInput(), interact: true, leaveTools: leave }, false);
-    return s;
-  };
-  const took = take(false);
-  if (took.player.tools.join() !== "charge" || bagLoad(took.player) > BAG.slots || took.player.haul.includes("core") === false) return `tool scenario: taking a charge into a full bag left tools ${took.player.tools.join()} and haul ${took.player.haul.join()}`;
-  if (take(true).player.tools.length) return "tool scenario: the bot's input took a tool";
-  // Home: carried out, sent from a depot, kept by the pouch, or lost.
-  const raid = (tools: ("cutter" | "charge")[], outcome: "extracted" | "dead", sent: ("cutter" | "charge")[] = []) => {
-    const s = newRun(3);
-    s.player.tools = [...tools];
-    s.sentTools = [...sent];
-    s.outcome = outcome;
-    return s;
-  };
-  let p = newProfile();
-  const out = settle(p, raid(["charge"], "extracted"));
-  if (out.opened.join() !== "tunnel" || out.profile.routes.join() !== "tunnel" || out.profile.stash.some((i) => i.t === "tool")) return `tool scenario: a charge carried out opened ${out.opened.join()} and left ${JSON.stringify(out.profile.stash.filter((i) => i.t === "tool"))}`;
-  const sent = settle(p, raid([], "dead", ["cutter"]));
-  if (sent.opened.join() !== "dam") return `tool scenario: a cutter sent from a depot before a wipe opened ${sent.opened.join() || "nothing"}`;
-  const lost = settle(p, raid(["charge"], "dead"));
-  if (lost.opened.length || lost.profile.routes.length) return `tool scenario: a charge lost in a wipe opened ${lost.opened.join()}`;
-  const pouched = settle(p, raid(["cutter"], "dead"));
-  if (pouched.opened.join() !== "dam") return `tool scenario: a cutter the pouch (${META.pouch} slots) kept through a wipe opened ${pouched.opened.join() || "nothing"}`;
-  p = settle(p, raid(["cutter", "cutter"], "extracted")).profile;
-  if (p.routes.join() !== "dam,gangway") return `tool scenario: two cutters opened ${p.routes.join()}, not the dam and the gangway`;
-  const spare = settle(p, raid(["cutter"], "extracted"));
-  const kept = spare.profile.stash.find((i) => i.t === "tool");
-  if (spare.opened.length || !kept || sellPrice(kept) !== TOOLS.cutter.value) return "tool scenario: a cutter with its routes all open was not kept to sell at its value";
-  // Saves: a v8 one has every route closed; a v9 one keeps its routes, unknown ones dropped.
-  const v8 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 8 })));
-  if (!v8 || v8.v !== SAVE_V || v8.routes.length) return `tool scenario: a v8 save loaded with routes ${JSON.stringify(v8?.routes)}`;
-  const v9 = parseProfile(JSON.parse(JSON.stringify({ ...p, routes: ["gangway", "nowhere", "dam"] })));
-  if (v9?.routes.join() !== "dam,gangway") return `tool scenario: a v9 save loaded with routes ${JSON.stringify(v9?.routes)}`;
+  const p = newProfile(7);
+  const old = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 57, routes: ["tunnel", "dam"], stash: [...p.stash, { t: "tool", kind: "cutter" }, { t: "tool", kind: "charge" }] })));
+  if (!old || old.v !== SAVE_V || "routes" in old) return `tool scenario: a v57 save with routes open loaded as ${JSON.stringify(old && [old.v, "routes" in old])}`;
+  if (old.stash.some((i) => (i as { t: string }).t === "tool") || old.cash !== p.cash + 1600) return `tool scenario: a v57 save's two tools loaded as ${old.stash.length - p.stash.length} more items and ${old.cash - p.cash} credits`;
   return null;
 }
+
 /** The raid `s` without the robots out between the POIs (on walks, on the roads, at the outposts, the packs and the parties): its POIs' garrisons only. */
 function withoutWalkers(s: State): State {
   s.enemies = s.enemies.filter((e) => e.poi >= 0);
@@ -3936,7 +3703,7 @@ function checkFront(): string | null {
  * landed and bound for it, which takes it back when nobody holds it. Nodes stay as the battle ended.
  */
 /** The profile's version (`Profile.v`): what a new profile is, and what every older save loads as. Raised here with each migration. */
-const SAVE_V = 57;
+const SAVE_V = 58;
 
 /** A new profile on an island all the enemy's: a new island starts with the four shores (`ROUTE_SHORES`) the player's, which the scenarios about one node's taking leave out. */
 const bareProfile = (seed?: number): Profile => ({ ...newProfile(seed), poiState: blankIsland() });
@@ -4223,7 +3990,7 @@ function checkBattle(): string | null {
 // `RINGFALL_SIM_CHECK=checkFront,checkIsland` runs only the checks named and stops after them: for mending one.
 const onlyChecks = process.env.RINGFALL_SIM_CHECK?.split(",") ?? null;
 const broken: string[] = [];
-for (const check of [checkFront, checkPushPull, checkBattle, checkSupport, checkSortie, checkSortieSettle, checkJump, checkFactions, checkIntercept, checkSplit, checkPatrols, checkMods, checkThreat, () => checkTerrainIndex(20_000), checkParties, checkPacks, checkRoutes, checkRouteObstacles, checkTools, checkTimeToKill, checkStagger, checkWindupMoves, checkDepots, checkDepotBudget, checkPlates, checkUnlocks, checkHideout, checkBoltNoTunnel, checkPickupWavesRouted, checkLaterWaveFights, checkSidestepHit, checkReturnFire, checkWallStops, checkPinch, checkPursuit, checkHealHeard, checkPositionMatters, checkPullWhenAiming, checkVault, checkIsland, checkStrength, checkSaveCompat, checkLoadout, checkSettle, checkWipeClearsAir, checkArcOnTitan, checkGoldReload, checkArcIgnoresFacing, checkDeathEndsRaid, checkBleedoutWipe, checkReinforce, checkReinforceHidden, checkSearchBreaks, checkBagSwap, checkBagSwapCheapest, checkRaiders, checkValuableBin, checkAllyRescue, checkAllyDownWipes, checkHelpAlly, checkAllyHoldsFire, checkFlareExtract, checkShipCall, checkBoatCall, checkSecondPickup, checkEntries, checkCamp, checkKnownEntries, checkConnections, checkAllySelfUp, checkStompHeight, checkFieldsReused, checkFieldsFollowRunner, checkCliffsStop, checkNoPits, checkWalkableIsland, checkReinforceEverywhere, checkRoamersHearOnlyGunfire, checkReinforceWaitsForTitan, checkWeakPointBehindBody, checkHelpBeforeLoot, checkAllyTitanKill, checkLeap, checkLeapLeavesAllyBelow, checkLeapDowned, checkLeapAllyCatchesUp, checkLeapAllyDowned, checkLeapWithItem, checkLeapClocks, checkLeapOffHighGround, checkLeapUnderRoof]) {
+for (const check of [checkFront, checkPushPull, checkBattle, checkSupport, checkSortie, checkSortieSettle, checkJump, checkFactions, checkIntercept, checkSplit, checkPatrols, checkMods, checkThreat, () => checkTerrainIndex(20_000), checkParties, checkPacks, checkTools, checkTimeToKill, checkStagger, checkWindupMoves, checkDepots, checkDepotBudget, checkPlates, checkUnlocks, checkHideout, checkBoltNoTunnel, checkPickupWavesRouted, checkLaterWaveFights, checkSidestepHit, checkReturnFire, checkWallStops, checkPinch, checkPursuit, checkHealHeard, checkPositionMatters, checkPullWhenAiming, checkVault, checkIsland, checkStrength, checkSaveCompat, checkLoadout, checkSettle, checkWipeClearsAir, checkArcOnTitan, checkGoldReload, checkArcIgnoresFacing, checkDeathEndsRaid, checkBleedoutWipe, checkReinforce, checkReinforceHidden, checkSearchBreaks, checkBagSwap, checkBagSwapCheapest, checkRaiders, checkValuableBin, checkAllyRescue, checkAllyDownWipes, checkHelpAlly, checkAllyHoldsFire, checkFlareExtract, checkShipCall, checkBoatCall, checkSecondPickup, checkEntries, checkCamp, checkKnownEntries, checkConnections, checkAllySelfUp, checkStompHeight, checkFieldsReused, checkFieldsFollowRunner, checkCliffsStop, checkNoPits, checkWalkableIsland, checkReinforceEverywhere, checkRoamersHearOnlyGunfire, checkReinforceWaitsForTitan, checkWeakPointBehindBody, checkHelpBeforeLoot, checkAllyTitanKill, checkLeap, checkLeapLeavesAllyBelow, checkLeapDowned, checkLeapAllyCatchesUp, checkLeapAllyDowned, checkLeapWithItem, checkLeapClocks, checkLeapOffHighGround, checkLeapUnderRoof]) {
   let err: string | null | undefined;
   if (onlyChecks && !onlyChecks.includes(check.name)) continue;
   try {

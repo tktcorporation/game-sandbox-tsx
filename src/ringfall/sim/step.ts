@@ -6,7 +6,6 @@ import { stepDepots, stepEntries, stepExtract, stepHome, stepLoot, stepParties, 
 import { TICK } from "./config";
 import { stepReplay } from "./replay";
 import type { Input, State } from "./state";
-import { useRoutes } from "./routes";
 import { stepFront, useZones } from "./front";
 import { stepAmbush, stepContacts, stepFactions, stepMobiles, stepSweep } from "./factions";
 
@@ -21,7 +20,6 @@ const SORTIE_AFTER: ((s: State) => void)[] = [stepPoi, stepFront, stepSortie, st
 
 /** Advance the run by one fixed 1/60 s tick. Pure: no DOM, no clock, no Math.random. */
 export function step(s: State, input: Input, prevCrouch: boolean) {
-  useRoutes(s.routes);
   useZones(s);
   // Clear in place: same list the view and the gate read after the tick, without a fresh array each time.
   s.events.length = 0;
