@@ -93,9 +93,7 @@ export class DepartPicker {
     tabs.addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-mode]");
       if (!el || (el.dataset.mode === "attack") === this.hub.attackMode) return;
-      this.hub.setAttackMode(el.dataset.mode === "attack");
-      sfx.click();
-      this.render();
+      this.toggleMode();
     });
     addEventListener("resize", () => this.shown && requestAnimationFrame(() => this.render()));
   }
@@ -119,6 +117,13 @@ export class DepartPicker {
   }
 
   /** Steps the choice to the next (`d` 1) or previous (-1) start that may be chosen, in the map's order. */
+  /** The other way out of the gate (漁る / 攻める): the tabs' click and the Tab key. */
+  toggleMode() {
+    this.hub.setAttackMode(!this.hub.attackMode);
+    sfx.click();
+    this.render();
+  }
+
   cycle(d: 1 | -1) {
     if (this.hub.attackMode) {
       const targets = this.hub.sortieTargets();
