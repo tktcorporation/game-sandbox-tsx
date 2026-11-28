@@ -206,7 +206,11 @@ function parts(): { name: string; err: string | null; line: string }[] {
       const t = jumpTargets(all, id);
       return !t.length || t.length > JUMP.choices || t.some((x) => x.id !== id) || new Set(t.map((x) => x.owner)).size !== t.length;
     });
-    const err = !nodes.length ? "no node of the islands next door to set out against" : bad ? `the targets from ${bad} are wrong` : null;
+    // An owner set out for leads the choices, even one past the few offered.
+    const many = nodes.map((id) => all.filter((t) => t.id === id)).find((l) => l.length > 1);
+    const last = many?.[many.length - 1];
+    const led = last ? jumpTargets(all, last.id, last.owner) : [];
+    const err = !nodes.length ? "no node of the islands next door to set out against" : bad ? `the targets from ${bad} are wrong` : last && (led[0]?.owner !== last.owner || led.length > JUMP.choices) ? "the owner set out for does not lead the choices" : null;
     out.push({ name: "targets", err, line: `${nodes.length} nodes to set out from, ${Math.max(0, ...nodes.map((id) => jumpTargets(all, id).length))} players at most from one` });
   }
   return out;

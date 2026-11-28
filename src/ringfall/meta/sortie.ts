@@ -170,9 +170,14 @@ export const JUMP = { choices: 3 };
 
 /**
  * The other players a sortie from the core of node `id` may go to: those of `targets` (already
- * within the trophy band, nearest trophies first) who hold the same node, a few at most.
+ * within the trophy band, nearest trophies first) who hold the same node, a few at most. `first`
+ * is an owner the player set out for (やり返す): while they hold the node they lead the choices.
  */
-export const jumpTargets = (targets: readonly SortieTarget[], id: NodeId): SortieTarget[] => targets.filter((t) => t.id === id).slice(0, JUMP.choices);
+export function jumpTargets(targets: readonly SortieTarget[], id: NodeId, first?: string): SortieTarget[] {
+  const at = targets.filter((t) => t.id === id);
+  const lead = first ? at.filter((t) => t.owner === first) : [];
+  return [...lead, ...at.filter((t) => !lead.includes(t))].slice(0, JUMP.choices);
+}
 
 /** The nodes some player of `targets` holds: the cores of the player's a sortie may set out from. */
 export const jumpNodes = (targets: readonly SortieTarget[]): NodeId[] => [...new Set(targets.map((t) => t.id))];

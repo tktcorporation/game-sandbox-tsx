@@ -457,7 +457,9 @@ export class Hub {
    * The holding of another player the signal station pointed at (やり返す, an island's holdings): the
    * departure names the core of the player's island a sortie to it sets out from. Gone once departed or turned back.
    */
-  reach: { id: NodeId; ownerName: string } | null = null;
+  reach: { id: NodeId; owner: string; ownerName: string } | null = null;
+  /** The holding the last departure set out for (`reach` as it left): its owner leads that core's choices, however many hold the node. */
+  sought: { id: NodeId; owner: string } | null = null;
   /** The signal station's top section, which draws itself (`#hub-exped`). */
   private exped: SignalPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -966,7 +968,7 @@ export class Hub {
     const [owner, id] = arg.split("|") as [string, NodeId];
     const t = owner && id ? this.sortieTargets().find((x) => x.owner === owner && x.id === id) : null;
     if (!t) return false;
-    this.reach = { id, ownerName: t.ownerName };
+    this.reach = { id, owner, ownerName: t.ownerName };
     this.focusPoi = id;
     return true;
   }
@@ -987,7 +989,7 @@ export class Hub {
 
   /** The other players a sortie from the core of node `id` may go to, a few at most. */
   jumpTargets(id: NodeId): SortieTarget[] {
-    return jumpTargets(this.sortieTargets(), id);
+    return jumpTargets(this.sortieTargets(), id, this.sought?.id === id ? this.sought.owner : undefined);
   }
 
   /**
@@ -996,6 +998,7 @@ export class Hub {
    */
   launch(): Launch | null {
     this.fixStart();
+    this.sought = this.reach ? { id: this.reach.id, owner: this.reach.owner } : null;
     this.reach = null;
     const from = this.from;
     const taken = takeKit(this.profile, this.startLoad(), from);
