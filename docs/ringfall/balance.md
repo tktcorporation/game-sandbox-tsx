@@ -1239,3 +1239,5 @@ AI の島を 30 日に入れた変更（`scripts/ringfall-campaign.ts` と `meta
 サーバーの遠征を消した変更では、sim は `reckon.ts` から、もう誰も呼ばない `reckonApart()`（サーバーが留守の島を数で解くための入口）を外しただけで、レイドは何も変わらない。`npm run bench:ringfall -- 1` のハッシュは `912421043d86` のまま（CPU は 98.5 秒。ビルドと確認のスクリプトを同時に回していたので、重さの比較には使えない）。
 
 自動配置を地域ごとの部品表に分けた変更（`SCATTER_MENU`、docs/ringfall/field-design.md）では、続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 79.8 秒（読み込み 7.5 秒）、変更後が 76.6 秒（読み込み 7.4 秒）で、2 コアの機械。ハッシュは 912421043d86 から 0ff79ff0ac76 に変わり、10 周すべてが変わった（どの地域も開けた地面の遮蔽が変わるため）。重さはほぼ同じ。`npm run sim:ringfall -- 0` は main でも `front: a new island's front is …` の確認で止まるため、30 周の表は取り直していない（配置の確認 `layout ok` は通る）。表が取れるようになったら、各地域の周の長さ・生還率・`meet` を確かめる。
+
+発射台と燃料基地を作り直した変更（`launchpad()` / `fuelDepot()`、docs/ringfall/field-design.md）では、続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 78.6 秒（読み込み 7.3 秒）、変更後が 81.1 秒（読み込み 7.2 秒）で、2 コアの機械（揺れの内）。ハッシュは 0ff79ff0ac76 から c550863ed55b に変わり、変わったのは発射場の good の 1 周だけ。`front:` の確認が main でも止まるため、30 周の表は取り直していない（`layout ok` は通る。発射場のロボットの遮蔽点は 1276 から 1263）。
