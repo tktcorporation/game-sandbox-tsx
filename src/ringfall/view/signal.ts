@@ -3,7 +3,7 @@
  * 開くたびに自分の島をサーバーと同期し、届いた知らせを hub へ渡す。
  */
 import { islandDay } from "../meta/days";
-import { aiOvernight, isAi, neighboursFor, readNeighbours, readView, syncOwn, takeReport, takeSync } from "../island-net";
+import { aiOvernight, isAi, neighboursFor, readNeighbours, readView, rememberHoldings, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, type Neighbour } from "../meta/neighbours";
 import type { IslandLogEntry, IslandView } from "../meta/island-sync";
 import { parseIslandCode } from "../meta/island-code";
@@ -166,8 +166,11 @@ export class SignalPanel {
     this.paint();
     const v = await readView(code);
     this.busy = false;
-    if (v.ok) this.target = v.body;
-    else this.note = { text: errorText(v.error), good: false };
+    if (v.ok) {
+      this.target = v.body;
+      // A real player's island on the list: what it holds now is what may be attacked, before the list's next read.
+      if (!isAi(code) && this.neighbours.some((n) => n.code === code)) rememberHoldings(v.body);
+    } else this.note = { text: errorText(v.error), good: false };
     this.paint();
   }
 
