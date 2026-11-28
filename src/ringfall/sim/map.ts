@@ -6159,6 +6159,24 @@ function clearance(authored: Box[], { points, segments }: Keep, within?: { x0: n
 }
 
 /** Each region's scattered cover, in `SCATTER`'s order. */
+/** The set pieces `scatterArea()` lays on open ground. */
+type ScatterPiece =
+  | "sandbags" | "barriers" | "pallets" | "containers" | "truck" | "outcrop" | "ruin"
+  | "stoneWall" | "culverts" | "shard" | "mooring" | "reels" | "boat" | "drums" | "deflector" | "racks" | "tanker";
+/**
+ * What each region's open ground is left with, and how often (weights): the reservoir its fields'
+ * stone walls, the works' culverts and pieces of the ring; the harbor its quay's mooring blocks,
+ * cable reels, boats on the dry bed and containers; the launch site its cable drums, blast
+ * deflectors, equipment cabinets and propellant tankers, and no containers or pallets. The city
+ * draws from `urbanAt()` instead. docs/ringfall/field-design.md: no region the same few objects.
+ */
+const SCATTER_MENU: Record<RegionId, readonly [ScatterPiece, number][]> = {
+  reservoir: [["stoneWall", 14], ["outcrop", 14], ["culverts", 12], ["ruin", 12], ["truck", 11], ["pallets", 10], ["sandbags", 9], ["shard", 10], ["containers", 6], ["barriers", 2]],
+  harbor: [["containers", 18], ["mooring", 13], ["reels", 12], ["boat", 12], ["pallets", 10], ["truck", 10], ["shard", 8], ["outcrop", 9], ["ruin", 8]],
+  launch: [["outcrop", 18], ["drums", 16], ["deflector", 14], ["racks", 14], ["tanker", 10], ["sandbags", 10], ["truck", 8], ["ruin", 6], ["shard", 4]],
+  city: [["barriers", 1]],
+};
+
 function scatterCover(authored: Box[], keep: Keep): Box[][] {
   const near = clearance(authored, keep);
   return SCATTER.map((area) => scatterArea(near, area));
@@ -6172,15 +6190,13 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
 
   const len = (a: number, b: number) => a + rnd() * (b - a);
   // Set pieces in real sizes, each a group of boxes written along u (its length) and v (across),
-  // laid along x or z: low cover to crouch behind (sandbags, barriers, a car, about 1.1 m) and tall
-  // cover to stand behind (pallets to 2.2 m, a truck, containers, ruins with 3.2 m walls).
-  const pieceAt = (x: number, z: number): Box[] => {
-    const alongX = rnd() < 0.5;
-    const flip = rnd() < 0.5 ? 1 : -1;
-    const at = (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint = 0, y0 = 0): Box =>
-      alongX ? box(x + u, z + v * flip, l, w, h, kind, tint, y0) : box(x + v * flip, z + u, w, l, h, kind, tint, y0);
-    const kind = rnd();
-    if (kind < 0.12) {
+  // laid along x or z: low cover to crouch behind (about 1.1 m) and tall cover to stand behind
+  // (to 2.2 m and more). Each region draws them from its own menu (`SCATTER_MENU`), the things
+  // its ground would be left with (docs/ringfall/field-design.md), so that no region's open ground
+  // is the same few objects as another's.
+  type At = (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint?: number, y0?: number) => Box;
+  const PIECES: Record<ScatterPiece, (at: At) => Box[]> = {
+    sandbags: (at) => {
       // A sandbag line, 1.1 m high, bent in two or three lengths: hides a crouching player.
       const n = 2 + Math.floor(rnd() * 2);
       const out: Box[] = [];
@@ -6191,14 +6207,14 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
         u += l;
       }
       return out;
-    }
-    if (kind < 0.24) {
+    },
+    barriers: (at) => {
       // A row of concrete road barriers, 3 m long and 1.1 m high, one knocked askew.
       const n = 2 + Math.floor(rnd() * 3);
       const askew = Math.floor(rnd() * n);
       return Array.from({ length: n }, (_, i) => at(i * 3.35, i === askew ? len(-0.9, 0.9) : 0, 3, 0.65, 1.1, "prop", PROP.barrier));
-    }
-    if (kind < 0.42) {
+    },
+    pallets: (at) => {
       // Stacked pallets of goods, two rows of two or three stacks from 1 m to 2.2 m, one of them full height.
       const cols = 2 + Math.floor(rnd() * 2);
       const tall = Math.floor(rnd() * cols * 2);
@@ -6210,8 +6226,8 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
           out.push(at(i * 1.32, j * 1.12, 1.22, 1.02, n === tall ? 2.2 : [1.0, 1.4, 1.8, 2.2][Math.floor(rnd() * 4)], "prop", PROP.pallets));
         }
       return out;
-    }
-    if (kind < 0.58) {
+    },
+    containers: (at) => {
       // Shipping containers side by side, staggered, one of them stacked two high.
       const n = 2 + Math.floor(rnd() * 2);
       const tint = Math.floor(rnd() * 3);
@@ -6222,24 +6238,107 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
         out.push({ ...under, y0: 2.6, h: 5.2, tint: (under.tint + 1) % 3 });
       }
       return out;
-    }
-    if (kind < 0.71) {
+    },
+    truck: (at) => {
       // A wrecked flatbed truck: a 3 m cab and a 5 m bed under a tarp, often a car left beside it.
       const out = [at(1.15, 0, 2.3, 2.5, 3.0, "prop", PROP.cab), at(2.3 + 2.5, 0, 5, 2.5, 2.3, "prop", PROP.bed)];
       if (rnd() < 0.55) out.push(at(len(1, 4), 3.9, 4.5, 1.9, 1.5, "prop", PROP.car));
       return out;
-    }
-    if (kind < 0.82) {
+    },
+    outcrop: (at) => {
       // An outcrop: two or three rocks leaning together.
       const n = 2 + Math.floor(rnd() * 2);
       const tint = Math.floor(rnd() * 2);
       return Array.from({ length: n }, (_, i) => at(i * 3 + len(-0.5, 0.5), len(-1, 1), len(2.6, 4.5), len(2.4, 4), i === 0 ? len(2.4, 3.4) : len(1.3, 2.6), "rock", tint));
-    }
-    return ruin(at, len(7.5, 9.5), len(6.5, 8.5));
+    },
+    ruin: (at) => ruin(at, len(7.5, 9.5), len(6.5, 8.5)),
+    stoneWall: (at) => {
+      // A field's dry-stone wall left standing in lengths, a little over chest high (1.5 to 1.7 m,
+      // so a robot hides behind it too) where it is whole and knee high where it has fallen, a gap
+      // where a gate was.
+      const n = 3 + Math.floor(rnd() * 3);
+      const gap = 1 + Math.floor(rnd() * (n - 2));
+      const out: Box[] = [];
+      let u = 0;
+      for (let i = 0; i < n; i++) {
+        const l = len(2.2, 3.4);
+        if (i !== gap) out.push(at(u + l / 2, len(-0.15, 0.15), l, 0.7, rnd() < 0.3 ? len(0.6, 0.9) : len(1.5, 1.7), "rock", 1));
+        u += l + (i === gap ? 1.2 : 0);
+      }
+      return out;
+    },
+    culverts: (at) => {
+      // Concrete culvert sections left by the works, 1.6 m across: a row of two or three on the
+      // ground with one more laid in the hollow on top.
+      const n = 2 + Math.floor(rnd() * 2);
+      const out = Array.from({ length: n }, (_, i) => at(0, i * 1.75, 2.4, 1.6, 1.6, "wall", 1));
+      if (rnd() < 0.7) out.push(at(0, (n - 1) * 0.875, 2.4, 1.6, 3.1, "wall", 1, 1.5));
+      return out;
+    },
+    shard: (at) => {
+      // A piece of the ring: a plate of its composite skin standing on edge in the ground where it
+      // came down, scorched, with a rib broken off beside it (steel tints 5 to 7, the tether's).
+      const l = len(4, 7);
+      return [at(0, 0, l, 0.6, len(2.4, 3.6), "steel", 5), at(l / 2 - 0.4, 0.6, 0.8, 0.6, len(1.4, 2), "steel", 7), at(len(-l / 3, l / 3), len(1.6, 2.4), len(2, 3), 0.9, len(0.9, 1.3), "steel", 6)];
+    },
+    mooring: (at) => {
+      // Concrete mooring blocks dragged off the old quay in a row, 1.6 m cubes, one tipped.
+      const n = 3 + Math.floor(rnd() * 2);
+      const tip = Math.floor(rnd() * n);
+      return Array.from({ length: n }, (_, i) => at(i * 2.3, i === tip ? 0.8 : len(-0.2, 0.2), 1.6, 1.6, i === tip ? 1.1 : 1.6, "wall", 2));
+    },
+    reels: (at) => {
+      // Cable reels from the docks, stood on end, two to four of them.
+      const n = 2 + Math.floor(rnd() * 3);
+      const out: Box[] = [];
+      for (let i = 0; i < n; i++) out.push(...drumAt(at, i * 2.7 + len(-0.3, 0.3), i % 2 ? 1.2 : 0));
+      return out;
+    },
+    boat: (at) => {
+      // A fishing boat on its side on the dry bed: the hull 8 m long, its keel up, the wheelhouse
+      // broken off beside it.
+      const l = len(7, 9);
+      return [at(0, 0, l, 2.6, 2.2, "steel", 3), at(0, -0.9, l - 1.5, 0.8, 2.9, "steel", 2), at(len(-1, 1), 2.6, 2, 1.8, 1.8, "steel", 4)];
+    },
+    drums: (at) => {
+      // Cable drums stood on end, three to five of them in a loose heap.
+      const n = 3 + Math.floor(rnd() * 3);
+      const out: Box[] = [];
+      for (let i = 0; i < n; i++) out.push(...drumAt(at, (i % 3) * 2.6 + len(-0.3, 0.3), Math.floor(i / 3) * 2.6 + len(-0.3, 0.3)));
+      return out;
+    },
+    deflector: (at) => {
+      // A blast deflector: a concrete wall 6 m long and 2 m high with a 3 m return.
+      return [at(0, 0, 6, 0.7, 2, "wall", 1), at(-2.65, 1.5, 0.7, 3, 2, "wall", 1)];
+    },
+    racks: (at) => {
+      // A row of equipment cabinets on a plinth, 2 m high, a door hanging open on one.
+      const n = 3 + Math.floor(rnd() * 2);
+      const out = [at((n - 1) * 0.9, 0, n * 1.8 + 0.4, 1.6, 0.3, "wall", 1)];
+      for (let i = 0; i < n; i++) out.push(at(i * 1.8, 0, 1.6, 1.3, 2.1, "steel", 1, 0.3));
+      return out;
+    },
+    tanker: (at) => {
+      // A propellant tanker: cab, bed and the tank on it, 3 m to the tank's top.
+      return [at(3.9, 0, 2.3, 2.5, 3.0, "prop", PROP.cab), at(-0.5, 0, 6.5, 2.5, 1.3, "prop", PROP.bed), at(-0.5, 0, 6, 2.2, 3, "steel", 2, 1.3)];
+    },
+  };
+  /** A cable drum or reel stood on end, 2.4 m across and 1.7 m high, at (u, v). */
+  const drumAt = (at: At, u: number, v: number): Box[] => [at(u, v, 2.4, 1.6, 1.7, "steel", 1), at(u, v, 1.6, 2.4, 1.7, "steel", 1)];
+  const menu = SCATTER_MENU[area.region];
+  const menuTotal = menu.reduce((s, [, w]) => s + w, 0);
+  const pieceAt = (x: number, z: number): Box[] => {
+    const alongX = rnd() < 0.5;
+    const flip = rnd() < 0.5 ? 1 : -1;
+    const at: At = (u, v, l, w, h, kind, tint = 0, y0 = 0) => (alongX ? box(x + u, z + v * flip, l, w, h, kind, tint, y0) : box(x + v * flip, z + u, w, l, h, kind, tint, y0));
+    let pick = rnd() * menuTotal;
+    for (const [name, w] of menu) if ((pick -= w) < 0) return PIECES[name](at);
+    return PIECES[menu[menu.length - 1][0]](at);
   };
   /**
    * A city street's leavings: a row of concrete barriers, cars parked nose to tail, a truck, a bus,
-   * a bus shelter of glass under a pale roof, or two delivery containers. No sand, rock or ruin.
+   * a bus shelter of glass under a pale roof, two delivery containers, a planter with its tree, a
+   * street kiosk, or a row of vending machines. No sand, rock or ruin.
    */
   const urbanAt = (x: number, z: number): Box[] => {
     const alongX = rnd() < 0.5;
@@ -6247,22 +6346,22 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
     const at = (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint = 0, y0 = 0): Box =>
       alongX ? box(x + u, z + v * flip, l, w, h, kind, tint, y0) : box(x + v * flip, z + u, w, l, h, kind, tint, y0);
     const kind = rnd();
-    if (kind < 0.24) {
+    if (kind < 0.12) {
       const n = 2 + Math.floor(rnd() * 3);
       const askew = Math.floor(rnd() * n);
       return Array.from({ length: n }, (_, i) => at(i * 3.35, i === askew ? len(-0.9, 0.9) : 0, 3, 0.65, 1.1, "prop", PROP.barrier));
     }
-    if (kind < 0.5) {
+    if (kind < 0.28) {
       const n = 2 + Math.floor(rnd() * 2);
       return Array.from({ length: n }, (_, i) => at(i * 5.6, len(-0.4, 0.4), 4.5, 1.9, 1.5, "prop", PROP.car));
     }
-    if (kind < 0.64) {
+    if (kind < 0.38) {
       const out = [at(1.15, 0, 2.3, 2.5, 3.0, "prop", PROP.cab), at(2.3 + 2.5, 0, 5, 2.5, 2.3, "prop", PROP.bed)];
       if (rnd() < 0.5) out.push(at(len(1, 4), 3.9, 4.5, 1.9, 1.5, "prop", PROP.car));
       return out;
     }
-    if (kind < 0.78) return [at(0, 0, 11, 2.6, 3.2, "steel", 4), at(0, 0, 10.2, 2.7, 2.6, "steel", 8, 1.6), at(0, 0, 10.2, 2.7, 1.2, "steel", 3, 0.9)];
-    if (kind < 0.9)
+    if (kind < 0.48) return [at(0, 0, 11, 2.6, 3.2, "steel", 4), at(0, 0, 10.2, 2.7, 2.6, "steel", 8, 1.6), at(0, 0, 10.2, 2.7, 1.2, "steel", 3, 0.9)];
+    if (kind < 0.58)
       return [
         at(0, -0.7, 4.2, 0.15, 2.4, "steel", 8),
         at(-1.95, 0, 0.15, 1.6, 2.4, "steel", 2),
@@ -6270,6 +6369,22 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
         at(0, 0, 4.4, 1.8, 2.6, "slab", 2, 2.4),
         at(0, -0.2, 3.2, 0.5, 0.5, "prop", PROP.bench),
       ];
+    if (kind < 0.72) {
+      // Planters in a row along the pavement, concrete boxes 1.1 m high with a tree's trunk in each.
+      const n = 2 + Math.floor(rnd() * 2);
+      const out: Box[] = [];
+      for (let i = 0; i < n; i++) out.push(at(i * 4.2, 0, 3, 1.4, 1.1, "wall", 2), at(i * 4.2, 0, 0.35, 0.35, 3.2, "rock", 1, 1.1));
+      return out;
+    }
+    if (kind < 0.84)
+      // A street kiosk: a booth 3 by 2.2 m under a deeper roof, its shutter down, a counter on its front.
+      return [at(0, 0, 3, 2.2, 2.5, "steel", 9), at(0, 0, 3.6, 2.8, 2.8, "slab", 2, 2.5), at(0, -1.35, 2.4, 0.5, 1.05, "prop", PROP.counter)];
+    if (kind < 0.94) {
+      // Vending machines side by side against nothing, 1.9 m high, one fallen on its face.
+      const n = 3 + Math.floor(rnd() * 2);
+      const down = Math.floor(rnd() * n);
+      return Array.from({ length: n }, (_, i) => (i === down ? at(i * 1.1, 1.3, 1, 1.9, 0.8, "steel", 3) : at(i * 1.1, 0, 1, 0.8, 1.9, "steel", 3 + (i % 2) * 5)));
+    }
     const tint = Math.floor(rnd() * 3);
     return [at(0, 0, 6.1, 2.44, 2.6, "container", tint), at(len(-1.2, 1.2), 2.7, 6.1, 2.44, 2.6, "container", (tint + 1) % 3)];
   };
