@@ -606,15 +606,6 @@ export class Hud {
         // The enemy sets off to take back a node: its landing's mark and the node's blue core.
         this.toast(`${reinforceIcon()}${coreIcon(SIDE.own)}${NODES[e.node].name}`, 0, 4000);
         break;
-      case "landing": {
-        // Another island's expedition coming down: whose, and the node it is sent at.
-        const q = s.battle?.squads.find((x) => x.side === 3 && Math.abs(x.x - e.x) < 0.5 && Math.abs(x.z - e.z) < 0.5);
-        if (!q) break;
-        const who = this.rivalNames.get(q.owner ?? "") ?? "他のプレイヤー";
-        const to = NODES[q.via.length ? q.via[q.via.length - 1] : q.to]?.name ?? "";
-        this.banner(`${who}の遠征隊`, `${coreIcon(SIDE.rival)}${esc(to)}へ${e.boat ? "上陸" : "降下"}`);
-        break;
-      }
       case "nodeTaken": {
         const name = NODES[e.node].name;
         const owner = rivalOf(s.nodes[e.node] ?? "foe");

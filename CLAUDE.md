@@ -257,15 +257,7 @@ Squads (`BattleSquad`) come out of the nodes: the player's from the camp's facto
 `Profile.factory`, built at its station like a hideout module, `buildFactory()`), the enemy's the
 more the more it holds (also from `NET_EDGE`, the nodes whose `POI_DEFS` name a landing ground, and in answer to the player's ground), and the
 rogues' from the wild now and then (`CONQUEST.rogue`), which fight at a node and move on but take
-none. Other players' expeditions (side 3, `BattleSquad.owner`; `newRun(..., { battle: { factory,
-rivals } })`, `RivalExpedition`: whose, the node, the squad, when) land as the enemy's do, by the
-pad or the north shore (`rivalRoute()`), walk across whoever's nodes to the one they were sent to
-(at a node they pass through they take no part in its garrison's fight or its capture, raise no
-threat and are no `battleFocus()`, but they fight any squad they meet on the way within
-`CONQUEST.meet`, the factory's turrets there included), take it for their owner and
-hold it (an expedition whose owner id `parseHold()` cannot read back is dropped); one sent at 0 to a node its owner holds stands there from the
-start. They fight every other side; near the player they are robots among the enemy's
-(`Enemy.rival`, purple, green on the maps). They walk the links (`walkLine()` paths traced as
+none. Squads walk the links (`walkLine()` paths traced as
 the raid starts, then forgotten), attack a neighbouring node or defend one of their side's, and take
 a node by standing at its core for `CONQUEST.capture` seconds with none of its holders there (its
 garrison counts wherever it stands and comes to the core). Near the player or the teammate
@@ -649,10 +641,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   engaged with the player, and does not give up the chase while one fights them, `stepSquads()`);
   the sim gate's `ally` column is its damage share, downs and revives, and `checkSupport()`
   (`scripts/ringfall-support.ts`) checks that the player's robots help and that a squad fighting
-  them stays engaged after losing the player. `checkRivals()` (`scripts/ringfall-rivals.ts`) drives
-  made-up expeditions of another player: one takes an undefended node of the player's, the factory's
-  squads take one back, another player's node is on the front and its core captures, and a battle
-  given no expedition plays as one given none.
+  them stays engaged after losing the player.
 - `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
   `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
   beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
