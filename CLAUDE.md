@@ -532,10 +532,15 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `STREETS` from `ROUTE_PLAN`; the view lays their asphalt and paint (`view/streets.ts`, merged into
   each chunk), the world map draws them, and `STREET_SIDE` in `map.ts` lines them with lamp posts,
   signposts and queues of abandoned traffic. `offStreet()` is the lookup the scatter and the view use.
-  `scatterCover()` then fills the open ground with set pieces in real sizes (sandbag lines,
-  road-barrier rows, pallet stacks, container clusters, wrecked trucks, rock outcrops and roofless
-  ruins, the vehicles and small things as `prop` boxes drawn by `buildProp()`), each
-  region from its own grid and seed (`SCATTER`), sparse on the salt flats, only a street's leavings in the city (`urban`), off the streets'
+  `scatterCover()` then fills the open ground with set pieces in real sizes, each region from its
+  own menu of them (`SCATTER_MENU`, weighted, docs/ringfall/field-design.md): the reservoir's
+  dry-stone walls, culvert sections and pieces of the ring among outcrops, ruins, trucks, pallets
+  and sandbags; the harbor's containers, mooring blocks, cable reels and boats on the dry bed; the
+  launch site's cable drums, blast deflectors, equipment cabinets and propellant tankers, with no
+  containers or pallets; the vehicles and small things as `prop` boxes drawn by `buildProp()`. Each
+  region draws from its own grid and seed (`SCATTER`), sparse on the salt flats, only a street's
+  leavings in the city (`urban`: cars, barriers, trucks, buses, shelters, planters, kiosks, vending
+  machines and containers), off the streets'
   asphalt, and on the ground between gathered along the streets with only a few clumps
   (`clump()`) away from them, keeping clear of the stops and parties' stops (`STOPS`, `PARTY_STOPS`),
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,
