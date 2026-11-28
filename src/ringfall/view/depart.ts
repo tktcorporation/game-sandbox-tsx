@@ -1,7 +1,8 @@
 import { sfx } from "./sfx";
 import { neighboursOnMap } from "../island-net";
 import { WORLD } from "../sim/config";
-import { POIS, REGIONS, regionOf, type NodeId, type RegionId } from "../sim/map";
+import { NODES, POIS, REGIONS, nodeIndex, regionOf, type NodeId, type RegionId } from "../sim/map";
+import { rivalHold } from "../sim/holds";
 import { PHRASE, TERM, attackScoutDef, attackScoutTrop, winBonusMark } from "./copy";
 import { frontPickFor, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
@@ -17,6 +18,11 @@ import { isIslandProtected } from "../meta/outer-guard";
  * a shut one or a padlock shows it beside the map with why it is shut and how to open it
  * (`Hub.peek()`), and the confirm then says the reason and does not go. It changes only the hub's
  * chosen start and the shut one it shows.
+ *
+ * The departure goes one of two ways, chosen by the tabs over its side (`Hub.attackMode`): 漁る, the
+ * island's raid described above, or 攻める, a sortie to another player's holding. Set to 攻める the
+ * side is the list of holdings and the board shows the holding chosen (the ground round its core,
+ * its owner's name over it) in place of the island and its starts.
  */
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -26,6 +32,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const MINI_BOXES = 6;
 /** How far, in CSS pixels, a shut region's padlock keeps from every POI's mark and name (across counts 0.6). */
 const LOCK_CLEAR = 34;
+/** Metres round a holding's core the board shows while the departure is set to 攻める. */
+const HOLDING_REACH = 170;
 
 export class DepartPicker {
   private map: IslandMap;
@@ -59,19 +67,33 @@ export class DepartPicker {
         this.render();
         return;
       }
-      // While a sortie is chosen the start still lit is not the departure: clicking it makes the raid one of the island again.
-      if (el.classList.contains("on") && !this.hub.sortiePick()) {
+      if (el.classList.contains("on")) {
         if (this.hub.rideRefused()) return;
         this.go();
         return;
       }
       this.pick(el.dataset.kind as StartPoint["kind"], el.dataset.id!);
     });
-    // 攻める list (TKT-204 案 B): pick a scouted rival hub → nearest start + goal.
+    // 攻める list: choosing a holding makes it the sortie's; the one chosen again departs, as a start does.
     $("depart-attack-list").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-owner]");
       if (!el) return;
+      if (el.classList.contains("on")) {
+        this.go();
+        return;
+      }
       if (!this.hub.selectSortie(el.dataset.owner!, el.dataset.attack as NodeId)) return;
+      sfx.click();
+      this.render();
+    });
+    // The two ways out of the gate.
+    const tabs = $("depart-mode");
+    tabs.querySelector<HTMLElement>("[data-mode=forage]")!.textContent = TERM.forage;
+    tabs.querySelector<HTMLElement>("[data-mode=attack]")!.textContent = TERM.attack;
+    tabs.addEventListener("click", (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-mode]");
+      if (!el || (el.dataset.mode === "attack") === this.hub.attackMode) return;
+      this.hub.setAttackMode(el.dataset.mode === "attack");
       sfx.click();
       this.render();
     });
@@ -98,6 +120,18 @@ export class DepartPicker {
 
   /** Steps the choice to the next (`d` 1) or previous (-1) start that may be chosen, in the map's order. */
   cycle(d: 1 | -1) {
+    if (this.hub.attackMode) {
+      const targets = this.hub.sortieTargets();
+      if (!targets.length) return;
+      const pick = this.hub.sortiePick();
+      const at = targets.findIndex((t) => t.owner === pick?.owner && t.id === pick.id);
+      const next = targets[(at + d + targets.length) % targets.length];
+      if (this.hub.selectSortie(next.owner, next.id)) {
+        sfx.click();
+        this.render();
+      }
+      return;
+    }
     const open = this.hub.startPoints().filter((q) => q.open);
     if (!open.length) return;
     const at = open.findIndex((q) => q.on);
@@ -109,15 +143,36 @@ export class DepartPicker {
   render() {
     const hub = this.hub;
     const p = hub.profile;
-    this.map.known = p.entries;
+    const attack = hub.attackMode;
+    const target = attack ? hub.sortiePick() : null;
+    $("depart").classList.toggle("attack", attack);
+    for (const b of $("depart-mode").querySelectorAll<HTMLElement>("button[data-mode]")) {
+      const on = (b.dataset.mode === "attack") === attack;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-selected", String(on));
+    }
+    this.map.known = attack ? [] : p.entries;
     this.map.contract = null;
-    this.map.neighbours = neighboursOnMap(p);
-    this.map.islandShielded = isIslandProtected(p.outerGuard, Date.now());
-    this.map.draw(islandScene(p));
-    const pts = hub.startPoints();
-    const hint = hub.departHint();
+    this.map.neighbours = attack ? [] : neighboursOnMap(p);
+    this.map.islandShielded = !attack && isIslandProtected(p.outerGuard, Date.now());
+    // 攻める: the holding chosen, as the sortie plays it (theirs, every other place the robots'), the ground round its core.
+    const core = target ? NODES[nodeIndex(target.id)]?.core : null;
+    this.map.frame = core ? { x0: core.x - HOLDING_REACH, z0: core.z - HOLDING_REACH, x1: core.x + HOLDING_REACH, z1: core.z + HOLDING_REACH } : null;
+    this.map.locks = !attack;
+    this.map.unlocks = !attack;
+    const scene = islandScene(
+      target
+        ? { ...p, depots: [target.id], poiState: Object.fromEntries(POIS.map((o) => [o.id, { state: o.id === target.id ? rivalHold(target.owner) : ("foe" as const) }])) as typeof p.poiState }
+        : p,
+    );
+    this.map.draw(scene);
+    const over = $("depart-target");
+    over.hidden = !target;
+    over.innerHTML = target ? `${flagIcon(SIDE.rival)}<b>${esc(target.ownerName)}</b><b>の${esc(target.hubName)}</b>` : "";
+    const pts = attack ? [] : hub.startPoints();
+    const hint = attack ? null : hub.departHint();
     const peek = hint && pts.every((q) => !(q.on && q.kind === hint.at.kind && q.id === hint.at.id)) ? hint.at : null;
-    this.placePoints(pts, hub.lockedRegions(), peek);
+    this.placePoints(pts, attack ? [] : hub.lockedRegions(), peek);
     const on = pts.find((q) => q.on);
     const d = hub.departure();
     // A shut start shown in place of the chosen one: its name under a padlock.
@@ -129,10 +184,12 @@ export class DepartPicker {
     const how = $("depart-hint");
     how.hidden = !hint;
     how.innerHTML = hint ? hint.how.join("") : "";
-    this.renderAttack();
-    $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
+    $("depart-start").hidden = attack;
+    this.renderAttack(attack);
+    // 攻める: the board and the list already name the holding, so only the kit is listed.
+    $("depart-list").innerHTML = (attack ? d.rows.slice(0, 1) : d.rows).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
     // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
-    $("depart-carry").innerHTML = hub.departBoxes();
+    $("depart-carry").innerHTML = attack ? "" : hub.departBoxes();
     const w = $("depart-warn");
     w.hidden = !d.warn.length;
     w.textContent = d.warn.join("・");
@@ -140,30 +197,27 @@ export class DepartPicker {
     const refused = hub.rideRefused();
     const go = $("depart-go") as HTMLButtonElement;
     go.disabled = !!refused;
-    go.innerHTML = refused ? `${lockIcon()}${esc(refused)}` : `${PHRASE.sortieDo}<kbd>Enter</kbd>`;
+    go.innerHTML = refused ? `${lockIcon()}${esc(refused)}` : `${attack ? TERM.attack : PHRASE.sortieDo}<kbd>Enter</kbd>`;
   }
 
-  /**
-   * CoC-style 攻める list: rival contested hubs with defence / trophy scout lines.
-   * Kept visible even when empty (early-MP) so the attack entry is always on the gate.
-   */
-  private renderAttack() {
-    const targets = this.hub.sortieTargets();
+  /** The 攻める list, while the departure is set to it: other players' holdings, each with its defence, trophies and bonus. */
+  private renderAttack(on: boolean) {
     const box = $("depart-attack");
     const list = $("depart-attack-list");
-    const title = $("depart-attack-title");
-    box.hidden = false;
-    title.textContent = TERM.attack;
+    box.hidden = !on;
+    if (!on) {
+      list.innerHTML = "";
+      return;
+    }
+    const targets = this.hub.sortieTargets();
     if (!targets.length) {
-      // 【元】（非表示） 【案】空のときも見出しを残す 【理由】攻める入口を初日に見せる
       list.innerHTML = `<p class="attack-empty lock-note">${esc("攻められる別プレイヤーの陣地はまだない")}</p>`;
       return;
     }
-    // The neighbours' holdings (docs/ringfall/holdings-raid.md): choosing one makes the departure a sortie there.
-    const on = this.hub.sortiePick();
+    const pick = this.hub.sortiePick();
     list.innerHTML = targets
       .map((t) => {
-        const cls = ["attack-row", on?.owner === t.owner && on.id === t.id ? "on" : ""].filter(Boolean).join(" ");
+        const cls = ["attack-row", pick?.owner === t.owner && pick.id === t.id ? "on" : ""].filter(Boolean).join(" ");
         const bonus = t.winBonus > 0 ? `<small class="scout-bonus">${esc(winBonusMark(t.winBonus))}</small>` : "";
         const scout = `<small class="scout-def">${esc(attackScoutDef(t.factory, t.guard))}</small><small class="scout-trop">${esc(attackScoutTrop(t.win, t.lose))}</small>${bonus}`;
         // Split owner / hub so wordy counts each ≤18 (AI names stay short alone).

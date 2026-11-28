@@ -35,6 +35,7 @@ export type TermId =
   | "returningAlive"
   | "arrivedAtWarehouse"
   | "attack"
+  | "forage"
   | "contest"
   | "revenge"
   | "attackRecord"
@@ -99,6 +100,8 @@ export const TERM = {
    * 【元】取り返す 【案】攻める — docs/ringfall/glossary.md (adopted).
    */
   attack: "攻める",
+  /** The island's own raid (glossary.md 漁り), as the departure's other way beside 攻める. */
+  forage: "漁る",
   /**
    * Contested coastal hub not yet held by anyone (TKT-204 案 A).
    * 【元】（なし） 【案】取り合う 【理由】誰と取り合う拠点かを先に見せる
@@ -186,6 +189,8 @@ export const PHRASE = {
   /** Departure opens only at the gate (車両 deleted 2026-11-24). */
   nextGate: `${TERM.nextHand}${TERM.gate}から${TERM.sortie}`,
   sortieDo: `${TERM.sortie}する`,
+  /** The departure set to 攻める with no holding on its list. */
+  noAttackTarget: "攻め先なし",
   factoryRaiseReady: `${TERM.factory} · ${TERM.raiseLevelReady}`,
   sideWorkshop: TERM.workshop,
   sideFactory: TERM.factory,
