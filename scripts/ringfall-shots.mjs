@@ -1837,6 +1837,7 @@ lap("island");
   }
   lap("mods");
 }
+}
 
 /*
  * The day's battle (陣取り戦): a profile on day 9 with the supply depot and the quarry the
