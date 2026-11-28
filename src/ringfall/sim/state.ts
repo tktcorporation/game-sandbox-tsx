@@ -254,7 +254,7 @@ export interface Enemy {
   rogue?: boolean;
   /** One of the player's own robots (`State.friends`, the factory's): it fights the network and the rogues, never the player or the teammate. */
   friend?: boolean;
-  /** One of another player's robots (an expedition's, sim/battle.ts side 3): that player's id. It fights the player and every faction. */
+  /** One of another player's robots (a holding's defence in a sortie; side 3): that player's id. It fights the player and every faction. */
   rival?: string;
   /** A robot of a battle squad (`BattleSquad.id`, sim/battle.ts): it walks onto the player's nodes, and the garrisons fight it. */
   battle?: number;

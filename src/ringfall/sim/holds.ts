@@ -4,7 +4,7 @@
  * (sim/reckon.ts) can run on a server with the same code.
  */
 
-/** A POI another player's expedition took: `rival:` and that player's id. */
+/** A POI another player holds: `rival:` and that player's id. */
 export type RivalHold = `rival:${string}`;
 
 /** Who holds a POI: the enemy (red on the maps), the player (blue), or another player (`RivalHold`). */

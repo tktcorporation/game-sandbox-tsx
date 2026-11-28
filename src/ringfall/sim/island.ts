@@ -25,7 +25,7 @@ export const isContestedPoi = (poi: number | NodeId | string): boolean =>
     ? (CONTESTED_POIS as readonly string[]).includes(POIS[poi]?.id ?? "")
     : (CONTESTED_POIS as readonly string[]).includes(poi);
 
-/** Extra grunts from 島の守り joining a contested defence (matches worker `EXPEDITION.aidPerFight`). */
+/** Extra grunts from 島の守り joining a contested defence (a sortie's defence). */
 export const DEFENCE_AID = 2;
 
 /** The squad guarding a POI's vault: the one with a member in armour plate. */

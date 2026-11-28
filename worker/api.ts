@@ -2,7 +2,7 @@ import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { TROPHY } from "../src/ringfall/meta/trophies";
 import { parseReplay } from "../src/ringfall/sim/replay-data";
-import { NODE_IDS, parseContestedFailed, parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
+import { NODE_IDS, parseContestedFailed, parseHolds, parseParcels, parseRetaken, parseTakenParcels, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
 import { CONTESTED_OUTER_TABLE } from "../src/ringfall/meta/contested-outer-table";
@@ -11,7 +11,7 @@ import { planMutualPicks, type PairCandidate, type PairPick } from "./neighbour-
 
 /*
  * RINGFALL's API under /api/ (docs/ringfall/multiplayer.md, サーバー). A plain handler of a request
- * and the Worker's bindings, so that scripts/ringfall-server.ts and scripts/ringfall-expeditions.ts
+ * and the Worker's bindings, so that scripts/ringfall-server.ts and scripts/ringfall-island-server.ts
  * can run it on stand-ins.
  *
  * The bindings are optional: until a database is connected (the steps are in the doc), a valid
@@ -495,10 +495,10 @@ async function neighbours(env: ApiEnv, player: string, now: number): Promise<Res
 }
 
 /**
- * /api/islands (a claim) and /api/islands/:code and below (docs/ringfall/multiplayer.md, 遠征): the owner's report (PUT), the
- * island as anyone sees it (GET), the owner's log (GET …/log), the owner's raid taking the
- * expeditions in (POST …/lease), an expedition to it (POST …/expeditions), an X2 assault result
- * (POST …/assault), and its sender calling it home (DELETE …/expeditions/<n>).
+ * /api/islands (a claim) and /api/islands/:code and below (docs/ringfall/multiplayer.md): the owner's
+ * report (PUT), the island as anyone sees it (GET), the owner's log (GET …/log), the owner's
+ * look-mark (POST …/pings), a parcel left at a depot (POST …/aid) and how another player's sortie on
+ * a holding ended (POST …/raids).
  */
 async function handleIslands(request: Request, env: ApiEnv, now: number, url: URL, draw: () => string): Promise<Response> {
   if (url.pathname === "/api/islands") {
@@ -507,31 +507,18 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   }
   const parts = url.pathname.split("/").slice(3);
   const code = parseIslandCode(parts[0]);
-  // …/expeditions/<n> names one expedition by the number the island gave it (a recall).
-  const recalledExpeditionId = parts.length === 3 && parts[1] === "expeditions" && /^[1-9]\d{0,8}$/.test(parts[2]) ? Number(parts[2]) : null;
-  const sub = recalledExpeditionId !== null ? "expedition" : parts.slice(1).join("/");
-  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid" && sub !== "assault" && sub !== "raids")) return fail(404, "not-found");
+  const sub = parts.slice(1).join("/");
+  if (!code || (sub !== "" && sub !== "log" && sub !== "pings" && sub !== "aid" && sub !== "raids")) return fail(404, "not-found");
   const method = request.method;
-  const allow =
-    sub === ""
-      ? "GET, PUT"
-      : sub === "log"
-        ? "GET"
-        : sub === "expedition"
-          ? "DELETE"
-          : sub === "lease"
-            ? "POST, DELETE"
-            : "POST";
+  const allow = sub === "" ? "GET, PUT" : sub === "log" ? "GET" : "POST";
   if (!allow.split(", ").includes(method)) return notAllowed(allow);
   const ns = env.ISLAND;
   if (!ns) return unbound("no-island-server");
   if (sub === "" && method === "GET") return ask(ns, code, { t: "view" }, now);
-  if (sub === "log" || sub === "lease" || sub === "pings") {
+  if (sub === "log" || sub === "pings") {
     // The owner's secret id goes in a header, never in the URL, where logs and histories keep it.
     const player = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
     if (!UUID.test(player)) return fail(401, "unauthorized");
-    // A raid of the owner's takes the island's expeditions in.
-    if (sub === "lease") return ask(ns, code, { t: method === "DELETE" ? "releaseLease" : "lease", player }, now);
     if (sub === "pings") {
       const body = await readJson(request);
       if (body instanceof Response) return body;
@@ -551,12 +538,11 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const player = parsePlayer(raw.player);
     const holds = parseHolds(raw.holds);
     const retaken = parseRetaken(raw.retaken);
-    const lent = parseLent(raw.lent);
     const parcels = parseParcels(raw.parcels);
     const takenParcels = parseTakenParcels(raw.takenParcels);
     const contestedFailed = parseContestedFailed(raw.contestedFailed);
-    if (!player || !holds || !retaken || !lent || !parcels || !takenParcels || !contestedFailed || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
-    const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, parcels, takenParcels }, now);
+    if (!player || !holds || !retaken || !parcels || !takenParcels || !contestedFailed || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, parcels, takenParcels }, now);
     if (r.status === 200) {
       await ownCode(env, code, player.id, now);
       // Contested pair sync (方向 A / TKT-201): any contested shore that became own flips the
@@ -584,7 +570,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     }
     return r;
   }
-  // Aid or an expedition: the sender proves their own island with their id.
+  // Aid or a sortie's end: the sender proves their own island with their id.
   const from = parsePlayer(raw.from);
   const fromCode = isObj(raw.from) ? parseIslandCode(raw.from.code) : null;
   if (!from || !fromCode) return fail(400, "bad-request");
@@ -593,9 +579,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (who.status === 404) return fail(403, "no-own-island");
   if (who.status !== 200) return who.status === 403 ? fail(403, "not-owner") : who;
   // The name others see is the one the sender's island keeps, not one the request names.
-  const { factory, name, held, attackers } = (await who.json()) as { factory: number; name: string; held?: string[]; attackers?: string[] };
-  // A recall: the sender, shown to own the island the expedition came from, calls it home.
-  if (recalledExpeditionId !== null) return ask(ns, code, { t: "recall", from: fromCode, id: recalledExpeditionId }, now);
+  const { name, held, attackers } = (await who.json()) as { name: string; held?: string[]; attackers?: string[] };
   // Aid donation (ux-design C2): a valuable left at a depot on the target island for offline defence.
   if (sub === "aid") {
     if (typeof raw.kind !== "string" || !raw.kind || typeof raw.poi !== "string") return fail(400, "bad-request");
@@ -612,28 +596,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const replay = record && record.node === raw.target ? record : undefined;
     return ask(ns, code, { t: "raid", from: { code: fromCode, name }, target: raw.target, captured: raw.captured, ...(stars !== undefined ? { stars } : {}), ...(won !== undefined ? { won } : {}), ...(replay ? { replay } : {}) }, now);
   }
-  // X2 short-raid result (game-design-review §5.8): after the notice, the attacker reports win/loss.
-  if (sub === "assault") {
-    if (!int(raw.id, 1, 1e9) || typeof raw.won !== "boolean") return fail(400, "bad-request");
-    const ar = await ask(ns, code, { t: "assault", from: fromCode, id: raw.id, won: raw.won }, now);
-    if (ar.status === 200 && raw.won) {
-      try {
-        const body = (await ar.clone().json()) as { contested?: { shore: string; owner: string } };
-        if (body.contested) await syncContestedPair(env, ns, code, fromCode, body.contested.shore, fromCode, now, name);
-      } catch {
-        /* best-effort */
-      }
-    }
-    return ar;
-  }
-  if (typeof raw.target !== "string" || !int(raw.units, 1, 64)) return fail(400, "bad-request");
-  // A neighbour of the sender's this week is reached only by its sea route (the sender holds the node
-  // facing it), unless it attacked the sender's island lately: an attack is answered by any way (仕返し).
-  if (!attackers?.includes(code) && (await isNeighbourRouteShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
-  const kinds = squadKinds(factory);
-  if (raw.units > kinds.length) return fail(400, "too-many-units");
-  const x2 = raw.x2 === true;
-  return ask(ns, code, { t: "expedition", from: { code: fromCode, name }, target: raw.target, kinds: kinds.slice(0, raw.units), ...(x2 ? { x2: true as const } : {}) }, now);
+  return fail(404, "not-found");
 }
 
 /** The answer to a request under /api/, or null for any other path. */

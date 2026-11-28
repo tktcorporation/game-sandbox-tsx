@@ -1,6 +1,6 @@
 /*
  * Every error the island API answers with (worker/api.ts, worker/island.ts), and what the game says
- * for each (docs/ringfall/multiplayer.md, 島の番号と遠征の API). The Worker types its refusals with
+ * for each (docs/ringfall/multiplayer.md). The Worker types its refusals with
  * `ApiError`, so a code it can send is always one listed here, and `ERROR_TEXT` must name each one.
  * A leaf module, shared by the Worker and the browser.
  */
@@ -25,21 +25,12 @@ export const API_ERRORS = [
   "not-owner",
   "own-island",
   "no-own-island",
-  // Expeditions.
-  "closed-node",
+  // Sorties on a holding, and the contested shores.
   "route-shut",
   "node-not-open",
   "protected",
-  "node-busy",
-  "island-full",
   "day-limit",
   "shielded",
-  "too-many-units",
-  "no-expedition",
-  // X2 short-raid assault report.
-  "not-assault",
-  "assault-not-ready",
-  "already-resolved",
 ] as const;
 
 export type ApiError = (typeof API_ERRORS)[number];
@@ -64,12 +55,9 @@ export const ERROR_TEXT: Record<ApiError | NetError, string> = {
   "not-owner": "この端末の島ではありません",
   "own-island": "自分の島には送れません",
   "no-own-island": "自分の島の番号がまだありません",
-  "closed-node": "その拠点は遠征で取れません",
   "route-shut": "その別プレイヤーへの航路が閉じています",
-  "node-not-open": "その拠点は他のプレイヤーが持っています",
+  "node-not-open": "その拠点はもう相手の陣地ではありません",
   protected: "始めたばかりの島です。保護が明けるまで待つ",
-  "node-busy": "その拠点にはもう遠征隊が向かっています",
-  "island-full": "その島には遠征隊がいっぱいです",
   "day-limit": "その島は今日の分を取られました。明日もう一度",
   /**
    * 【元】その拠点は今日取られたばかりです。明日もう一度
@@ -77,11 +65,6 @@ export const ERROR_TEXT: Record<ApiError | NetError, string> = {
    * 【理由】作り順③で島全体の盾に拡張。拠点単位の文言だと残り拠点が取れると誤解する
    */
   shielded: "その島は守り中です。明けるまで取れません",
-  "too-many-units": "工場の部隊より多くは送れません",
-  "no-expedition": "その遠征隊はもういません",
-  "not-assault": "その遠征は短いレイドの予告ではありません",
-  "assault-not-ready": "来る遠征の予告が終わるまで待つ",
-  "already-resolved": "その短いレイドの結果はもう決まっています",
   network: "つながりませんでした",
   "bad-response": "サーバーの答えが読めませんでした",
 };

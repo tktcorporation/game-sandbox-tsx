@@ -531,7 +531,7 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
-  { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
+  { bad: "遠征", keep: "attack", note: "遠征は無くなった。別プレイヤーの陣地は攻めで取る" },
   { bad: "仕返し", keep: "revenge", note: "やり返す（TKT-204 案 F）" },
   { bad: "取り返す", keep: "attack", note: "攻めるに統合（E4）" },
   { bad: "お隣", keep: "otherPlayers", note: "別プレイヤー（隣り合っている必要はない）" },

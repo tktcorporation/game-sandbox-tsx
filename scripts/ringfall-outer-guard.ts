@@ -19,7 +19,7 @@ import {
 } from "../src/ringfall/meta/outer-guard";
 import { applySync } from "../src/ringfall/meta/island-sync";
 import {
-  EXPEDITION,
+  ISLAND_RULES,
   islandOp,
   isIslandShielded,
   isShielded,
@@ -33,7 +33,7 @@ import { newProfile } from "../src/ringfall/meta/profile";
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 10, 25, 12, 0, 0); // noon UTC — rest of day left
-const T1 = T0 + EXPEDITION.protectDays * DAY + 1000;
+const T1 = T0 + ISLAND_RULES.protectDays * DAY + 1000;
 
 const A = { id: "player-a", name: "アリス", code: "AAAAAA" };
 const B = { id: "player-b", name: "ボブ", code: "BBBBBB" };
@@ -125,21 +125,6 @@ function op(s: IslandState, body: Parameters<typeof islandOp>[1], at: number) {
   assert.equal((blocked.body as { error?: string }).error, "day-limit");
   assert.equal(s.holds[NODE_IDS.indexOf(shore)], "own");
   console.log("server: lossCap alone refuses contestedMirror");
-}
-
-// --- Expedition take of a non-outer / foe node must not burn the outer loss cap ---
-{
-  const shore = CONTESTED_SHORES.find((id) => NODE_IDS.includes(id))!;
-  const s = island({ [shore]: "own", supply: "own", quarry: "foe" }, T0);
-  // Simulate an expedition capture of foe quarry (inner): bumps `taken`, not `outerTaken`.
-  s.taken = { day: utcDay(T1), n: EXPEDITION.perDay };
-  s.outerTaken = { day: utcDay(T1), n: 0 };
-  s.shielded = { day: 0, nodes: [], island: false };
-  assert.equal(outerTakenOn(s, T1), 0);
-  const ok = op(s, { t: "contestedMirror", shore, owner: B.code, name: B.name, at: T1 }, T1);
-  assert.equal(ok.status, 200, `outer take should still work after inner expedition takes: ${JSON.stringify(ok.body)}`);
-  assert.equal(outerTakenOn(s, T1), 1);
-  console.log("server: expedition perDay does not burn OUTER_GUARD.lossCap");
 }
 
 // --- applySync keeps local AI protection when server view is empty ---

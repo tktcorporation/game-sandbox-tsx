@@ -188,8 +188,8 @@ assert.equal(real[0]!.owner, B.code);
 {
   const line = (seq: number, t: "taken" | "wiped", replay?: IslandLogEntry["replay"]): IslandLogEntry => ({ seq, at: T0 + seq, t, node: "supply", by: B, stars: t === "taken" ? 3 : 1, won: 20, ...(replay ? { replay } : {}) });
   const rec = { node: "supply", every: 3, path: [1, 2, 3, 4], marks: [{ t: 3, k: "taken" as const, x: 1, z: 2 }] };
-  const expedition: IslandLogEntry = { seq: 2, at: T0, t: "taken", node: "quarry", by: B };
-  let kept = addAttacks([], [line(1, "taken", rec), expedition, line(3, "wiped")], { 1: 120 });
+  const mirrored: IslandLogEntry = { seq: 2, at: T0, t: "taken", node: "quarry", by: B };
+  let kept = addAttacks([], [line(1, "taken", rec), mirrored, line(3, "wiped")], { 1: 120 });
   assert.deepEqual(kept.map((a) => [a.seq, a.taken, a.credits ?? 0, !!a.replay]), [[1, true, 120, true], [3, false, 0, false]], "an expedition's line is no sortie's record");
   assert.equal(addAttacks(kept, [line(1, "taken")]), kept, "a record kept twice");
   for (let k = 10; k < 20; k++) kept = addAttacks(kept, [line(k, "wiped")]);

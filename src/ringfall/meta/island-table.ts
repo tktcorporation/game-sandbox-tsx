@@ -4,7 +4,7 @@ import type { EnemyKind, Rarity } from "../sim/config";
  * The island as the server needs it (docs/ringfall/multiplayer.md): each node in `NODES` order
  * with its tier and its garrison (its POI's squads' members, each with its own plate), the nodes
  * next to the camp, and the POIs that are no node (the titan's pad). Written from map.ts by
- * scripts/ringfall-island-table.ts, whose text scripts/ringfall-expeditions.ts compares with this
+ * scripts/ringfall-island-table.ts, whose text scripts/ringfall-island-server.ts compares with this
  * file (`--write` rewrites it): the Worker reads this table instead of building the world.
  */
 
