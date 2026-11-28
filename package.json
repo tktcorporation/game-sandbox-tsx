@@ -37,7 +37,8 @@
     "lint:ringfall": "tsx scripts/ringfall-ui-lint.ts",
     "lint:ringfall-copy": "tsx scripts/ringfall-copy-lint.ts",
     "look:ringfall": "tsx scripts/ringfall-look.ts",
-    "field:ringfall": "tsx scripts/ringfall-field.ts"
+    "field:ringfall": "tsx scripts/ringfall-field.ts",
+    "variety:ringfall": "tsx scripts/ringfall-variety.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "2.0.0-beta.v.12",

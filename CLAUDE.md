@@ -5,7 +5,12 @@ a Cloudflare Worker. The root page (`/`, `index.html`) is the game's front door 
 at `/ringfall/` (`ringfall/index.html`, code in `src/ringfall/`); read `docs/ringfall/brief.md` before
 changing anything visual. `docs/ringfall/glossary.md` is the domain's words, one meaning each:
 use them as it defines them in code, docs and PRs, and none of its unused ones (a day is the real
-calendar's, never a raid's count). A new page needs an entry in
+calendar's, never a raid's count). Building or changing a place (a POI, a district, the ground
+between) follows `docs/ringfall/field-design.md`: the large pieces that are what the place is for
+come first and give its cover, high ground and ways (no two of the same shape in one place unless a
+row means something), loose cover is the place's own objects rather than the same crates and
+containers everywhere, and one silhouette stands out; `.claude/skills/ringfall-field` is the
+procedure and `npm run variety:ringfall` measures it. A new page needs an entry in
 `environments.client.build.rolldownOptions.input` in `vite.config.ts`.
 
 ## RINGFALL
@@ -352,12 +357,17 @@ npm run look:ringfall -- <place> [--r 120] [--base]
                          # (scripts/ringfall-tour.mjs, shared with gate 3) and four from above,
                          # a top-down crop, each compared with the place's baseline, and every
                          # 4 m cell of the world whose ground or boxes changed, those past the place first;
-                         # and the place measured as ground to fight over (field below), compared with
-                         # its baseline's numbers; take a baseline with --base before changing a place, look after
+                         # and the place measured as ground to fight over (field below) and as what it is
+                         # built of (variety below), compared with its baseline's numbers; take a baseline
+                         # with --base before changing a place, look after
 npm run field:ringfall -- <place>|--all [--r 120]
                          # cover and sight of a place in seconds (docs/ringfall/field.md): cover within
                          # 8 m, sight, lanes past a grunt's engaged sight, exposed ground; a map in
                          # shots/ringfall/field/; no pass or fail, the numbers move with a change
+npm run variety:ringfall -- <place>|--all [--r 120]
+                         # what a place is built of (docs/ringfall/field-design.md): cover against large
+                         # pieces, the most used loose object, objects found at most POIs, pieces of the
+                         # same shape, the landmark; one place lists what repeats and where
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/;
                          # its seven parts run two at once in processes of their own (SHOTS_JOBS=n),
