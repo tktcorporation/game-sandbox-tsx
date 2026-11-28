@@ -694,8 +694,6 @@ export interface State {
   /** Tools sent home the same way. */
   /** Where each of `sent` came from, as `Player.haulAt`. */
   sentAt: number[];
-  /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
-  sentVia: number[];
   /**
    * Free stash slots left for depot sends this raid (set at start from the profile after takeKit).
    * Decremented on each deposit; Infinity when the start omitted it (sim gate). 0 means 倉庫が満杯
@@ -1162,7 +1160,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     depots: depotsOn,
     sent: [],
     sentAt: [],
-    sentVia: DEPOTS.map(() => 0),
     stashRoom: start.stashRoom ?? Infinity,
     stashWant: { ...(start.stashWant ?? {}) },
     goal: start.goal ?? null,

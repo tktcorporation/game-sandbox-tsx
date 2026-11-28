@@ -1,6 +1,6 @@
-import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { parseAttacks, type Attack } from "./attacks";
-import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
+import { DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
 import { islandDay, sinceFor } from "./days";
@@ -38,7 +38,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 58;
+  v: 59;
   cash: number;
   stash: Item[];
   raids: number;
@@ -56,8 +56,6 @@ export interface Profile {
   seed: number;
   /** The depots switched on in any raid: they stay on, and a raid may start from one. */
   depots: PoiId[];
-  /** Credits' worth sent home through each depot on, over all raids: it sets the depot's level (`depotAllowance()`). */
-  depotSent: Partial<Record<PoiId, number>>;
   /** The explored map (`encodeSeen()`), grown by every raid. */
   seen: string;
   /**
@@ -192,7 +190,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 58,
+    v: 59,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -204,7 +202,6 @@ export function newProfile(seed = 1): Profile {
     hideout: emptyHideout(),
     seed: s,
     depots: [],
-    depotSent: {},
     seen: "",
     since: 0,
     poiState,
@@ -364,59 +361,23 @@ function picks(p: Profile, l: Loadout): { weapons: number[]; armor: number | nul
   return { weapons, armor };
 }
 
-/** What one stash entry costs of a depot start's allowance (`DEPOT`): the starter weapons, heals and valuables nothing. */
-export function itemCost(i: Item): number {
-  if (i.t === "weapon") return i.starter ? 0 : DEPOT.weaponCost[i.rarity];
-  if (i.t === "armor") return DEPOT.armorCost[i.tier];
-  return 0;
-}
-
-/** What a loadout costs of a depot start's allowance. The starter weapons and all heals cost nothing. */
-export function loadoutCost(p: Profile, l: Loadout): number {
-  const k = picks(p, armed(p, l));
-  return [...k.weapons, ...(k.armor === null ? [] : [k.armor])].reduce((n, at) => n + itemCost(p.stash[at]), 0);
-}
-
-/** A depot's standing: its level, the allowance it gives, what has gone through it, and what the next level still needs (null at the top). */
-export interface DepotAllowance {
-  level: number;
-  budget: number;
-  sent: number;
-  next: number | null;
-}
-
-export function depotAllowance(p: Profile, poi: PoiId): DepotAllowance {
-  const sent = p.depotSent[poi] ?? 0;
-  let level = 0;
-  while (level + 1 < DEPOT.levels.length && sent >= DEPOT.levels[level + 1]) level++;
-  const next = level + 1 < DEPOT.levels.length ? DEPOT.levels[level + 1] - sent : null;
-  return { level, budget: DEPOT.budget[level], sent, next };
-}
-
-/** The loadout points a raid started from `poi`'s depot may carry. */
-export const depotBudget = (p: Profile, poi: PoiId) => depotAllowance(p, poi).budget;
-
 /**
- * Whether a raid may start with this loadout: a start at a way in (`from` null) always may; a depot start
- * only from a depot on that a node held opens a start from (`departDepots()`), and within its allowance.
+ * Whether a raid may start at `from`: a way in (`from` null) always; a depot only when it is on
+ * and a node held opens a start from it (`departDepots()`). The loadout is the same either way.
  */
-export function fitsStart(p: Profile, l: Loadout, from: PoiId | null): boolean {
-  if (from === null) return true;
-  return departDepots(p).includes(from) && loadoutCost(p, l) <= depotBudget(p, from);
-}
+export const fitsStart = (p: Profile, from: PoiId | null): boolean => from === null || departDepots(p).includes(from);
 
 /**
  * Takes a loadout out of the stash. Picking no weapon picks the starter weapons (`armed()`), which
  * go along but stay in the stash: they are never lost. The heals issued to every raid
- * (`issuedHeals()`) come on top of any picked from the stash. A start from a depot is held to its
- * allowance. The profile remembers the loadout (`Profile.lastKit`) for the next raid.
+ * (`issuedHeals()`) come on top of any picked from the stash. The profile remembers the loadout (`Profile.lastKit`) for the next raid.
  */
 export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit };
-/** For a start from a depot (`from`), null when the loadout does not fit its allowance (`fitsStart()`). */
+/** For a start from a depot (`from`), null when no raid may start there (`fitsStart()`). */
 export function takeKit(p: Profile, l: Loadout, from: PoiId | null): { profile: Profile; kit: Kit } | null;
 export function takeKit(p: Profile, given: Loadout, from: PoiId | null = null): { profile: Profile; kit: Kit } | null {
   const l = armed(p, given);
-  if (!fitsStart(p, l, from)) return null;
+  if (!fitsStart(p, from)) return null;
   const take = new Set<number>();
   const weapons: Kit["weapons"] = [];
   const out = new Set<number>();
@@ -733,9 +694,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   const depots = awayRaid
     ? [...p.depots]
     : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const depotSent = awayRaid
-    ? { ...p.depotSent }
-    : Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
   // Field raids start on the battlefield entry without unlocking it as a home way in.
   const learned = awayRaid
     ? ([] as EntryId[])
@@ -755,7 +713,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
     ];
   }
-  const settled = { ...profile, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, islandDay(p)) } : {}) };
+  const settled = { ...profile, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, islandDay(p)) } : {}) };
   // Apply the same overnight pass once the raid's haul is on today's island.
   const { profile: night } = applyRaid(settled, day);
   // Trophy (TKT-218): 「攻める」star score, then overnight / other contested moves (★★ remote).
@@ -1048,6 +1006,7 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v55 and older may have built the 作業台 or the 無線機 (removed): v56 drops them and pays back what their levels took (`REMOVED_MODULES`).
  * v56 and older may hold a 強度 and the best each POI was freed at (`threat` / `freedAt`, removed): v57 drops them.
  * v57 and older may hold routes opened and tools in the stash (removed), and vault keys (removed): v58 drops the routes and pays each tool and key back (`REMOVED_ITEMS`).
+ * v58 and older may hold what was sent through each depot (`depotSent`, the depots' allowance, removed): v59 drops it.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 /**
@@ -1061,7 +1020,7 @@ const REMOVED_ITEMS: Record<string, (i: Record<string, unknown>) => number> = { 
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1085,8 +1044,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const refund = toolsBack + Object.entries(REMOVED_MODULES).reduce((n, [m, paid]) => n + (Number.isInteger(h[m]) ? paid[Math.max(0, Math.min(paid.length - 1, h[m] as number))] : 0), 0);
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
-  const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
-  const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
   const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, false) : blankIsland();
   const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
@@ -1144,7 +1101,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 58,
+    v: 59,
     cash: Math.max(0, Math.floor(o.cash)) + refund,
     stash,
     raids,
@@ -1156,7 +1113,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     hideout,
     seed: seedN,
     depots,
-    depotSent,
     seen: (typeof o.v === "number" && o.v >= 25) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
     since,
     poiState,

@@ -2,7 +2,7 @@ import { ALLY, AWARE, BAG, BIN_GEAR, DEPOT, ENEMIES, ENTRY, FRONT, HEALS, HOME, 
 import { grabZip, zipInReach, zipPoint } from "./zips";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, poiIndex, REGIONS, regionOf, ZIPS, type ExtractPoint } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, REGIONS, regionOf, ZIPS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
@@ -771,7 +771,6 @@ function useDepot(s: State, index: number) {
     if (sentHaul.length) {
       s.sentAt.push(...haulOrigins(p).filter((_, i) => takeV.has(i)));
       s.sent.push(...sentHaul);
-      s.sentVia[index] += value;
       if (Number.isFinite(s.stashRoom)) s.stashRoom = Math.max(0, s.stashRoom - sentHaul.length);
       // Silent defence stock: the island DO spends these while the owner is away. Not a world pickup.
       if (stock) {

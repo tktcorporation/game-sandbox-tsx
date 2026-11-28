@@ -14,7 +14,7 @@ import { hideoutDone, MODULES, maxLevel, nextLevel, pouchSlots, stashCap } from 
 import { build, buy, canBuild, hideoutWanted as wanted, newProfile, bestFitValuables, sell, settle, shortfall, stashUsed, type Profile } from "../src/ringfall/meta/profile";
 
 /** What settle() reads of a raid, kept from each bot run. */
-export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats" | "sent" | "sentVia" | "depots" | "seen"> & {
+export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats" | "sent" | "depots" | "seen"> & {
   player: Pick<State["player"], "weapons" | "armor" | "heals" | "haul" | "keys">;
 };
 
@@ -25,7 +25,6 @@ export const recordOf = (s: State): RaidRecord => ({
   time: s.time,
   stats: structuredClone(s.stats),
   sent: [...s.sent],
-  sentVia: [...s.sentVia],
   depots: [...s.depots],
   seen: [...s.seen],
   player: structuredClone({ weapons: s.player.weapons, armor: s.player.armor, heals: s.player.heals, haul: s.player.haul }),
