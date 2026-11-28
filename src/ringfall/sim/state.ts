@@ -538,6 +538,8 @@ export type GameEvent =
   | { t: "sortieUp" }
   /** The player walked off a sortie's holding (`stepSortie()`): it ends alive. */
   | { t: "sortieLeft" }
+  /** The use key at a core of the player's that other players hold too (`State.jumps`): the view offers the sortie from it (sim/jump.ts). */
+  | { t: "sortieOut"; node: number }
   | { t: "done" };
 
 export interface Stats {
@@ -730,6 +732,11 @@ export interface State {
    * before the sortie ends. Null for a raid of the player's own island.
    */
   sortie: { node: number; poi: number; owner: string; end: number; leave: number } | null;
+  /**
+   * The nodes (indices) of the player's whose core a sortie may set out from (`Start.jumps`): another
+   * player holds the same node on their island. The use key there pushes `sortieOut`; no rule reads it.
+   */
+  jumps: number[];
   /** A sortie's record for its holding's owner (sim/replay.ts); null for any other raid. */
   replay: Replay | null;
   /**
@@ -977,6 +984,8 @@ export interface Start {
    * `from`, `entry`, `battle`, `defence`, `parcels` and `attack`.
    */
   sortie?: { id: NodeId; owner: string; factory: number; aid?: number; N: number; M: number };
+  /** The nodes whose core, while the player's, a sortie may set out from (`State.jumps`). None for a sortie. */
+  jumps?: NodeId[];
 }
 
 /** A parcel on the ground by a depot this raid. */
@@ -1200,6 +1209,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
           return { node, poi: poiIndex(sortie.id), owner: sortie.owner, end: SORTIE.time, leave: Math.hypot(d.x - core.x, d.z - core.z) + SORTIE.leave };
         })()
       : null,
+    jumps: sortie ? [] : (start.jumps ?? []).map((id) => nodeIndex(id)).filter((i) => i >= 0),
     replay: sortie ? newReplay(nodeIndex(sortie.id)) : null,
     // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
     parcels: [],

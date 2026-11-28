@@ -32,7 +32,7 @@ const BASE = {
   pending: [],
   goal: null,
   news: [],
-  hideout: { infirmary: 2, workbench: 2, storage: 3, radio: 1, pouch: 1 },
+  hideout: { infirmary: 2, storage: 3, pouch: 1 },
   factory: 2,
   poiState: {
     supply: { state: "own" },
@@ -74,6 +74,7 @@ pg.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`console: ${m.text()}`));
 
 await pg.addInitScript(([k, v]) => localStorage.setItem(k, v), [KEY, JSON.stringify(BASE)]);
+await pg.addInitScript(() => localStorage.setItem("ringfall.mpHowto.v1", "1"));
 await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
 await pg.waitForTimeout(400);
 await pg.click("#start");
@@ -96,20 +97,10 @@ await pg.keyboard.press("KeyE");
 await pg.evaluate(() => window.advanceTime(50));
 await pg.waitForTimeout(200);
 if ((await read()).camp?.panel !== "workshop") errors.push("workshop panel did not open");
-// Open the storage module so its cost rows (with データコア) show.
-const modBtn = pg.locator('#hub-side .up-card[data-mod="storage"] button, #hub-side .up-card[data-mod="storage"]');
-if (await modBtn.count()) await modBtn.first().click();
-await pg.waitForTimeout(150);
-const openCore = pg.locator('button.src-open[data-kind="core"]');
-if (!(await openCore.count())) {
-  // Fall back: any src-open, or force via evaluate.
-  const kinds = await pg.evaluate(() => [...document.querySelectorAll("button.src-open")].map((b) => b.dataset.kind));
-  console.log("src-open kinds", kinds);
-  if (kinds.includes("core")) await pg.click('button.src-open[data-kind="core"]');
-  else errors.push("no どこで取れる for core");
-} else {
-  await openCore.click();
-}
+// The storage's card lacks データコア for its next level: that chip, pressed, opens where it is found.
+const openCore = pg.locator('#hub-side .ws-card[data-mod="storage"] .need.short[data-kind="core"]');
+if (await openCore.count()) await openCore.click();
+else errors.push("no データコア chip lacking on the storage's card");
 await pg.waitForTimeout(200);
 const guide = await pg.locator(".src-guide[data-kind=core]").count();
 if (!guide) errors.push("source guide for core did not open");

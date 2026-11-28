@@ -165,5 +165,22 @@ export function sortieTargets(
     .map(({ gap: _g, slot: _s, order: _o, ...r }) => r);
 }
 
+/** How many other players a core offers to set out against (`jumpTargets()`). */
+export const JUMP = { choices: 3 };
+
+/**
+ * The other players a sortie from the core of node `id` may go to: those of `targets` (already
+ * within the trophy band, nearest trophies first) who hold the same node, a few at most. `first`
+ * is an owner the player set out for (やり返す): while they hold the node they lead the choices.
+ */
+export function jumpTargets(targets: readonly SortieTarget[], id: NodeId, first?: string): SortieTarget[] {
+  const at = targets.filter((t) => t.id === id);
+  const lead = first ? at.filter((t) => t.owner === first) : [];
+  return [...lead, ...at.filter((t) => !lead.includes(t))].slice(0, JUMP.choices);
+}
+
+/** The nodes some player of `targets` holds: the cores of the player's a sortie may set out from. */
+export const jumpNodes = (targets: readonly SortieTarget[]): NodeId[] => [...new Set(targets.map((t) => t.id))];
+
 /** What a sortie to `t` starts the raid with (`Start.sortie`). */
 export const sortieStart = (t: SortieTarget): NonNullable<Start["sortie"]> => ({ id: t.id, owner: t.owner, factory: t.factory, aid: t.guard, N: t.win, M: t.lose });

@@ -182,6 +182,11 @@ export class Hud {
 
   /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
   /** Marks POIs that drop the hunt target on the raid map / minimap (and optional source tags). */
+  /** The nodes another player holds too: the map rings those of the player's, whose core a sortie sets out from. */
+  setJumps(ids: readonly string[]) {
+    this.map.jumps = ids;
+  }
+
   setGoalPois(ids: readonly string[], tags: readonly { poi: string; tag: string }[] = []) {
     this.map.goalPois = ids;
     this.map.goalTags = tags;
@@ -1359,6 +1364,7 @@ export class Hud {
       if (whoHub) return tip(`${key("E")}${coreIcon(c)}${esc(attackCapturePrompt(whoHub))} ${noiseIcon()}`);
       return tip(`${key("E")}${coreIcon(c)}${PHRASE.captureStart} ${esc(n.name)} ${noiseIcon()}`);
     }
+    if (t.kind === "jump") return tip(`${key("E")}${coreIcon(SIDE.rival)}${esc(PHRASE.jumpPrompt)}`);
     if (t.kind === "zip") {
       // The way the rider would go: the end the player faces, and how far along the cable it is.
       const l = ZIPS[t.line];

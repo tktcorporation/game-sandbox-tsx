@@ -3,7 +3,7 @@ import { parseAttacks, type Attack } from "./attacks";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
-import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
+import { emptyHideout, infirmaryHeals, MODULES, nextLevel, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
 import { islandDay, sinceFor } from "./days";
 import { emptyStores, parseStores, type Stores } from "./income";
 import { applyRaid, blankIsland, contestedOwned, raidChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
@@ -41,7 +41,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 55;
+  v: 56;
   cash: number;
   stash: Item[];
   raids: number;
@@ -205,7 +205,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 55,
+    v: 56,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -280,7 +280,7 @@ export const sellPrice = (i: Item) => (i.t === "valuable" || i.t === "tool" ? pr
 /** Key names, for lists and the HUD. */
 export const keyName = (poi: PoiId) => `${POIS[poiIndex(poi)].name}の鍵`;
 
-/** Everything the trader sells: gear up to the rarity the nodes held open (`shopRarity()`), materials by the workbench. */
+/** Everything the trader sells: gear up to the rarity the nodes held open (`shopRarity()`), every valuable. */
 export function wares(p: Profile): Item[] {
   const best = shopRarity(p);
   const out: Item[] = [];
@@ -288,7 +288,7 @@ export function wares(p: Profile): Item[] {
     for (let r = 0; r <= best; r++) out.push({ t: "weapon", kind, rarity: r as Rarity });
   for (let tier = 1; tier <= best; tier++) out.push({ t: "armor", tier: tier as Rarity });
   for (const kind of HEAL_KINDS) out.push({ t: "heal", kind });
-  for (const kind of onSale(p.hideout)) out.push({ t: "valuable", kind });
+  for (const kind of Object.keys(VALUABLES) as ValuableKind[]) out.push({ t: "valuable", kind });
   return out;
 }
 
@@ -940,6 +940,18 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
 }
 
 /**
+ * What a sortie set out from a core during a raid won (sim/jump.ts): the stars move the trophies,
+ * 核 · 制圧 pays the attack's reward into the stash and records the holding, and what the sortie's
+ * depot sent home arrives. The raid of the island goes on, so nothing the player carries comes home
+ * here and no raid is counted: that is `settle()`'s, when the island's raid ends.
+ */
+export function settleSortie(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
+  const bare: State = { ...s, player: { ...s.player, weapons: [], armor: 0, heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, 0])) as State["player"]["heals"], haul: [], haulAt: [], keys: [], tools: [], mods: [] } };
+  const r = settle(p, bare, rivalTrop);
+  return { ...r, profile: { ...r.profile, raids: p.raids, extracted: p.extracted, time: p.time, seed: p.seed, goal: p.goal ?? null, lastKit: p.lastKit } };
+}
+
+/**
  * Of the valuables seized this raid, those that actually entered the stash after `store()`
  * (stash after − before budget). Pending overflow is dropped so the results' 「倉庫へ届いた」 and
  * 「倉庫に入らなかった」 never claim the same item.
@@ -1042,23 +1054,33 @@ export function shortfall(p: Profile, m: ModuleId): { items: [ValuableKind, numb
   };
 }
 
-/**
- * What the module card says about its next level: done, buildable, or the first thing in the
- * way (the parts still missing, then only the credits).
- */
-export function buildState(p: Profile, m: ModuleId): string {
-  const s = shortfall(p, m);
-  if (!s) return "完成";
-  const missing = s.items.reduce((n, [, have, need]) => n + need - have, 0);
-  if (missing) return `あと ${missing} 個`;
-  if (s.cash) return `あと ${s.cash.toLocaleString()} クレジット`;
-  return "作れる";
-}
-
 export const canBuild = (p: Profile, m: ModuleId) => {
   const s = shortfall(p, m);
   return !!s && !s.items.length && !s.cash;
 };
+
+/**
+ * What the valuables a module's next level still lacks cost at the trader's (`buyPrice()`): 0 when
+ * the stash holds them all, null when the module is complete.
+ */
+export function shortPrice(p: Profile, m: ModuleId): number | null {
+  const s = shortfall(p, m);
+  return s && s.items.reduce((n, [k, have, need]) => n + (need - have) * buyPrice({ t: "valuable", kind: k }), 0);
+}
+
+/**
+ * Builds a module's next level, buying at the trader's the valuables the stash lacks for it: what
+ * is bought goes straight into the level, so it needs no room in the stash. Null when nothing is
+ * lacking (that is `build()`) or the credits do not reach both the trader's price and the level's.
+ */
+export function buildBuying(p: Profile, m: ModuleId): Profile | null {
+  const s = shortfall(p, m);
+  const l = nextLevel(p.hideout, m);
+  const price = shortPrice(p, m);
+  if (!s || !l || !price || p.cash < price + l.cash) return null;
+  const bought = s.items.flatMap(([k, have, need]) => Array.from({ length: need - have }, (): Item => ({ t: "valuable", kind: k })));
+  return build({ ...p, cash: p.cash - price, stash: [...p.stash, ...bought] }, m);
+}
 
 /**
  * Builds a module's next level, taking its items and credits from the stash; null when it
@@ -1111,12 +1133,19 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v52 and older are paid 拠点の収入 at each settle; v53 makes it by the clock at each holding (`stores`).
  * v53 and older keep no record of the sorties on the holdings; v54 adds `attacks` (攻められた記録).
  * v54 and older may hold `expeditions` / `incoming` (遠征, removed), which v55 drops.
+ * v55 and older may have built the 作業台 or the 無線機 (removed): v56 drops them and pays back what their levels took (`REMOVED_MODULES`).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
+/**
+ * The hideout modules that are gone (作業台, 無線機), with what each of their levels had taken in all: its
+ * credits and its valuables at their worth. A save that built them is paid that back, once, as it loads.
+ */
+const REMOVED_MODULES: Record<string, number[]> = { workbench: [0, 1280, 9080], radio: [0, 2010, 9110] };
+
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1137,6 +1166,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const h = (o.hideout ?? {}) as Record<string, unknown>;
   const hideout = emptyHideout();
   for (const m of MODULES) if (Number.isInteger(h[m])) hideout[m] = Math.max(0, Math.min(HIDEOUT[m].levels.length, h[m] as number));
+  // v56: the modules that are gone give back what they took.
+  const refund = Object.entries(REMOVED_MODULES).reduce((n, [m, paid]) => n + (Number.isInteger(h[m]) ? paid[Math.max(0, Math.min(paid.length - 1, h[m] as number))] : 0), 0);
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
   const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
@@ -1201,8 +1232,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 55,
-    cash: Math.max(0, Math.floor(o.cash)),
+    v: 56,
+    cash: Math.max(0, Math.floor(o.cash)) + refund,
     stash,
     raids,
     extracted: num(o.extracted),

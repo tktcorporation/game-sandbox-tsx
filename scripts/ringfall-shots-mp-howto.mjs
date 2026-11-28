@@ -158,13 +158,6 @@ await pg.waitForFunction(() => !document.getElementById("depart")?.hidden, null,
 await pg.waitForTimeout(300);
 await snap(pg, "02-depart");
 
-// 攻める: the departure's other way, its list of holdings with the first chosen.
-if (await pg.evaluate(() => !document.getElementById("depart")?.hidden)) {
-  await pg.click("#depart-mode [data-mode=attack]");
-  await pg.waitForTimeout(200);
-  if (await pg.$("#depart-attack-list button[data-attack].on")) await snap(pg, "02b-depart-attack");
-}
-
 // Signal station neighbours + やり返す on 取られた
 await pg.keyboard.press("Escape");
 await pg.waitForTimeout(200);

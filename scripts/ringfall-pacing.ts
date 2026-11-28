@@ -10,7 +10,7 @@
 import { BAG, HIDEOUT, VALUABLES, type ModuleId, type ValuableKind } from "../src/ringfall/sim/config";
 import { ENTRIES, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
-import { hideoutDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
+import { hideoutDone, MODULES, maxLevel, nextLevel, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
 import { build, buy, canBuild, hideoutWanted as wanted, newProfile, bestFitValuables, sell, settle, shortfall, stashUsed, type Profile } from "../src/ringfall/meta/profile";
 
 /** What settle() reads of a raid, kept from each bot run. */
@@ -54,8 +54,7 @@ function pickRegion(p: Profile, pool: Partial<Record<RegionId, RaidRecord[]>>): 
     for (const raid of raids) for (const k of brought(raid, pouchSlots(p.hideout))) mean[k] = (mean[k] ?? 0) + 1 / raids.length;
     // Everything brought home is worth its price (built in or sold); what the hideout wants and
     // the trader does not sell counts once more, since credits cannot stand in for it.
-    const sold = onSale(p.hideout);
-    const score = (Object.keys(mean) as ValuableKind[]).reduce((n, k) => n + ((mean[k] ?? 0) + (sold.includes(k) ? 0 : Math.min(Math.max(0, want[k]), mean[k] ?? 0))) * VALUABLES[k].value, 0);
+    const score = (Object.keys(mean) as ValuableKind[]).reduce((n, k) => n + (mean[k] ?? 0) * VALUABLES[k].value, 0);
     if (score > bestScore) [best, bestScore] = [r.id, score];
   }
   return best;
@@ -74,7 +73,6 @@ function spend(p: Profile): Profile {
     const open = MODULES.filter((m) => nextLevel(p.hideout, m)).sort((a, b) => cost(p, a) - cost(p, b));
     for (const m of open) {
       const short = shortfall(p, m)!;
-      if (short.items.some(([k]) => !onSale(p.hideout).includes(k))) continue;
       let q: Profile | null = p;
       for (const [k, have, n] of short.items) for (let c = have; c < n && q; c++) q = buy(q, { t: "valuable", kind: k });
       if (q && canBuild(q, m)) {

@@ -2,15 +2,14 @@ import { PLAYER } from "../sim/config";
 import { attacksHtml, playAttack } from "./attacks";
 import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
-import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
-import type { Start } from "../sim/state";
-import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
+import { jumpNodes, jumpTargets, sortieTargets, type SortieTarget } from "../meta/sortie";
+import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, keepParcels, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
-// buyPrice / canStartIn / onSale used by sourceGuide
-import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
+import { type Kit } from "../sim/state";
+import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { armed, build, buildBuying, keepParcels, buildFactory, buy, buyPrice, canBuild, canBuildFactory, shortPrice, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+// buyPrice / canStartIn used by sourceGuide
+import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
 import { departDepots, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
@@ -22,7 +21,7 @@ import { sfx } from "./sfx";
 import { rarityText } from "./palette";
 import { islandDay } from "../meta/days";
 import { collect } from "../meta/income";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
@@ -48,9 +47,9 @@ export function teachFrontCapture(p: Profile): boolean {
   return ownNodes(islandHolds(p)) === 0;
 }
 
-/** The holding the camp suggests attacking: the first on the 攻める list (nearest trophies), or null. */
+/** The holding the camp suggests attacking: the first (nearest trophies) a sortie can set out to from a core the player holds, or null. */
 export function sortieTopFor(p: Profile): SortieTarget | null {
-  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings())[0] ?? null;
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings()).find((t) => p.poiState[t.id]?.state === "own") ?? null;
 }
 
 /** The holding of whoever took one of the player's in this 島の知らせ line, to attack back (やり返す), or null. */
@@ -177,10 +176,7 @@ function shelfTiers(p: Profile): string {
     const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em${mine.includes(n.id) ? ' class="mine"' : ""}>${esc(n.name)}</em>`);
     return `<div class="tier${r <= best ? " on" : ""}" style="--c:${RARITY_CSS[r]}"><i></i><span>${by.join("")}</span></div>`;
   });
-  // The materials beside them, under the workbench's wrench: the rarities it lets the trader sell.
-  const mats = materialRarity(p.hideout);
-  const row = ([0, 1, 2, 3] as Rarity[]).map((r) => `<div class="${r <= mats ? "on" : ""}" style="--c:${RARITY_CSS[r]}">${workbenchIcon(r <= mats ? RARITY_CSS[r] : undefined)}<i></i></div>`);
-  return `<div class="shelf-tiers">${cells.join("")}</div><div class="shelf-mats">${row.join("")}</div>`;
+  return `<div class="shelf-tiers">${cells.join("")}</div>`;
 }
 
 /** An item's colour: its rarity's, gold for a key or a tool, white for a heal. */
@@ -235,7 +231,7 @@ export function withSectionHeaders(list: StashRow[], rowHtml: (row: StashRow) =>
  * shelves' issued heals, the stash's count, the trader's materials, the shelves' radio report, the
  * pouch's slots), so the card says where an upgrade grows.
  */
-const MODULE_ICON: Record<ModuleId, () => string> = { infirmary: () => issueIcon(), workbench: () => workbenchIcon(), storage: () => stashIcon(), radio: () => radioIcon(), pouch: () => pouchIcon() };
+const MODULE_ICON: Record<ModuleId, () => string> = { infirmary: () => issueIcon(), storage: () => stashIcon(), pouch: () => pouchIcon() };
 
 /**
  * One number an upgrade's level sets, as its mark (and a short name where several share a mark) and
@@ -254,8 +250,6 @@ interface Gauge {
 const num = (n: number, was?: number) => `<b class="n${was !== undefined && n !== was ? " gain" : ""}">${n}</b>`;
 /** Slots as boxes in the pouch's colour, the ones added since `was` lit. */
 const slotBoxes = (n: number, was = n) => `<span class="boxes">${Array.from({ length: n }, (_, i) => `<i class="seg pouch${i >= was ? " gain" : ""}" style="--n:1"></i>`).join("")}</span>`;
-/** The four rarities as swatches, lit up to `r`, those lit since `was` glowing. */
-const rarityBar = (r: number, was = r) => `<span class="rbar">${[0, 1, 2, 3].map((k) => `<i class="${k <= r ? "on" : ""}${k <= r && k > was ? " gain" : ""}" style="--c:${RARITY_CSS[k]}"></i>`).join("")}</span>`;
 
 /** A gauge's value and what grew since `was`. */
 const gaugeHtml = (g: Gauge, was?: Gauge) =>
@@ -373,8 +367,6 @@ export interface Launch {
   entry: EntryId;
   /** 「攻める」hub chosen at the gate (TKT-218 star scoring). */
   attack?: { id: NodeId; owner: string; N: number; M: number };
-  /** A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): the raid is played there. */
-  sortie?: NonNullable<Start["sortie"]>;
 }
 
 /**
@@ -395,7 +387,7 @@ export function whereLine(kind: ValuableKind): string {
 }
 
 /**
- * Full どこで取れる block: bins with region, vault + key hint, trader price / workbench gate.
+ * Full どこで取れる block: bins with region, vault + key hint, the trader's price.
  * Reachable regions (canStartIn) come first; locked ones get a padlock note.
  */
 export function sourceGuide(kind: ValuableKind, p: Profile): string {
@@ -422,19 +414,7 @@ export function sourceGuide(kind: ValuableKind, p: Profile): string {
       return `<div class="src-row${s.poi && !open(s) ? " locked" : ""}"><span>${esc(s.where)}${region}${lock}<b>${pct}%</b></span>${note}${map}</div>`;
     })
     .join("");
-  const onTrader = onSale(p.hideout).includes(kind);
-  const buy = onTrader
-    ? `<div class="src-row trader">${TERM.traderStall}で買える <b>${buyPrice({ t: "valuable", kind }).toLocaleString("ja-JP")}</b></div>`
-    : (() => {
-        // Workbench level that first puts this kind on sale.
-        for (let lv = 0; lv <= maxLevel("workbench"); lv++) {
-          if (VALUABLES[kind].rarity <= materialRarity({ ...p.hideout, workbench: lv })) {
-            if (lv > p.hideout.workbench) return `<div class="src-row trader">${TERM.workshop} Lv${lv} で${TERM.traderStall}に並ぶ</div>`;
-            break;
-          }
-        }
-        return "";
-      })();
+  const buy = `<div class="src-row trader">${TERM.traderStall}で買える <b>${buyPrice({ t: "valuable", kind }).toLocaleString("ja-JP")}</b></div>`;
   const isGoal = p.goal === kind;
   const goalBtn = `<button type="button" class="src-goal${isGoal ? " on" : ""}" data-act="set-goal" data-kind="${kind}">${isGoal ? TERM.goalActive : TERM.setGoal}</button>`;
   return `<div class="src-guide" data-kind="${kind}"><small>${TERM.whereFound}</small>${rows}${buy}${goalBtn}</div>`;
@@ -466,15 +446,20 @@ export class Hub {
   private factoryLadder = false;
   /** Valuable whose どこで取れる guide is open in a cost row (null = none). */
   private sourceKind: ValuableKind | null = null;
+  /** The workshop's chip pressed for where its valuable is found: the module's card it stands on, and the kind. */
+  private sourceAt: { m: ModuleId; kind: ValuableKind } | null = null;
   /**
    * POI to frame on the departure map after 地図で見る (consumed by main / depart).
    * Cleared once the departure opens on it.
    */
   focusPoi: PoiId | null = null;
-  /** The neighbour's holding the departure's 攻める list has chosen (a sortie), or null for a raid of the island. */
-  sortieFocus: { owner: string; id: NodeId } | null = null;
-  /** Whether the departure is set to 攻める (a sortie) and not to the island's raid: its side lists the holdings, and the confirm needs one chosen. */
-  attackMode = false;
+  /**
+   * The holding of another player the signal station pointed at (やり返す, an island's holdings): the
+   * departure names the core of the player's island a sortie to it sets out from. Gone once departed or turned back.
+   */
+  reach: { id: NodeId; owner: string; ownerName: string } | null = null;
+  /** The holding the last departure set out for (`reach` as it left): its owner leads that core's choices, however many hold the node. */
+  sought: { id: NodeId; owner: string } | null = null;
   /** The signal station's top section, which draws itself (`#hub-exped`). */
   private exped: SignalPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -514,7 +499,8 @@ export class Hub {
           return;
         }
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
-        this.act(act, arg);
+        // A workshop chip carries its card (arg) and its valuable (kind).
+        this.act(act, arg, el.dataset.arg !== undefined ? (el.dataset.kind ?? "") : "");
       }
     });
   }
@@ -627,6 +613,7 @@ export class Hub {
     this.module = null;
     this.factoryLadder = false;
     this.sourceKind = null;
+    this.sourceAt = null;
     this.sellConfirm = "";
     this.exped.cancel();
     // A field typed in (the signal station's island code) gives up the keys with the panel.
@@ -695,7 +682,7 @@ export class Hub {
       return this.open("signal");
     }
     if (act === "revenge") {
-      // やり返す → 攻める一覧でその拠点を選んだ出撃（案 F）。
+      // やり返す → the departure, on the core of the player's island a sortie to that holding sets out from.
       if (arg && this.revenge(arg)) {
         sfx.click();
         this.close();
@@ -711,6 +698,13 @@ export class Hub {
     if (act.startsWith("exp-")) {
       sfx.click();
       return this.exped.act(act, arg);
+    }
+    if (act === "src-open" && kind) {
+      // A workshop chip: its card and the kind (the factory's rows give the kind alone, below).
+      const at = { m: arg as ModuleId, kind: kind as ValuableKind };
+      this.sourceAt = this.sourceAt?.m === at.m && this.sourceAt.kind === at.kind ? null : at.kind in VALUABLES ? at : null;
+      sfx.click();
+      return this.render();
     }
     if (act === "src-open") {
       const k = arg as ValuableKind;
@@ -753,6 +747,12 @@ export class Hub {
       if (next) {
         if (!nextLevel(next.hideout, m)) this.module = null;
         // Building takes stash entries: the loadout's picks are found again by what they are.
+        this.keepPicks(next);
+        sfx.deliver();
+      }
+    } else if (act === "build-buy") {
+      const next = buildBuying(this.profile, arg as ModuleId);
+      if (next) {
         this.keepPicks(next);
         sfx.deliver();
       }
@@ -850,7 +850,6 @@ export class Hub {
     this.fixStart();
     if (needsOrganize(this.profile)) return TERM.organize;
     // 攻める with no holding to attack: nothing to depart to.
-    if (this.attackMode) return this.sortiePick() ? "" : PHRASE.noAttackTarget;
     if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
@@ -859,7 +858,6 @@ export class Hub {
   /** Whether the chosen start is the gate's own way in: walking out of the gate then starts the raid where the player stands. */
   walksOut(): boolean {
     this.fixStart();
-    if (this.sortiePick()) return false;
     return !this.from && this.region === HOME_REGION.id && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
   }
 
@@ -945,9 +943,6 @@ export class Hub {
   choose(kind: StartPoint["kind"], id: string): boolean {
     const p = this.profile;
     this.peeked = null;
-    // A start on the island's map is a raid of the island: the sortie chosen before goes.
-    this.sortieFocus = null;
-    this.attackMode = false;
     if (kind === "depot") {
       if (!departDepots(p).includes(id as PoiId)) return false;
       this.from = id as PoiId;
@@ -965,14 +960,15 @@ export class Hub {
   }
 
   /**
-   * やり返す (TKT-204 案 F): `arg` is the holding's owner and id (`owner|id`); chooses it on the
-   * 攻める list and opens the departure on it via `focusPoi` (same path as 地図で見る).
+   * やり返す, and an island's holding on the signal station: `arg` is the holding's owner and id
+   * (`owner|id`). A sortie sets out from the same node's core on the player's own island, so the
+   * departure opens on that node (`focusPoi`, as 地図で見る does) and names it (`reach`).
    */
   revenge(arg: string): boolean {
     const [owner, id] = arg.split("|") as [string, NodeId];
-    if (!owner || !id || !this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
-    this.sortieFocus = { owner, id };
-    this.attackMode = true;
+    const t = owner && id ? this.sortieTargets().find((x) => x.owner === owner && x.id === id) : null;
+    if (!t) return false;
+    this.reach = { id, owner, ownerName: t.ownerName };
     this.focusPoi = id;
     return true;
   }
@@ -986,34 +982,14 @@ export class Hub {
     return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings());
   }
 
-  /** The holding chosen for a sortie, while it is still on the list. */
-  sortiePick(): SortieTarget | null {
-    const f = this.sortieFocus;
-    if (!f) return null;
-    return this.sortieTargets().find((t) => t.owner === f.owner && t.id === f.id) ?? null;
+  /** The nodes whose core, while the player's, a sortie may set out from: another player holds the same node (`Start.jumps`). */
+  jumpNodes(): NodeId[] {
+    return jumpNodes(this.sortieTargets());
   }
 
-  /** Chooses holding `id` of `owner` on the 攻める list for the next departure. False when it is not on the list. */
-  selectSortie(owner: string, id: NodeId): boolean {
-    if (!this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
-    this.sortieFocus = { owner, id };
-    this.attackMode = true;
-    this.peeked = null;
-    return true;
-  }
-
-  /**
-   * Sets the departure to 攻める (`on`: the holding chosen before, or the first on the list) or back
-   * to the island's raid (the holding chosen goes, the start on the map stands).
-   */
-  setAttackMode(on: boolean) {
-    this.attackMode = on;
-    this.peeked = null;
-    if (!on) this.sortieFocus = null;
-    else if (!this.sortiePick()) {
-      const first = this.sortieTargets()[0];
-      this.sortieFocus = first ? { owner: first.owner, id: first.id } : null;
-    }
+  /** The other players a sortie from the core of node `id` may go to, a few at most. */
+  jumpTargets(id: NodeId): SortieTarget[] {
+    return jumpTargets(this.sortieTargets(), id, this.sought?.id === id ? this.sought.owner : undefined);
   }
 
   /**
@@ -1022,17 +998,8 @@ export class Hub {
    */
   launch(): Launch | null {
     this.fixStart();
-    // A sortie: the kit as for a way in (no depot's allowance), played at the holding; the island's start stays as it was.
-    const sortie = this.sortiePick();
-    if (sortie) {
-      const taken = takeKit(this.profile, this.startLoad(), null);
-      if (!taken) return null;
-      this.set(taken.profile);
-      this.load = emptyLoadout();
-      this.sortieFocus = null;
-      this.attackMode = false;
-      return { kit: taken.kit, region: poiRegion(sortie.id).id, seed: this.profile.seed, entry: this.profile.entry, sortie: sortieStart(sortie) };
-    }
+    this.sought = this.reach ? { id: this.reach.id, owner: this.reach.owner } : null;
+    this.reach = null;
     const from = this.from;
     const taken = takeKit(this.profile, this.startLoad(), from);
     if (!taken) return null;
@@ -1050,7 +1017,7 @@ export class Hub {
     return null;
   }
 
-  /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report on the shelves. */
+  /** What each station has to act on, as its mark's text ("" for none): modules to build. */
   marks(): Record<StationId, string> {
     const p = this.profile;
     // 倉庫を含む隠れ家設備は作業場の ▲ に数える.
@@ -1060,9 +1027,7 @@ export class Hub {
     // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
     const unread = this.news.length;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : "";
-    // Shelves: the radio's report (warehouse growth is at the workshop).
-    const stash = p.hideout.radio ? "無線" : "";
-    return { stash, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
+    return { stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
@@ -1077,17 +1042,6 @@ export class Hub {
     return body.act
       ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}"${edge}>${inner}</button>`
       : `<div class="item"${edge}>${inner}</div>`;
-  }
-
-  /** The radio's report on the next raid into the chosen region, or null without a radio. */
-  private intel(): string | null {
-    const lv = this.profile.hideout.radio;
-    if (!lv) return null;
-    const b = boostFor(this.profile.seed, this.region);
-    const where = esc(POIS[b.poi].name);
-    if (lv === 1) return `${where} <b style="color:${RARITY_CSS[3]}">★</b>`;
-    const kind = VALUABLES[b.kind];
-    return `${where} <b style="color:${RARITY_CSS[kind.rarity]}">${esc(kind.label)}</b>　レイダー ${clockIcon()}${Math.round(raidClock(strengthFor(ownNodes(islandHolds(this.profile))), raidThreat(this.profile)).raiders / 60)} 分`;
   }
 
   /**
@@ -1150,7 +1104,7 @@ export class Hub {
     const nodes = `<div class="from-nodes"><small>拠点から</small>${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max"><b>MAX</b></div>`;
     const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : "";
-    const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? "レベルの一覧を閉じる" : "全部のレベルを見る"}</button>`;
+    const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? TERM.closeLevels : TERM.allLevels}</button>`;
     return (
       `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}${TERM.factory}</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
       `<div class="mod-body"><h4 class="fac-sub">今の${TERM.factory}</h4>${now}${nodes}` +
@@ -1188,22 +1142,9 @@ export class Hub {
     return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
-  /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
-  private routes(): string {
-    const p = this.profile;
-    // Each route as the map draws it (solid teal open, dashed orange shut); a shut one with the tool that opens it and the POI whose bins hold it.
-    const rows = ROUTES.map((r) => {
-      const open = p.routes.includes(r.id);
-      const tool = TOOLS[r.tool];
-      const how = open ? "" : `<span>${lockIcon()}<em style="color:${RARITY_CSS[3]}">${esc(tool.label)}</em>　${esc(POIS[poiIndex(tool.from)].name)}</span>`;
-      return `<div class="quest route${open ? " open" : ""}"><div><strong>${routeIcon(open)}${esc(r.name)}</strong>${how}</div></div>`;
-    });
-    return `<h3 class="hub-sub">道</h3>${rows.join("")}`;
-  }
-
   /**
    * What a module's level `lv` sets, as gauges: the heals issued to every raid, the trader's
-   * materials up to a rarity, the stash's room, the radio's report, the pouch's slots.
+   * the stash's room, the pouch's slots.
    */
   private moduleGauges(m: ModuleId, lv: number): Gauge[] {
     const h: Hideout = { ...this.profile.hideout, [m]: lv };
@@ -1213,66 +1154,50 @@ export class Hub {
         const top = issuedHeals({ hideout: { ...h, infirmary: maxLevel("infirmary") } });
         return HEAL_KINDS.filter((k) => top[k] > 0).map((k) => ({ key: k, mark: healIcon(HEAL_SPECS[k].shield), label: HEAL_SPECS[k].short, n: at[k], show: num, hideZero: true }));
       }
-      case "workbench": {
-        // The rarities lit, then the materials each step adds, in their rarity's colour.
-        return [
-          {
-            key: "rarity",
-            mark: "",
-            n: materialRarity(h),
-            show: (r: number, was = r) => {
-              const added = (Object.keys(VALUABLES) as ValuableKind[]).filter((k) => VALUABLES[k].rarity > was && VALUABLES[k].rarity <= r);
-              return `${rarityBar(r, was)}${added.length ? `<span class="mats">${added.map((k) => `<em style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</em>`).join("")}</span>` : ""}`;
-            },
-          },
-        ];
-      }
       case "storage":
         return [{ key: "stash", mark: "", n: stashCap(h), show: num }];
       case "pouch":
         return [{ key: "pouch", mark: "", n: pouchSlots(h), show: (n: number, was?: number) => `${slotBoxes(n, was)}${num(n, was)}` }];
-      case "radio":
-        // What the report tells: the POI whose bins lean rare, then the valuable and the raiders' time. The only module told in words.
-        return [
-          {
-            key: "radio",
-            mark: "",
-            n: lv,
-            show: (n: number, was = n) =>
-              n
-                ? [`<em class="star">★</em>拠点`, `回収品`, `${clockIcon()}レイダー`]
-                    .slice(0, n === 1 ? 1 : 3)
-                    .map((t, i) => `<span class="tell${(i === 0 ? 1 : 2) > was ? " gain" : ""}">${t}</span>`)
-                    .join("")
-                : `<b class="n none">—</b>`,
-          },
-        ];
     }
   }
 
   /**
-   * A hideout module: its mark, name, level and the next level's gain (was → now, lit). Opened, the
-   * ladder of its levels and, set apart, what the next level takes and the button that builds it.
+   * A hideout module, whole on its card with nothing to open first: its mark, name and level, the
+   * next level's gain (was → now, lit), what that level takes as chips (have / need, the lacking
+   * ones lit and pressed for where they are found), and the two ways up: with what the stash holds,
+   * or buying what it lacks at the trader's price. The ladder of every level is folded away.
    */
   private moduleCard(m: ModuleId) {
     const p = this.profile;
-    const spec = HIDEOUT[m];
     const lv = p.hideout[m];
     const next = nextLevel(p.hideout, m);
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
-    const state = buildState(p, m);
-    const open = this.module === m;
+    const ready = canBuild(p, m);
     const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
     // 倉庫 card: current used / cap with the same bar as the shelves.
     const room = m === "storage" ? `<div class="mod-cap">${capMeter(stashUsed(p), stashCap(p.hideout), warehouseFullNote(p))}</div>` : "";
-    const body = open
-      ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : ""}</div>`
+    const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+    const asked = this.sourceAt?.m === m ? this.sourceAt.kind : null;
+    const needs = next
+      ? `<div class="ws-needs">${next.items
+          .map(([k, n]) => {
+            const ok = have(k) >= n;
+            const body = `<em style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</em><b>${Math.min(have(k), n)} / ${n}</b>`;
+            return ok ? `<span class="need ok">${body}${checkIcon()}</span>` : `<button type="button" class="need short${asked === k ? " on" : ""}" data-act="src-open" data-arg="${m}" data-kind="${k}">${body}</button>`;
+          })
+          .join("")}<span class="need cash${p.cash >= next.cash ? " ok" : " short"}">${coinIcon()}<b>${yen(next.cash)}</b>${p.cash >= next.cash ? checkIcon() : ""}</span></div>`
       : "";
+    const guide = next && asked && next.items.some(([k]) => k === asked) ? sourceGuide(asked, p) : "";
+    const price = shortPrice(p, m);
+    const buying = next && price ? `<button type="button" class="ws-buy" data-act="build-buy" data-arg="${m}" ${p.cash >= price + next.cash ? "" : "disabled"}>${TERM.buyAndRaise}<b>${coinIcon()}${yen(price + next.cash)}</b></button>` : "";
+    const open = this.module === m;
+    const fold = `<button type="button" class="fac-fold${open ? " open" : ""}" data-act="mod" data-arg="${m}">${open ? TERM.closeLevels : TERM.allLevels}</button>`;
+    const acts = next ? `<div class="ws-acts"><button type="button" class="ws-go" data-act="build" data-arg="${m}" ${ready ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>${buying}</div>` : "";
     return (
-      `<div class="mod up-card${open ? " open" : ""}" data-mod="${m}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
-      `<strong>${MODULE_ICON[m]()}${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
-      `${gain}${room}</button>${body}</div>`
+      `<section class="ws-card up-card${ready ? " ready" : ""}${next ? "" : " done"}" data-mod="${m}">` +
+      `<header><strong>${MODULE_ICON[m]()}${esc(HIDEOUT[m].name)}</strong><span class="pips">${pips}</span><b>Lv${lv}</b></header>` +
+      `${gain}${room}${needs}${guide}${acts}${fold}${open ? ladder(levels, lv) : ""}</section>`
     );
   }
 
@@ -1319,7 +1244,7 @@ export class Hub {
   }
 
   /**
-   * Shelves' side column: the radio's report (when built), then the next raid's kit.
+   * Shelves' side column: the next raid's kit.
    * Warehouse capacity is raised at the workshop, not here.
    */
   private kitPanel(): string {
@@ -1336,8 +1261,6 @@ export class Hub {
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
     const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
-    const intel = this.intel();
-    const intelSlot = intel ? `<div class="slot intel"><small>${radioIcon()}無線</small><span>${intel}</span></div>` : "";
     const kit =
       this.depotSlot() +
       weapons +
@@ -1349,7 +1272,7 @@ export class Hub {
       // The pouch: the slots of valuables a wipe leaves the player.
       `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`;
     // Full lock-note sits beside the stash count (capMeter), not in this column.
-    return `${intelSlot}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
+    return `<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
   }
 
   /**
@@ -1376,8 +1299,6 @@ export class Hub {
   departure(): { rows: [string, string][]; warn: string[] } {
     this.fixStart();
     const p = this.profile;
-    const sortie = this.sortiePick();
-    if (sortie) return { rows: [["装備", this.kitMarks()], [PLAN_GOAL, `${flagIcon(SIDE.rival)}${esc(attackGoal(sortie.title))}`]], warn: [] };
     const front = this.frontPick();
     const teach = teachFrontCapture(p) && front;
     const goal = esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
@@ -1424,9 +1345,9 @@ export class Hub {
     // Each value is HTML: marks, and names escaped here.
     const rival = sortieTopFor(p);
     const plan: [string, string][] = [
-      // The front node to raid (first sessions name 核 · 制圧 on it), then the holding to attack.
+      // The front node to raid (first sessions name 核 · 制圧 on it), then the holding a core of the player's reaches.
       [
-        TERM.forage,
+        TERM.front,
         pick
           ? teachFrontCapture(p)
             ? `${esc(pick.name)} · ${TERM.captureCore}`
@@ -1487,6 +1408,8 @@ export class Hub {
             ? TERM.otherPlayers
             : TERM.loadout;
     $("hub-side-title").textContent = sideTitle;
+    // The workshop is one column under its own name: the side's heading would say it twice.
+    $("hub-side-title").hidden = st === "workshop";
     // Narrow tabs: 倉庫 / 右列の見出し。One-column stations hide the tab bar.
     const twoCol = panel.stash;
     $("hub-tabs").hidden = !twoCol;
@@ -1496,7 +1419,7 @@ export class Hub {
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
       // 倉庫を含む隠れ家設備は作業場の一覧で上げる.
-      $("hub-side").innerHTML = MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
+      $("hub-side").innerHTML = MODULES.map((m) => this.moduleCard(m)).join("");
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);

@@ -246,10 +246,10 @@ export class SignalPanel {
     const t = this.target;
     let pick = "";
     if (t) {
-      // The island's holdings that may be attacked now, each a way to the gate set on it (as やり返す goes).
+      // The island's holdings that may be attacked now: each opens the departure on the core of the player's island that reaches it (as やり返す goes).
       const open = this.targets().filter((x) => x.code === t.code);
       const nodes = open.length
-        ? `<div class="exp-nodes">${open.map((x) => `<button type="button" class="exp-node" data-act="revenge" data-arg="${esc(`${x.owner}|${x.id}`)}">${flagIcon(SIDE.rival)}${esc(x.hubName)}<b>${TERM.attack}</b></button>`).join("")}</div>`
+        ? `<div class="exp-nodes">${open.map((x) => `<button type="button" class="exp-node" data-act="revenge" data-arg="${esc(`${x.owner}|${x.id}`)}">${flagIcon(SIDE.rival)}${esc(x.hubName)}<b>${TERM.seeOnMap}</b></button>`).join("")}</div>`
         : `<p class="lock-note">${lockIcon()}${PHRASE.noAttackTarget}</p>`;
       pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}</div>`;
     }
