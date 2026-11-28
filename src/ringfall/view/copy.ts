@@ -133,7 +133,7 @@ export const TERM = {
    */
   lostToday: "今日取られた",
   backToCamp: "野営地に戻る",
-  /** Modules collectively (医務室・作業台…). Not the station name. */
+  /** Modules collectively (医務室・倉庫・ポーチ). Not the station name. */
   hideout: "隠れ家",
   islandNews: "島の知らせ",
   wares: "売り物",

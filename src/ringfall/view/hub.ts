@@ -4,13 +4,13 @@ import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
 import type { Start } from "../sim/state";
-import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
+import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, keepParcels, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
-// buyPrice / canStartIn / onSale used by sourceGuide
-import { materialRarity, maxLevel, MODULES, nextLevel, onSale, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
+import { type Kit } from "../sim/state";
+import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { armed, build, keepParcels, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+// buyPrice / canStartIn used by sourceGuide
+import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
 import { departDepots, islandHolds, playerNodes, shopRarity, unlocked } from "../meta/island";
 import { rivalOf } from "../sim/holds";
@@ -177,10 +177,7 @@ function shelfTiers(p: Profile): string {
     const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em${mine.includes(n.id) ? ' class="mine"' : ""}>${esc(n.name)}</em>`);
     return `<div class="tier${r <= best ? " on" : ""}" style="--c:${RARITY_CSS[r]}"><i></i><span>${by.join("")}</span></div>`;
   });
-  // The materials beside them, under the workbench's wrench: the rarities it lets the trader sell.
-  const mats = materialRarity(p.hideout);
-  const row = ([0, 1, 2, 3] as Rarity[]).map((r) => `<div class="${r <= mats ? "on" : ""}" style="--c:${RARITY_CSS[r]}">${workbenchIcon(r <= mats ? RARITY_CSS[r] : undefined)}<i></i></div>`);
-  return `<div class="shelf-tiers">${cells.join("")}</div><div class="shelf-mats">${row.join("")}</div>`;
+  return `<div class="shelf-tiers">${cells.join("")}</div>`;
 }
 
 /** An item's colour: its rarity's, gold for a key or a tool, white for a heal. */
@@ -235,7 +232,7 @@ export function withSectionHeaders(list: StashRow[], rowHtml: (row: StashRow) =>
  * shelves' issued heals, the stash's count, the trader's materials, the shelves' radio report, the
  * pouch's slots), so the card says where an upgrade grows.
  */
-const MODULE_ICON: Record<ModuleId, () => string> = { infirmary: () => issueIcon(), workbench: () => workbenchIcon(), storage: () => stashIcon(), radio: () => radioIcon(), pouch: () => pouchIcon() };
+const MODULE_ICON: Record<ModuleId, () => string> = { infirmary: () => issueIcon(), storage: () => stashIcon(), pouch: () => pouchIcon() };
 
 /**
  * One number an upgrade's level sets, as its mark (and a short name where several share a mark) and
@@ -254,8 +251,6 @@ interface Gauge {
 const num = (n: number, was?: number) => `<b class="n${was !== undefined && n !== was ? " gain" : ""}">${n}</b>`;
 /** Slots as boxes in the pouch's colour, the ones added since `was` lit. */
 const slotBoxes = (n: number, was = n) => `<span class="boxes">${Array.from({ length: n }, (_, i) => `<i class="seg pouch${i >= was ? " gain" : ""}" style="--n:1"></i>`).join("")}</span>`;
-/** The four rarities as swatches, lit up to `r`, those lit since `was` glowing. */
-const rarityBar = (r: number, was = r) => `<span class="rbar">${[0, 1, 2, 3].map((k) => `<i class="${k <= r ? "on" : ""}${k <= r && k > was ? " gain" : ""}" style="--c:${RARITY_CSS[k]}"></i>`).join("")}</span>`;
 
 /** A gauge's value and what grew since `was`. */
 const gaugeHtml = (g: Gauge, was?: Gauge) =>
@@ -395,7 +390,7 @@ export function whereLine(kind: ValuableKind): string {
 }
 
 /**
- * Full どこで取れる block: bins with region, vault + key hint, trader price / workbench gate.
+ * Full どこで取れる block: bins with region, vault + key hint, the trader's price.
  * Reachable regions (canStartIn) come first; locked ones get a padlock note.
  */
 export function sourceGuide(kind: ValuableKind, p: Profile): string {
@@ -422,19 +417,7 @@ export function sourceGuide(kind: ValuableKind, p: Profile): string {
       return `<div class="src-row${s.poi && !open(s) ? " locked" : ""}"><span>${esc(s.where)}${region}${lock}<b>${pct}%</b></span>${note}${map}</div>`;
     })
     .join("");
-  const onTrader = onSale(p.hideout).includes(kind);
-  const buy = onTrader
-    ? `<div class="src-row trader">${TERM.traderStall}で買える <b>${buyPrice({ t: "valuable", kind }).toLocaleString("ja-JP")}</b></div>`
-    : (() => {
-        // Workbench level that first puts this kind on sale.
-        for (let lv = 0; lv <= maxLevel("workbench"); lv++) {
-          if (VALUABLES[kind].rarity <= materialRarity({ ...p.hideout, workbench: lv })) {
-            if (lv > p.hideout.workbench) return `<div class="src-row trader">${TERM.workshop} Lv${lv} で${TERM.traderStall}に並ぶ</div>`;
-            break;
-          }
-        }
-        return "";
-      })();
+  const buy = `<div class="src-row trader">${TERM.traderStall}で買える <b>${buyPrice({ t: "valuable", kind }).toLocaleString("ja-JP")}</b></div>`;
   const isGoal = p.goal === kind;
   const goalBtn = `<button type="button" class="src-goal${isGoal ? " on" : ""}" data-act="set-goal" data-kind="${kind}">${isGoal ? TERM.goalActive : TERM.setGoal}</button>`;
   return `<div class="src-guide" data-kind="${kind}"><small>${TERM.whereFound}</small>${rows}${buy}${goalBtn}</div>`;
@@ -1050,7 +1033,7 @@ export class Hub {
     return null;
   }
 
-  /** What each station has to act on, as its mark's text ("" for none): modules to build, the radio's report on the shelves. */
+  /** What each station has to act on, as its mark's text ("" for none): modules to build. */
   marks(): Record<StationId, string> {
     const p = this.profile;
     // 倉庫を含む隠れ家設備は作業場の ▲ に数える.
@@ -1060,9 +1043,7 @@ export class Hub {
     // 未読はセッション中の新規だけ（Profile.news の控えは印に数えない）。
     const unread = this.news.length;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : "";
-    // Shelves: the radio's report (warehouse growth is at the workshop).
-    const stash = p.hideout.radio ? "無線" : "";
-    return { stash, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
+    return { stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
@@ -1077,17 +1058,6 @@ export class Hub {
     return body.act
       ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}"${edge}>${inner}</button>`
       : `<div class="item"${edge}>${inner}</div>`;
-  }
-
-  /** The radio's report on the next raid into the chosen region, or null without a radio. */
-  private intel(): string | null {
-    const lv = this.profile.hideout.radio;
-    if (!lv) return null;
-    const b = boostFor(this.profile.seed, this.region);
-    const where = esc(POIS[b.poi].name);
-    if (lv === 1) return `${where} <b style="color:${RARITY_CSS[3]}">★</b>`;
-    const kind = VALUABLES[b.kind];
-    return `${where} <b style="color:${RARITY_CSS[kind.rarity]}">${esc(kind.label)}</b>　レイダー ${clockIcon()}${Math.round(raidClock(strengthFor(ownNodes(islandHolds(this.profile))), raidThreat(this.profile)).raiders / 60)} 分`;
   }
 
   /**
@@ -1188,22 +1158,9 @@ export class Hub {
     return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
-  /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
-  private routes(): string {
-    const p = this.profile;
-    // Each route as the map draws it (solid teal open, dashed orange shut); a shut one with the tool that opens it and the POI whose bins hold it.
-    const rows = ROUTES.map((r) => {
-      const open = p.routes.includes(r.id);
-      const tool = TOOLS[r.tool];
-      const how = open ? "" : `<span>${lockIcon()}<em style="color:${RARITY_CSS[3]}">${esc(tool.label)}</em>　${esc(POIS[poiIndex(tool.from)].name)}</span>`;
-      return `<div class="quest route${open ? " open" : ""}"><div><strong>${routeIcon(open)}${esc(r.name)}</strong>${how}</div></div>`;
-    });
-    return `<h3 class="hub-sub">道</h3>${rows.join("")}`;
-  }
-
   /**
    * What a module's level `lv` sets, as gauges: the heals issued to every raid, the trader's
-   * materials up to a rarity, the stash's room, the radio's report, the pouch's slots.
+   * the stash's room, the pouch's slots.
    */
   private moduleGauges(m: ModuleId, lv: number): Gauge[] {
     const h: Hideout = { ...this.profile.hideout, [m]: lv };
@@ -1213,40 +1170,10 @@ export class Hub {
         const top = issuedHeals({ hideout: { ...h, infirmary: maxLevel("infirmary") } });
         return HEAL_KINDS.filter((k) => top[k] > 0).map((k) => ({ key: k, mark: healIcon(HEAL_SPECS[k].shield), label: HEAL_SPECS[k].short, n: at[k], show: num, hideZero: true }));
       }
-      case "workbench": {
-        // The rarities lit, then the materials each step adds, in their rarity's colour.
-        return [
-          {
-            key: "rarity",
-            mark: "",
-            n: materialRarity(h),
-            show: (r: number, was = r) => {
-              const added = (Object.keys(VALUABLES) as ValuableKind[]).filter((k) => VALUABLES[k].rarity > was && VALUABLES[k].rarity <= r);
-              return `${rarityBar(r, was)}${added.length ? `<span class="mats">${added.map((k) => `<em style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</em>`).join("")}</span>` : ""}`;
-            },
-          },
-        ];
-      }
       case "storage":
         return [{ key: "stash", mark: "", n: stashCap(h), show: num }];
       case "pouch":
         return [{ key: "pouch", mark: "", n: pouchSlots(h), show: (n: number, was?: number) => `${slotBoxes(n, was)}${num(n, was)}` }];
-      case "radio":
-        // What the report tells: the POI whose bins lean rare, then the valuable and the raiders' time. The only module told in words.
-        return [
-          {
-            key: "radio",
-            mark: "",
-            n: lv,
-            show: (n: number, was = n) =>
-              n
-                ? [`<em class="star">★</em>拠点`, `回収品`, `${clockIcon()}レイダー`]
-                    .slice(0, n === 1 ? 1 : 3)
-                    .map((t, i) => `<span class="tell${(i === 0 ? 1 : 2) > was ? " gain" : ""}">${t}</span>`)
-                    .join("")
-                : `<b class="n none">—</b>`,
-          },
-        ];
     }
   }
 
@@ -1319,7 +1246,7 @@ export class Hub {
   }
 
   /**
-   * Shelves' side column: the radio's report (when built), then the next raid's kit.
+   * Shelves' side column: the next raid's kit.
    * Warehouse capacity is raised at the workshop, not here.
    */
   private kitPanel(): string {
@@ -1336,8 +1263,6 @@ export class Hub {
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
     const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
-    const intel = this.intel();
-    const intelSlot = intel ? `<div class="slot intel"><small>${radioIcon()}無線</small><span>${intel}</span></div>` : "";
     const kit =
       this.depotSlot() +
       weapons +
@@ -1349,7 +1274,7 @@ export class Hub {
       // The pouch: the slots of valuables a wipe leaves the player.
       `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`;
     // Full lock-note sits beside the stash count (capMeter), not in this column.
-    return `${intelSlot}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
+    return `<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
   }
 
   /**
@@ -1496,7 +1421,7 @@ export class Hub {
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
       // 倉庫を含む隠れ家設備は作業場の一覧で上げる.
-      $("hub-side").innerHTML = MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
+      $("hub-side").innerHTML = MODULES.map((m) => this.moduleCard(m)).join("");
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);

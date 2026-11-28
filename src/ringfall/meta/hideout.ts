@@ -1,4 +1,4 @@
-import { HEALS, HIDEOUT, HIDEOUT_EFFECT, META, ROBOT_DROPS, TOP_BINS, VALUABLES, VAULT, type HealKind, type ModuleId, type ModuleLevel, type Rarity, type ValuableKind } from "../sim/config";
+import { HEALS, HIDEOUT, HIDEOUT_EFFECT, META, ROBOT_DROPS, TOP_BINS, VALUABLES, VAULT, type HealKind, type ModuleId, type ModuleLevel, type ValuableKind } from "../sim/config";
 import { POIS, poiIndex, poiRegion, type PoiId } from "../sim/map";
 
 /** Each module's built level (0 is unbuilt). */
@@ -26,11 +26,6 @@ export function stillNeeded(h: Hideout): Record<ValuableKind, number> {
 
 export const stashCap = (h: Hideout) => META.stash + HIDEOUT_EFFECT.storage[h.storage];
 export const pouchSlots = (h: Hideout) => META.pouch + HIDEOUT_EFFECT.pouch[h.pouch];
-/** The rarest valuables the trader sells: a step more with each workbench level. */
-export const materialRarity = (h: Hideout) => (META.materials.rarity + HIDEOUT_EFFECT.workbench[h.workbench]) as Rarity;
-/** The valuables the trader sells: those no rarer than the workbench lets it. */
-export const onSale = (h: Hideout) => (Object.keys(VALUABLES) as ValuableKind[]).filter((k) => VALUABLES[k].rarity <= materialRarity(h));
-
 /** Heals the infirmary lends to every raid. */
 export function infirmaryHeals(h: Hideout): Record<HealKind, number> {
   const add = HIDEOUT_EFFECT.infirmary[h.infirmary];

@@ -1898,40 +1898,6 @@ body.touch #hub-close kbd {
   font-size: 13px;
   color: var(--muted);
 }
-.hub-list .quest {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 12px;
-  background: var(--plate);
-}
-.hub-list .quest > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-}
-.hub-list .quest strong {
-  font-size: 16px;
-}
-.hub-list .quest span {
-  font-size: 14px;
-}
-.hub-list .quest small {
-  font-size: 12px;
-  color: var(--muted);
-}
-.hub-list .quest > b {
-  font-family: var(--num);
-  font-size: 18px;
-  color: var(--hot);
-  white-space: nowrap;
-}
-#hub .quest button {
-  font-size: 16px;
-  padding: 8px 14px;
-  white-space: nowrap;
-}
 /* Stash rows a hideout module still needs, and the warning before one is sold. */
 #hub .item small.need {
   color: var(--sky);
@@ -1939,12 +1905,6 @@ body.touch #hub-close kbd {
 #hub .item small.warn {
   color: var(--ring);
   font-weight: 800;
-}
-/* The radio's report on the next raid, at the top of the loadout. */
-.hub-list .slot.intel {
-  box-shadow: inset 3px 0 0 var(--sky);
-  font-weight: 500;
-  font-size: 14px;
 }
 /* A depot start's allowance, teal like the depot's start button; red once the loadout is over it. */
 .hub-list .slot.depot {
@@ -3055,50 +3015,12 @@ body:not(.playing) #banner {
   font-size: 14px;
   color: var(--muted);
 }
-.hub-list .quest.route.open > b {
-  color: var(--sky);
-}
 .hub-list .hub-sub.first {
   margin-top: 0;
 }
 .hub-list .hub-sub small {
   margin-left: 8px;
   font-size: 12px;
-}
-/* The day's contracts: a tag for the type, and the taken one outlined in the loot's gold. */
-.hub-list .quest.contract strong em {
-  font-style: normal;
-  font-size: 12px;
-  padding: 1px 7px;
-  margin-right: 8px;
-  vertical-align: 2px;
-  background: rgb(var(--white-rgb) / 0.14);
-}
-.hub-list .quest.contract.taken {
-  box-shadow: inset 0 0 0 2px var(--r3);
-}
-.hub-list .quest .taken-tag {
-  font-style: normal;
-  font-size: 12px;
-  margin-left: 8px;
-  color: var(--r3);
-}
-#hub .quest.contract button.untake {
-  background: transparent;
-  color: var(--white);
-  box-shadow: inset 0 0 0 2px rgb(var(--white-rgb) / 0.5);
-}
-/* The story: the record under way, then what the records home told. */
-.hub-list .quest.story {
-  box-shadow: inset 3px 0 0 var(--sand);
-}
-.hub-list .quest.story .story-n {
-  margin-left: 8px;
-}
-.hub-list .quest.story > b {
-  color: var(--sand);
-  font-family: var(--jp);
-  font-size: 14px;
 }
 .hub-list .story-done {
   margin: 4px 0;
@@ -3156,7 +3078,7 @@ body:not(.playing) #banner {
   color: var(--ink);
   text-shadow: none;
 }
-/* Something to act on there: a quest to hand in, a module to build, the radio's report. */
+/* Something to act on there: a module to build. */
 .camp-label span {
   order: -1;
   margin-bottom: 3px;
@@ -4164,14 +4086,6 @@ body.touch #obj-raid .short {
 #hub .item.armed {
   box-shadow: inset 0 0 0 2px var(--foe-bright);
 }
-.hub-list .quest.route strong .ico.route {
-  vertical-align: -3px;
-  margin-right: 6px;
-}
-.hub-list .quest.route em {
-  font-style: normal;
-  font-weight: 800;
-}
 .taken-tag .ico {
   vertical-align: -2px;
 }
@@ -4312,47 +4226,6 @@ body.touch #obj-raid .short {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-.hub-list .quest.contract {
-  position: relative;
-  transition: opacity 0.25s, filter 0.25s;
-}
-.hub-list .quest.contract.dim {
-  opacity: 0.72;
-}
-.hub-list .quest.contract.dim:hover {
-  opacity: 1;
-}
-.hub-list .quest.contract .pin {
-  position: absolute;
-  top: -4px;
-  left: 50%;
-  width: 9px;
-  height: 9px;
-  margin-left: -4.5px;
-  border-radius: 50%;
-  background: var(--slate);
-  box-shadow: 0 2px 0 rgb(var(--shade-rgb) / 0.35);
-}
-.hub-list .quest.contract.taken .pin {
-  background: var(--r3);
-}
-/* A new day's papers: each slides down onto the board under a fresh red pin, one after another. */
-.hub-list .board.fresh .quest.contract {
-  animation: paper-in 0.55s cubic-bezier(0.2, 0.8, 0.3, 1.15) both;
-}
-.hub-list .board.fresh .quest.contract:nth-child(2) {
-  animation-delay: 0.12s;
-}
-.hub-list .board.fresh .quest.contract:nth-child(3) {
-  animation-delay: 0.24s;
-}
-.hub-list .board.fresh .quest.contract:nth-child(4) {
-  animation-delay: 0.36s;
-}
-.hub-list .board.fresh .quest.contract .pin {
-  background: var(--alert);
-  box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.7), 0 2px 0 rgb(var(--shade-rgb) / 0.35);
 }
 @keyframes paper-in {
   from {
@@ -4862,23 +4735,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
   height: 20px;
   width: 20px;
 }
-.rbar {
-  display: inline-flex;
-  gap: 3px;
-}
-.rbar i {
-  width: 16px;
-  height: 10px;
-  background: var(--c);
-  opacity: 0.18;
-}
-.rbar i.on {
-  opacity: 1;
-}
-.rbar i.gain {
-  outline: 2px solid var(--hot);
-  outline-offset: 1px;
-}
 .mats {
   display: inline-flex;
   flex-wrap: wrap;
@@ -4979,9 +4835,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
   border-style: dashed;
   border-color: var(--pouch);
   box-shadow: none;
-}
-.ladder li:not(.next) .rbar i.gain {
-  outline: 0;
 }
 .ladder li:not(.next) .bots i.gain .ico {
   filter: none;
@@ -5459,32 +5312,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
 #island-news:empty {
   display: none;
 }
-/* The trader's materials by rarity under the gun tiers, a wrench in each rarity the workbench lets the trader sell. */
-.shelf-mats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin: -4px 0 10px;
-}
-.shelf-mats > div {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 4px;
-  border-radius: 6px;
-  background: rgb(var(--ink-rgb) / 0.6);
-  opacity: 0.45;
-}
-.shelf-mats > div.on {
-  opacity: 1;
-  box-shadow: 0 0 0 1px var(--c) inset;
-}
-.shelf-mats > div i {
-  width: 22px;
-  height: 8px;
-  background: var(--c);
-}
 /* The infirmary's case beside the heals it issues, on the shelves. */
 .hub-list .slot.count .issued {
   display: inline-flex;
@@ -5494,8 +5321,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--white);
   font-weight: 800;
 }
-#hub-stash-count .ico,
-.hub-list .slot.intel small .ico {
+#hub-stash-count .ico {
   margin-right: 4px;
   vertical-align: -2px;
 }
@@ -5723,8 +5549,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 
 /* Lists that were sentences: each thing its own piece, a name and a number. */
 .srcs,
-.names,
-.quest .pay {
+.names {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

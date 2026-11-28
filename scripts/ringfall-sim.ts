@@ -1848,11 +1848,9 @@ function checkHideout(): string | null {
     for (const l of HIDEOUT[m].levels) {
       for (const [k] of l.items) if (!poisWith(k).length && !VAULT.valuables.some((set) => set.includes(k))) return `hideout scenario: ${m} needs ${k}, which no bin or vault holds`;
     }
-  // The trader sells the common parts from the start, and rarer valuables with each workbench level.
-  const sells = (workbench: number, k: string) => wares({ ...bareProfile(1), hideout: { ...emptyHideout(), workbench } }).some((i) => i.t === "valuable" && i.kind === k);
-  if (!sells(0, "fuse") || sells(0, "board")) return "hideout scenario: the trader's valuables without a workbench are not just the common parts";
-  if (!sells(1, "board") || !sells(1, "drive") || sells(1, "reactor")) return "hideout scenario: the workbench Lv1 trader does not sell boards and drives (and only them)";
-  if (!sells(2, "core") || !sells(2, "reactor")) return "hideout scenario: the workbench Lv2 trader does not sell cores and reactors";
+  // The trader sells every valuable from the start: credits stand in for a part a level still lacks.
+  const sold = wares(bareProfile(1)).flatMap((i) => (i.t === "valuable" ? [i.kind] : []));
+  if (Object.keys(VALUABLES).some((k) => !sold.includes(k as keyof typeof VALUABLES))) return `hideout scenario: the trader sells only ${sold.join(",")}`;
   if (sources("reactor")[0]?.share === undefined) return "hideout scenario: the reactor has no source";
   // The infirmary's first level: one fuse short it cannot be built; with them it takes exactly its items and credits.
   const first = HIDEOUT.infirmary.levels[0];
@@ -1874,7 +1872,7 @@ function checkHideout(): string | null {
   const up = build(give({ ...bareProfile(), cash: second.cash, hideout: { ...emptyHideout(), storage: 1 } }, second.items), "storage");
   if (up?.hideout.storage !== 2 || MODULES.some((m) => m !== "storage" && up.hideout[m] !== 0)) return `hideout scenario: the storage's second level on the first alone left ${JSON.stringify(up?.hideout)}`;
   // Every module's top level asks for a data core or a small reactor, so the rarest valuables keep a use.
-  for (const m of MODULES) if (!HIDEOUT[m].levels.at(-1)!.items.some(([k]) => k === "core" || k === "reactor") && m !== "workbench") return `hideout scenario: ${m}'s top level asks for no core nor reactor`;
+  for (const m of MODULES) if (!HIDEOUT[m].levels.at(-1)!.items.some(([k]) => k === "core" || k === "reactor")) return `hideout scenario: ${m}'s top level asks for no core nor reactor`;
   // The starter heals and the infirmary's are issued to every kit, starter weapons or not; what is left comes home.
   const sick = { ...bareProfile(), hideout: { ...emptyHideout(), infirmary: 2 } };
   const startKit = takeKit(sick, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] }).kit;
@@ -1896,13 +1894,13 @@ function checkHideout(): string | null {
   const healsHome = settle(sick, healed).home.filter((i) => i.t === "heal").length;
   if (healsHome !== Object.values(ownKit.heals).reduce((n, k) => n + k, 0)) return `hideout scenario: of the infirmary's issued heals, ${healsHome} came home unused`;
   // The nodes held open the trader's gear (`UNLOCKS`): none common, the supply depot rare, a tier-1
-  // node epic, a tier-2 legendary; the workbench does not change it, and losing the node takes it away.
-  const shelf = (held: NodeId[], workbench = 0) => {
-    const p = { ...bareProfile(), hideout: { ...emptyHideout(), workbench }, poiState: Object.fromEntries(POIS.map((o) => [o.id, { state: held.includes(o.id as NodeId) ? "own" : "foe" }])) as Profile["poiState"] };
+  // node epic, a tier-2 legendary, and losing the node takes it away.
+  const shelf = (held: NodeId[]) => {
+    const p = { ...bareProfile(), poiState: Object.fromEntries(POIS.map((o) => [o.id, { state: held.includes(o.id as NodeId) ? "own" : "foe" }])) as Profile["poiState"] };
     return Math.max(...wares(p).map((i) => (i.t === "weapon" ? i.rarity : i.t === "armor" ? i.tier : 0)));
   };
   for (const [held, want] of [[[], 0], [["supply"], 1], [["supply", "quarry"], 2], [["supply", "relay"], 2], [["supply", "relay", "smelter"], 3], [["supply", "quarry", "yard"], 3], [["wreck"], 0], [[], 0]] as [NodeId[], number][])
-    if (shelf(held) !== want || shelf(held, 2) !== want) return `hideout scenario: holding ${held.join(",") || "nothing"} the trader sells gear up to ${shelf(held)} (${shelf(held, 2)} with the workbench), expected ${want}`;
+    if (shelf(held) !== want) return `hideout scenario: holding ${held.join(",") || "nothing"} the trader sells gear up to ${shelf(held)}, expected ${want}`;
   if (META.shopRarity !== 0) return "hideout scenario: the trader sells better than common holding no node";
   // The storage holds more, and buying fills it.
   const roomy = { ...bareProfile(), cash: 9999, hideout: { ...emptyHideout(), storage: 1 }, stash: Array.from({ length: META.stash }, (): Item => ({ t: "heal", kind: "cell" })) };
@@ -1913,12 +1911,12 @@ function checkHideout(): string | null {
   wipe.player.haul = ["drive", "drive", "drive", "drive", "fuse"];
   const keptN = (lv: number) => settle({ ...bareProfile(), hideout: { ...emptyHideout(), pouch: lv } }, wipe).home.length;
   if (keptN(0) !== META.pouch || keptN(1) !== META.pouch + 1 || keptN(2) !== META.pouch + 2) return `hideout scenario: a wipe kept ${keptN(0)}, ${keptN(1)}, ${keptN(2)} drives by pouch level`;
-  // The radio tells of the raid the profile's seed starts: the same POI and kind, and its bins really lean that way.
-  const radio = { ...bareProfile(4321), hideout: { ...emptyHideout(), radio: 2 } };
+  // The raid the profile's seed starts leans the POI and kind its seed gives (`boostFor()`), and its bins really lean that way.
+  const seeded = bareProfile(4321);
   for (const region of REGIONS) {
-    const told = boostFor(radio.seed, region.id);
-    const raid = newRun(radio.seed, starterKit(), region.id);
-    if (raid.boost.poi !== told.poi || raid.boost.kind !== told.kind || !region.pois.includes(POIS[told.poi].id)) return `hideout scenario: the radio told of ${JSON.stringify(told)}, the raid has ${JSON.stringify(raid.boost)}`;
+    const told = boostFor(seeded.seed, region.id);
+    const raid = newRun(seeded.seed, starterKit(), region.id);
+    if (raid.boost.poi !== told.poi || raid.boost.kind !== told.kind || !region.pois.includes(POIS[told.poi].id)) return `hideout scenario: the seed gives ${JSON.stringify(told)}, the raid has ${JSON.stringify(raid.boost)}`;
     // Its bins opened on an empty island, with the raid's boost.
     const open = padRun();
     open.boost = raid.boost;
@@ -1938,15 +1936,15 @@ function checkHideout(): string | null {
     if (got / 60 < plainShare + 0.2) return `hideout scenario: the boosted ${POIS[told.poi].id} gave ${told.kind} from ${got} of 60 bins (${Math.round(plainShare * 100)}% unboosted)`;
   }
   if (boosted([["fuse", 3], ["drive", 1]], "drive").find(([k]) => k === "drive")?.[1] !== 5) return "hideout scenario: the boosted weights are off";
-  const after = settle(radio, newRun(radio.seed)).profile;
-  if (after.seed === radio.seed) return "hideout scenario: the next raid's seed did not move on";
+  const after = settle(seeded, newRun(seeded.seed)).profile;
+  if (after.seed === seeded.seed) return "hideout scenario: the next raid's seed did not move on";
   // Every module at its top level is the hideout done; nothing is built past it.
   const full = Object.fromEntries(MODULES.map((m) => [m, maxLevel(m)])) as Profile["hideout"];
   const top = { ...bareProfile(), cash: 99999, hideout: full };
   if (!hideoutDone(full) || hideoutDone({ ...full, pouch: maxLevel("pouch") - 1 }) || MODULES.some((m) => build(give(top, HIDEOUT[m].levels.at(-1)!.items), m))) return "hideout scenario: a module was built past its top level";
-  // A v20 save loses the generator and the escape craft and keeps the other modules' levels; its intro quest to build the generator counts as the infirmary's.
+  // A v20 save loses the generator and the escape craft and keeps the levels of the modules that still exist, with the 作業台's paid back (v56); its intro quest to build the generator counts as the infirmary's.
   const v20 = parseProfile(JSON.parse(JSON.stringify({ ...bareProfile(), v: 20, hideout: { generator: 3, infirmary: 2, workbench: 1, storage: 3, radio: 0, pouch: 1, craft: 4 }, escaped: { raids: 31, extracted: 25, time: 3600 }, quests: { progress: {}, done: ["grunts", "power", "craft", "navigator"] } })));
-  if (!v20 || v20.v !== SAVE_V || JSON.stringify(v20.hideout) !== JSON.stringify({ infirmary: 2, workbench: 1, storage: 3, radio: 0, pouch: 1 }) || "escaped" in v20 || "quests" in v20 || "board" in v20 || "taken" in v20 || "records" in v20)
+  if (!v20 || v20.v !== SAVE_V || JSON.stringify(v20.hideout) !== JSON.stringify({ infirmary: 2, storage: 3, pouch: 1 }) || v20.cash !== bareProfile().cash + 1280 || "escaped" in v20 || "quests" in v20 || "board" in v20 || "taken" in v20 || "records" in v20)
     return `storage scenario: a v20 save loaded as ${JSON.stringify(v20 && { v: v20.v, hideout: v20.hideout, quests: (v20 as { quests?: unknown }).quests })}`;
   // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
   const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
@@ -3977,7 +3975,7 @@ function checkFront(): string | null {
  * landed and bound for it, which takes it back when nobody holds it. Nodes stay as the battle ended.
  */
 /** The profile's version (`Profile.v`): what a new profile is, and what every older save loads as. Raised here with each migration. */
-const SAVE_V = 55;
+const SAVE_V = 56;
 
 /** A new profile on an island all the enemy's: a new island starts with the four shores (`ROUTE_SHORES`) the player's, which the scenarios about one node's taking leave out. */
 const bareProfile = (seed?: number): Profile => ({ ...newProfile(seed), poiState: blankIsland() });

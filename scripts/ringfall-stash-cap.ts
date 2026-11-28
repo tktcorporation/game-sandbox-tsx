@@ -84,7 +84,7 @@ console.log(`\n建設チェック: 倉庫 Lv0→${HIDEOUT.storage.levels.length}
 const levelWorth = (items: [ValuableKind, number][], cash: number) =>
   cash + items.reduce((n, [k, c]) => n + VALUABLES[k].value * c, 0);
 console.log("\nコスト帯（クレジット + 回収品の売値。貪欲法が安い順に建てる目安）:");
-for (const m of ["infirmary", "workbench", "storage", "radio", "pouch"] as const) {
+for (const m of ["infirmary", "storage", "pouch"] as const) {
   for (let l = 0; l < HIDEOUT[m].levels.length; l++) {
     const lv = HIDEOUT[m].levels[l]!;
     console.log(`  ${HIDEOUT[m].name} Lv${l + 1}: ${levelWorth(lv.items, lv.cash)}`);

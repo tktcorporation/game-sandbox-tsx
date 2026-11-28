@@ -377,8 +377,7 @@ export const ROBOT_DROPS = {
 /**
  * Each raid, one POI of the region dropped into has bins that lean rare: they hold `kind`
  * (one of the rarer kinds of its own table) as often as `share` times everything else
- * together. Which POI and kind follow from the raid's seed (`boostFor()` in state.ts), so
- * the base's radio can tell them before the raid.
+ * together. Which POI and kind follow from the raid's seed (`boostFor()` in state.ts).
  */
 export const BOOST = { share: 1 };
 
@@ -707,15 +706,11 @@ export const META = {
    * raise it (`UNLOCKS` in map.ts), and it drops again with the node.
    */
   shopRarity: 0 as Rarity,
-  /**
-   * The trader also sells valuables, at `markup` times their value: those of rarity up to `rarity`,
-   * raised a step by each workbench level (`HIDEOUT_EFFECT.workbench`), so the common parts never
-   * hold the hideout up and credits buy the rarer ones once the workbench is built.
-   */
-  materials: { markup: 1.5, rarity: 1 },
+  /** The trader also sells every valuable, at `markup` times its value: credits stand in for a part a level still lacks. */
+  materials: { markup: 1.5 },
 };
 
-export type ModuleId = "infirmary" | "workbench" | "storage" | "radio" | "pouch";
+export type ModuleId = "infirmary" | "storage" | "pouch";
 
 /** One level of a hideout module: what it takes from the stash. Level N is built only on level N - 1. */
 export interface ModuleLevel {
@@ -741,14 +736,6 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
       { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 3000, does: "注射器 +2、シールドセル +2、医療キット +1" },
     ],
   },
-  workbench: {
-    name: "作業台",
-    note: "商人が売る材料",
-    levels: [
-      { items: [["parts", 4], ["wire", 2], ["fuse", 2]], cash: 400, does: "回路基板・記憶装置" },
-      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 3000, does: "ジャイロ・データコア・小型炉心" },
-    ],
-  },
   storage: {
     name: "倉庫",
     note: "倉庫に置ける数が増える",
@@ -760,14 +747,6 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
       { items: [["drive", 3], ["gyro", 3], ["core", 2]], cash: 6000, does: "倉庫 +10" },
       { items: [["gyro", 2], ["core", 2], ["reactor", 1]], cash: 10000, does: "倉庫 +10" },
       { items: [["core", 3], ["reactor", 2]], cash: 16000, does: "倉庫 +10" },
-    ],
-  },
-  radio: {
-    name: "無線機",
-    note: "出撃前に島の様子が分かる",
-    levels: [
-      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 600, does: "珍しい物が多い拠点が分かる" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 3000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
     ],
   },
   pouch: {
@@ -784,8 +763,6 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
 export const HIDEOUT_EFFECT = {
   /** Heals the infirmary adds to every raid's issue, on top of `META.starter.heals`. */
   infirmary: [{}, { syringe: 1 }, { syringe: 1, cell: 2 }, { syringe: 2, cell: 2, medkit: 1 }] as Partial<Record<HealKind, number>>[],
-  /** Steps of rarity of the valuables the trader sells above `META.materials.rarity`. */
-  workbench: [0, 1, 2],
   /** Room in the stash above `META.stash` (index = 倉庫 level). */
   storage: [0, 10, 20, 30, 40, 50, 60],
   /** Pouch slots above `META.pouch`. */
