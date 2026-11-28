@@ -33,7 +33,7 @@ export async function upgradeShots({ browser, port, out, errors }) {
   const spills = (pg) =>
     pg.evaluate(() => {
       const bad = [];
-      for (const el of document.querySelectorAll("#hub .hub-inner, #hub .hub-head, #hub-side, #hub-stash, #hub .hub-foot, #hub-side .up-card")) {
+      for (const el of document.querySelectorAll("#hub .hub-inner, #hub .hub-head, #hub-side, #hub-stash, #hub .hub-foot, #hub-side .up-card, #hub-side .ws-needs, #hub-side .ws-acts")) {
         const r = el.getBoundingClientRect();
         if (r.width && r.right > innerWidth + 1) bad.push(`${el.id || el.className} ends at ${Math.round(r.right)}`);
         if (el.scrollWidth > el.clientWidth + 1) bad.push(`${el.id || el.className} scrolls sideways`);
@@ -93,26 +93,39 @@ export async function upgradeShots({ browser, port, out, errors }) {
     const where = phone ? "phone" : "1280x720";
     const tap = (sel) => (phone ? pg.tap(sel) : pg.click(sel));
 
-    // The workshop: each module's card carries its mark and, but for one at its top, the next level's gain as was → now.
+    // The workshop: each module whole on its card, with its mark, the next level's gain as was → now, what it takes as chips and the ways up.
     await station(pg, "workshop", cdp);
     const cards = await pg.evaluate(() =>
-      [...document.querySelectorAll("#hub-side .up-card[data-mod]")].map((c) => ({ m: c.dataset.mod, mark: c.querySelector(".mod-head strong .ico")?.classList[1], delta: c.querySelectorAll(".gain-row .delta").length, gain: c.querySelectorAll(".gain-row .now .gain").length })),
+      [...document.querySelectorAll("#hub-side .ws-card[data-mod]")].map((c) => ({
+        m: c.dataset.mod,
+        mark: c.querySelector("header strong .ico")?.classList[1],
+        delta: c.querySelectorAll(".gain-row .delta").length,
+        needs: c.querySelectorAll(".ws-needs .need").length,
+        short: c.querySelectorAll(".ws-needs .need.short").length,
+        go: !!c.querySelector(".ws-acts [data-act=build]"),
+        buy: !!c.querySelector(".ws-acts [data-act=build-buy]"),
+      })),
     );
-    for (const c of cards) if (c.mark !== MARKS[c.m] || !c.delta || !c.gain) errors.push(`upgrades: the ${c.m} card reads ${JSON.stringify(c)}`);
+    for (const c of cards) if (c.mark !== MARKS[c.m] || !c.delta || c.needs < 2 || !c.go || c.buy !== c.short > 0) errors.push(`upgrades: the ${c.m} card reads ${JSON.stringify(c)}`);
     if (cards.length !== 3) errors.push(`upgrades: the workshop lists ${cards.length} modules`);
+    if (await pg.locator("#hub-side-title").isVisible()) errors.push("upgrades: the workshop says its name twice");
     await check(pg, `${where} workshop`);
     await shot("1-workshop");
-    // A module opened: its ladder (the levels built ticked, the next one lit) above what the next level takes, set apart.
-    for (const [m, n] of [["infirmary", 2], ["pouch", 3]]) {
-      await tap(`#hub-side [data-act=mod][data-arg=${m}]`);
-      await pg.waitForTimeout(100);
-      const ladder = await pg.evaluate(() => [...document.querySelectorAll("#hub-side .mod.open .ladder li")].map((l) => l.className));
-      const costApart = await pg.locator("#hub-side .mod.open .mod-cost .req").count();
-      if (ladder.length !== 4 - (m === "pouch") || ladder[1] !== "cur" || ladder[2] !== "next" || !costApart) errors.push(`upgrades: the ${m} opened reads ${JSON.stringify(ladder)}, ${costApart} needs`);
-      await pg.evaluate(() => document.querySelector("#hub-side .mod.open")?.scrollIntoView({ block: "start" }));
-      await check(pg, `${where} ${m} opened`);
-      await shot(`${n}-workshop-${m}`);
-    }
+    // A chip the stash lacks, pressed: where its valuable is found, on its own card.
+    await tap("#hub-side .ws-card .need.short");
+    await pg.waitForTimeout(100);
+    if ((await pg.locator("#hub-side .ws-card .src-guide .src-row").count()) < 2) errors.push("upgrades: a lacking chip pressed shows no places to find it");
+    await check(pg, `${where} workshop source`);
+    await shot("2-workshop-source");
+    await tap("#hub-side .ws-card .need.short.on");
+    // The ladder of a module's levels, unfolded: the levels built ticked, the next one lit.
+    await tap("#hub-side .ws-card[data-mod=pouch] [data-act=mod]");
+    await pg.waitForTimeout(100);
+    const steps = await pg.evaluate(() => [...document.querySelectorAll("#hub-side .ws-card[data-mod=pouch] .ladder li")].map((l) => l.className));
+    if (steps.length !== 3 || steps[1] !== "cur" || steps[2] !== "next") errors.push(`upgrades: the pouch ladder reads ${JSON.stringify(steps)}`);
+    await pg.evaluate(() => document.querySelector("#hub-side .ws-card[data-mod=pouch]")?.scrollIntoView({ block: "start" }));
+    await check(pg, `${where} pouch ladder`);
+    await shot("3-workshop-pouch");
     await close(pg, phone);
 
     // The factory: what it makes now (with the quarry's flag), the next level's gain and its build, the ladder folded away until asked for.

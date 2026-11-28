@@ -8,7 +8,7 @@ import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, 
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, keepParcels, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+import { armed, build, buildBuying, keepParcels, buildFactory, buy, buyPrice, canBuild, canBuildFactory, shortPrice, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 // buyPrice / canStartIn used by sourceGuide
 import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
@@ -449,6 +449,8 @@ export class Hub {
   private factoryLadder = false;
   /** Valuable whose どこで取れる guide is open in a cost row (null = none). */
   private sourceKind: ValuableKind | null = null;
+  /** The workshop's chip pressed for where its valuable is found: the module's card it stands on, and the kind. */
+  private sourceAt: { m: ModuleId; kind: ValuableKind } | null = null;
   /**
    * POI to frame on the departure map after 地図で見る (consumed by main / depart).
    * Cleared once the departure opens on it.
@@ -497,7 +499,8 @@ export class Hub {
           return;
         }
         const arg = el.dataset.arg ?? el.dataset.kind ?? el.dataset.poi ?? "";
-        this.act(act, arg);
+        // A workshop chip carries its card (arg) and its valuable (kind).
+        this.act(act, arg, el.dataset.arg !== undefined ? (el.dataset.kind ?? "") : "");
       }
     });
   }
@@ -610,6 +613,7 @@ export class Hub {
     this.module = null;
     this.factoryLadder = false;
     this.sourceKind = null;
+    this.sourceAt = null;
     this.sellConfirm = "";
     this.exped.cancel();
     // A field typed in (the signal station's island code) gives up the keys with the panel.
@@ -695,6 +699,13 @@ export class Hub {
       sfx.click();
       return this.exped.act(act, arg);
     }
+    if (act === "src-open" && kind) {
+      // A workshop chip: its card and the kind (the factory's rows give the kind alone, below).
+      const at = { m: arg as ModuleId, kind: kind as ValuableKind };
+      this.sourceAt = this.sourceAt?.m === at.m && this.sourceAt.kind === at.kind ? null : at.kind in VALUABLES ? at : null;
+      sfx.click();
+      return this.render();
+    }
     if (act === "src-open") {
       const k = arg as ValuableKind;
       this.sourceKind = this.sourceKind === k ? null : k in VALUABLES ? k : null;
@@ -736,6 +747,12 @@ export class Hub {
       if (next) {
         if (!nextLevel(next.hideout, m)) this.module = null;
         // Building takes stash entries: the loadout's picks are found again by what they are.
+        this.keepPicks(next);
+        sfx.deliver();
+      }
+    } else if (act === "build-buy") {
+      const next = buildBuying(this.profile, arg as ModuleId);
+      if (next) {
         this.keepPicks(next);
         sfx.deliver();
       }
@@ -1120,7 +1137,7 @@ export class Hub {
     const nodes = `<div class="from-nodes"><small>拠点から</small>${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max"><b>MAX</b></div>`;
     const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : "";
-    const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? "レベルの一覧を閉じる" : "全部のレベルを見る"}</button>`;
+    const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? TERM.closeLevels : TERM.allLevels}</button>`;
     return (
       `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}${TERM.factory}</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
       `<div class="mod-body"><h4 class="fac-sub">今の${TERM.factory}</h4>${now}${nodes}` +
@@ -1178,28 +1195,42 @@ export class Hub {
   }
 
   /**
-   * A hideout module: its mark, name, level and the next level's gain (was → now, lit). Opened, the
-   * ladder of its levels and, set apart, what the next level takes and the button that builds it.
+   * A hideout module, whole on its card with nothing to open first: its mark, name and level, the
+   * next level's gain (was → now, lit), what that level takes as chips (have / need, the lacking
+   * ones lit and pressed for where they are found), and the two ways up: with what the stash holds,
+   * or buying what it lacks at the trader's price. The ladder of every level is folded away.
    */
   private moduleCard(m: ModuleId) {
     const p = this.profile;
-    const spec = HIDEOUT[m];
     const lv = p.hideout[m];
     const next = nextLevel(p.hideout, m);
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
-    const state = buildState(p, m);
-    const open = this.module === m;
+    const ready = canBuild(p, m);
     const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
     // 倉庫 card: current used / cap with the same bar as the shelves.
     const room = m === "storage" ? `<div class="mod-cap">${capMeter(stashUsed(p), stashCap(p.hideout), warehouseFullNote(p))}</div>` : "";
-    const body = open
-      ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>`) : ""}</div>`
+    const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+    const asked = this.sourceAt?.m === m ? this.sourceAt.kind : null;
+    const needs = next
+      ? `<div class="ws-needs">${next.items
+          .map(([k, n]) => {
+            const ok = have(k) >= n;
+            const body = `<em style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</em><b>${Math.min(have(k), n)} / ${n}</b>`;
+            return ok ? `<span class="need ok">${body}${checkIcon()}</span>` : `<button type="button" class="need short${asked === k ? " on" : ""}" data-act="src-open" data-arg="${m}" data-kind="${k}">${body}</button>`;
+          })
+          .join("")}<span class="need cash${p.cash >= next.cash ? " ok" : " short"}">${coinIcon()}<b>${yen(next.cash)}</b>${p.cash >= next.cash ? checkIcon() : ""}</span></div>`
       : "";
+    const guide = next && asked && next.items.some(([k]) => k === asked) ? sourceGuide(asked, p) : "";
+    const price = shortPrice(p, m);
+    const buying = next && price ? `<button type="button" class="ws-buy" data-act="build-buy" data-arg="${m}" ${p.cash >= price + next.cash ? "" : "disabled"}>${TERM.buyAndRaise}<b>${coinIcon()}${yen(price + next.cash)}</b></button>` : "";
+    const open = this.module === m;
+    const fold = `<button type="button" class="fac-fold${open ? " open" : ""}" data-act="mod" data-arg="${m}">${open ? TERM.closeLevels : TERM.allLevels}</button>`;
+    const acts = next ? `<div class="ws-acts"><button type="button" class="ws-go" data-act="build" data-arg="${m}" ${ready ? "" : "disabled"}>Lv${lv + 1} · ${TERM.raiseLevel}</button>${buying}</div>` : "";
     return (
-      `<div class="mod up-card${open ? " open" : ""}" data-mod="${m}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
-      `<strong>${MODULE_ICON[m]()}${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
-      `${gain}${room}</button>${body}</div>`
+      `<section class="ws-card up-card${ready ? " ready" : ""}${next ? "" : " done"}" data-mod="${m}">` +
+      `<header><strong>${MODULE_ICON[m]()}${esc(HIDEOUT[m].name)}</strong><span class="pips">${pips}</span><b>Lv${lv}</b></header>` +
+      `${gain}${room}${needs}${guide}${acts}${fold}${open ? ladder(levels, lv) : ""}</section>`
     );
   }
 
@@ -1412,6 +1443,8 @@ export class Hub {
             ? TERM.otherPlayers
             : TERM.loadout;
     $("hub-side-title").textContent = sideTitle;
+    // The workshop is one column under its own name: the side's heading would say it twice.
+    $("hub-side-title").hidden = st === "workshop";
     // Narrow tabs: 倉庫 / 右列の見出し。One-column stations hide the tab bar.
     const twoCol = panel.stash;
     $("hub-tabs").hidden = !twoCol;

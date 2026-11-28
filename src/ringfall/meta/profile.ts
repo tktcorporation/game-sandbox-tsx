@@ -1042,23 +1042,33 @@ export function shortfall(p: Profile, m: ModuleId): { items: [ValuableKind, numb
   };
 }
 
-/**
- * What the module card says about its next level: done, buildable, or the first thing in the
- * way (the parts still missing, then only the credits).
- */
-export function buildState(p: Profile, m: ModuleId): string {
-  const s = shortfall(p, m);
-  if (!s) return "完成";
-  const missing = s.items.reduce((n, [, have, need]) => n + need - have, 0);
-  if (missing) return `あと ${missing} 個`;
-  if (s.cash) return `あと ${s.cash.toLocaleString()} クレジット`;
-  return "作れる";
-}
-
 export const canBuild = (p: Profile, m: ModuleId) => {
   const s = shortfall(p, m);
   return !!s && !s.items.length && !s.cash;
 };
+
+/**
+ * What the valuables a module's next level still lacks cost at the trader's (`buyPrice()`): 0 when
+ * the stash holds them all, null when the module is complete.
+ */
+export function shortPrice(p: Profile, m: ModuleId): number | null {
+  const s = shortfall(p, m);
+  return s && s.items.reduce((n, [k, have, need]) => n + (need - have) * buyPrice({ t: "valuable", kind: k }), 0);
+}
+
+/**
+ * Builds a module's next level, buying at the trader's the valuables the stash lacks for it: what
+ * is bought goes straight into the level, so it needs no room in the stash. Null when nothing is
+ * lacking (that is `build()`) or the credits do not reach both the trader's price and the level's.
+ */
+export function buildBuying(p: Profile, m: ModuleId): Profile | null {
+  const s = shortfall(p, m);
+  const l = nextLevel(p.hideout, m);
+  const price = shortPrice(p, m);
+  if (!s || !l || !price || p.cash < price + l.cash) return null;
+  const bought = s.items.flatMap(([k, have, need]) => Array.from({ length: need - have }, (): Item => ({ t: "valuable", kind: k })));
+  return build({ ...p, cash: p.cash - price, stash: [...p.stash, ...bought] }, m);
+}
 
 /**
  * Builds a module's next level, taking its items and credits from the stash; null when it

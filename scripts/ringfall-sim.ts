@@ -43,7 +43,7 @@ import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, toolIn, useTarget } fr
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { build, buildFactory, buildState, buy, canBuild, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, bestFitValuables, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { build, buildBuying, buildFactory, buy, canBuild, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, bestFitValuables, price, sell, sellPrice, settle, shortPrice, buyPrice, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
@@ -1862,11 +1862,14 @@ function checkHideout(): string | null {
   const built = build(p, "infirmary");
   if (!built || built.hideout.infirmary !== 1 || built.cash !== p.cash - first.cash || built.stash.length !== before - first.items.reduce((n, [, c]) => n + c, 0) || count(built, "fuse") !== 0 || count(built, "board") !== 2)
     return `hideout scenario: building the infirmary took ${p.cash - (built?.cash ?? p.cash)} credits and left ${built?.stash.length} things`;
-  // The card names what is in the way: the parts still missing, or only the credits once they are all there.
+  // The level is also built buying what it lacks: one fuse short, the trader's price for a fuse goes with the level's credits and the stash's own parts; with nothing lacking, or the credits short of both, it is not.
   const fuseShort = give({ ...bareProfile(), cash: 5000 }, first.items.map(([k, n]) => [k, k === "fuse" ? n - 1 : n]));
-  const broke = give({ ...bareProfile(), cash: first.cash - 50 }, first.items);
-  if (buildState(fuseShort, "infirmary") !== "あと 1 個" || buildState(broke, "infirmary") !== "あと 50 クレジット")
-    return `hideout scenario: the infirmary's card said "${buildState(fuseShort, "infirmary")}" one fuse short and "${buildState(broke, "infirmary")}" 50 credits short`;
+  const fuse = buyPrice({ t: "valuable", kind: "fuse" });
+  const bought = buildBuying(fuseShort, "infirmary");
+  if (shortPrice(fuseShort, "infirmary") !== fuse || bought?.hideout.infirmary !== 1 || bought.cash !== 5000 - fuse - first.cash || bought.stash.some((i) => i.t === "valuable"))
+    return `hideout scenario: one fuse short, buying built Lv${bought?.hideout.infirmary} for ${5000 - (bought?.cash ?? 5000)} credits (a fuse is ${fuse})`;
+  if (buildBuying(p, "infirmary") || shortPrice(p, "infirmary") !== 0 || buildBuying({ ...fuseShort, cash: first.cash + fuse - 1 }, "infirmary") || build(fuseShort, "infirmary"))
+    return "hideout scenario: a level was bought with nothing lacking, or a credit short, or built a fuse short";
   // A module's level waits only for its own level before it: the second level is built on the first alone.
   const second = HIDEOUT.storage.levels[1];
   const up = build(give({ ...bareProfile(), cash: second.cash, hideout: { ...emptyHideout(), storage: 1 } }, second.items), "storage");

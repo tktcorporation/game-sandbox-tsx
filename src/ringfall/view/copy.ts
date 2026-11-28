@@ -27,6 +27,9 @@ export type TermId =
   | "nextHand"
   | "raiseLevel"
   | "raiseLevelReady"
+  | "buyAndRaise"
+  | "allLevels"
+  | "closeLevels"
   | "nextLevel"
   | "lastLevel"
   | "captureCore"
@@ -88,6 +91,10 @@ export const TERM = {
   /** One-line change if the user prefers another verb (glossary). */
   raiseLevel: "レベルを上げる",
   raiseLevelReady: "レベルを上げられる",
+  /** The workshop's second way up: the trader's price for what the level lacks, then the level. */
+  buyAndRaise: "足りない分を買って上げる",
+  allLevels: "全部のレベルを見る",
+  closeLevels: "レベルの一覧を閉じる",
   nextLevel: "次のレベル",
   lastLevel: "最後のレベル",
   captureCore: "核 · 制圧",

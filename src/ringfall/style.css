@@ -5627,3 +5627,165 @@ body:has(#depart:not([hidden])) #touch {
   opacity: 0.6;
   margin: 0 2px;
 }
+
+/* The workshop's cards (hub.ts moduleCard()): a module whole on its card, with what its next level takes as chips and the ways up beside them. */
+.ws-card {
+  margin-top: 10px;
+  padding: 10px 14px 12px;
+  background: var(--plate);
+  border-left: 3px solid rgb(var(--white-rgb) / 0.18);
+}
+.ws-card.ready {
+  border-left-color: var(--hot);
+}
+.ws-card.done {
+  border-left-color: var(--good);
+}
+.ws-card > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+}
+.ws-card > header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+}
+.ws-card > header .pips {
+  display: flex;
+  gap: 3px;
+}
+.ws-card > header .pips i {
+  width: 14px;
+  height: 6px;
+  background: rgb(var(--white-rgb) / 0.18);
+}
+.ws-card > header .pips i.on {
+  background: var(--hot);
+}
+.ws-card > header > b {
+  margin-left: auto;
+  font-family: var(--num);
+  font-size: 16px;
+  color: var(--muted);
+}
+.ws-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgb(var(--white-rgb) / 0.28);
+}
+#hub .ws-needs .need {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 10px;
+  background: rgb(var(--white-rgb) / 0.08);
+  box-shadow: none;
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 800;
+}
+.ws-needs .need em {
+  font-style: normal;
+}
+.ws-needs .need b {
+  font-family: var(--num);
+  font-size: 16px;
+}
+.ws-needs .need.ok {
+  color: var(--muted);
+}
+.ws-needs .need.ok .ico {
+  color: var(--good);
+}
+#hub .ws-needs .need.short {
+  outline: 1px solid var(--shut);
+}
+.ws-needs .need.short b {
+  color: var(--shut);
+}
+#hub .ws-needs button.need.on {
+  background: rgb(var(--white-rgb) / 0.2);
+}
+.ws-needs .need.cash b {
+  color: var(--hot);
+}
+.ws-needs .need.cash.short b {
+  color: var(--shut);
+}
+.ws-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+#hub .ws-acts button {
+  min-height: 44px;
+  padding: 8px 18px;
+  font-size: 16px;
+}
+#hub .ws-acts .ws-buy {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  outline: 2px solid var(--hot);
+  box-shadow: none;
+  color: var(--hot);
+}
+#hub .ws-acts .ws-buy b {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--num);
+}
+#hub .ws-acts button:disabled {
+  opacity: 0.4;
+}
+#hub .ws-acts .ws-buy:disabled {
+  outline-color: rgb(var(--white-rgb) / 0.4);
+  color: var(--muted);
+}
+/* In a card the guide's rows are a line each: the place and its share, then a small way to the map. */
+.ws-card .src-row {
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  font-size: 14px;
+}
+.ws-card .src-row b {
+  margin-left: 8px;
+  font-family: var(--num);
+  font-size: 16px;
+}
+#hub .ws-card .src-map,
+#hub .ws-card .src-goal {
+  min-height: 34px;
+  padding: 4px 12px;
+  background: none;
+  outline: 1px solid rgb(var(--white-rgb) / 0.5);
+  box-shadow: none;
+  color: var(--white);
+  font-size: 13px;
+}
+#hub .ws-card .src-goal.on {
+  outline-color: var(--hot);
+  color: var(--hot);
+}
+/* The ladder's fold: a quiet line under the ways up, not a third button. */
+#hub .ws-card .fac-fold {
+  width: auto;
+  margin: 10px 0 0;
+  padding: 4px 0;
+  border: 0;
+  box-shadow: none;
+  text-decoration: underline;
+  font-size: 13px;
+}
+
