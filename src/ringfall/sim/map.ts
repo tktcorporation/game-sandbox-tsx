@@ -1924,13 +1924,25 @@ function crawlerBanks(ax: number, bx: number, z: number, half: number): Box[] {
 /**
  * The launch pad (発射台), round (0, 0) in its frame: its deck (`LEVEL.launchPad`) raised over
  * the plateau at its west end facing the sea, the flame trench (`炎の溝`) cut north to south
- * under it. Over the trench a slab carries the rocket, about 90 m high with two boosters, so the
- * trench under it is a low road through. West of the rocket the service tower (`tower`), an open
- * steel tower climbed by stairs inside to its top platform, its swing arms reaching the rocket
- * from the platforms in `arms` (by their place up the tower). All of it stands on the deck and
- * the trench without pressing them: the trench's walls and the deck's edges stay as cut.
+ * under it, a flame deflector's wedge low in its middle. Over the trench stands the mobile
+ * launcher (`mlp`: a platform `mlp.top` high on six pedestals, walked under on the deck and onto
+ * by stairs up its east side), and on it the rocket, about 90 m high with two boosters. West of
+ * it the service tower (`tower`): an open steel tower round a red lift shaft, climbed by stairs
+ * inside to its top platform, its swing arms reaching the rocket from the platforms in `arms`
+ * (by their place up the tower), a hammerhead crane and a lightning mast on its top. On the
+ * plateau round the deck: the water tower that drowns the launch's noise (`water`), a ball on one
+ * column, its pipe running to the deck; the liquid oxygen and hydrogen lying in tanks of two sizes
+ * behind a bund south-west (`lox`); banks of gas bottles north; camera bunkers further out. All
+ * of it on the deck and in the trench stands without pressing them: their edges stay as cut.
  */
-const LAUNCHPAD = { tower: { x: -17, z: 0, w: 12, d: 12, floors: 28, top: 104 }, arms: [5, 11, 16, 21, 24], rocket: 5, slab: 14 } as const;
+const LAUNCHPAD = {
+  tower: { x: -32, z: 0, w: 16, d: 16, floors: 31, top: 116 },
+  arms: [5, 11, 16, 21, 24],
+  rocket: 5,
+  mlp: { x: 14, z: 16, top: 7 },
+  water: { x: 66, z: 62, R: 9, y0: 40 },
+  lox: { z: 70 },
+} as const;
 /** The height of a service tower platform over the deck, by its place up the tower (as `lattice()` builds them). */
 const towerLevel = (k: number) => (k + 1) * STOREY;
 
@@ -1955,30 +1967,116 @@ function serviceTower(cx: number, cz: number, w: number, d: number, floors: numb
   return out;
 }
 
+/** A tank lying along x from x0 to x1 at z, `r` in radius, on saddles: its round body in three crossing boxes, its belly `under` over the ground. */
+function lyingTank(x0: number, x1: number, z: number, r: number, under: number, tint: number): Box[] {
+  const yc = under + r;
+  const [s, q] = [r * 0.83, r * 1.42];
+  const out = [rect(x0, z - r, x1, z + r, yc - s / 2, yc + s / 2, "steel", tint), rect(x0, z - s / 2, x1, z + s / 2, under, yc + r, "steel", tint), rect(x0, z - q / 2, x1, z + q / 2, yc - q / 2, yc + q / 2, "steel", tint)];
+  for (const x of [x0 + 3, x1 - 3]) out.push(rect(x - 0.6, z - r * 0.8, x + 0.6, z + r * 0.8, 0, under + r * 0.4, "wall", 1));
+  return out;
+}
+
+/** A bank of gas bottles: `n` long bottles stacked two high in a frame along x from x0, `len` long, 2.6 m to its top. */
+function bottleBank(x0: number, z: number, len: number, n: number): Box[] {
+  const out: Box[] = [];
+  for (let i = 0; i < n; i++) {
+    const dz = (i - (n - 1) / 2) * 1.2;
+    out.push(rect(x0, z + dz - 0.5, x0 + len, z + dz + 0.5, 0.3, 1.3, "steel", 2), rect(x0, z + dz - 0.5, x0 + len, z + dz + 0.5, 1.4, 2.4, "steel", 3));
+  }
+  const half = (n * 1.2) / 2 + 0.2;
+  for (const x of [x0, x0 + len - 0.4]) out.push(rect(x, z - half, x + 0.4, z + half, 0, 2.6, "steel", 1));
+  out.push(rect(x0 + len, z - 0.8, x0 + len + 1.6, z + 0.8, 0, 1.8, "steel", 1));
+  return out;
+}
+
+/** A camera bunker `w` square: a squat concrete box with a slit toward `face`, a mast `mast` high and its camera on the roof. */
+function cameraBunker(cx: number, cz: number, face: Side, w: number, mast: number): Box[] {
+  const [dx, dz] = DIR[face];
+  const out = [box(cx, cz, w, w, 1.2, "wall", 1), box(cx - dx * 0.4, cz - dz * 0.4, w - Math.abs(dx) * 0.8, w - Math.abs(dz) * 0.8, 2.2, "wall", 1, 1.2)];
+  out.push(box(cx - dx * 1.4, cz - dz * 1.4, 0.3, 0.3, 2.2 + mast, "steel", 2, 2.2), box(cx - dx * 1.1, cz - dz * 1.1, 0.8, 0.8, 2.8 + mast, "steel", 1, 2.2 + mast));
+  return out;
+}
+
+/** A blast berm of earth along z from z0 to z1 at x, `h` high, in three tiers each climbed in a step; broken over each of `gaps` (z ranges) to walk through. */
+function blastBerm(x: number, z0: number, z1: number, h: number, gaps: readonly (readonly [number, number])[] = []): Box[] {
+  const out: Box[] = [];
+  const runs: [number, number][] = [];
+  let cur = z0;
+  for (const [g0, g1] of gaps) {
+    runs.push([cur, g0]);
+    cur = g1;
+  }
+  runs.push([cur, z1]);
+  for (const [a, b] of runs) {
+    out.push(rect(x - 5, a, x + 5, b, 0, h * 0.4, "rock", 0));
+    if (b - a > 6) out.push(rect(x - 3.2, a + 1.5, x + 3.2, b - 1.5, 0, h * 0.72, "rock", 0));
+    if (b - a > 10) out.push(rect(x - 1.6, a + 3, x + 1.6, b - 3, 0, h, "rock", 0));
+  }
+  return out;
+}
+
 function launchpad(): Floors {
-  const { tower: t, arms, rocket: r, slab } = LAUNCHPAD;
+  const { tower: t, arms, rocket: r, mlp, water: wt, lox } = LAUNCHPAD;
   const deck: Box[] = [];
-  // The slab over the trench, flush with the deck and out over the tops of its sloping walls, and
-  // on it the rocket over the trench's middle:
-  // its core to 88 m in white plate, a scorched ring between its stages, a booster either side.
-  deck.push(rect(-9, -slab, 9, slab, -0.3, 0, "slab", 1));
-  deck.push(...rocketStack(0, 0, 0, [[r, 50, 9], [r + 0.2, 3, 7], [4.2, 23, 9], [4.2, 6, 9], [3, 3, 9], [1.6, 3, 9]]));
-  for (const s of [-1, 1]) deck.push(...rocketStack(0, s * (r + 2.2), 0, [[2.2, 34, 9], [1.4, 3, 9]]));
-  // The service tower west of it, and its swing arms out to the rocket's west face.
+  // The mobile launcher over the trench: its platform on six pedestals clear of the trench's
+  // walls, the hole the flame goes down under the rocket left open, two tail service masts on it,
+  // stairs up its east side; on it the rocket: its core to 88 m in white plate, a scorched ring
+  // between its stages, a booster either side.
+  const [mx, mz, my] = [mlp.x, mlp.z, mlp.top];
+  for (const x of [-mx + 1.5, mx - 1.5]) for (const z of [-mz + 2, 0, mz - 2]) deck.push(box(x, z, 2.6, 2.6, my - 1.6, "steel", 1));
+  for (const [a, b] of [[-mz, -r - 3], [r + 3, mz]]) deck.push(rect(-mx, a, mx, b, my - 1.6, my, "steel", 1));
+  for (const [a, b] of [[-mx, -r - 1], [r + 1, mx]]) deck.push(rect(a, -r - 3, b, r + 3, my - 1.6, my, "steel", 1));
+  deck.push(...rocketStack(0, 0, my, [[r, 50, 9], [r + 0.2, 3, 7], [4.2, 23, 9], [4.2, 6, 9], [3, 3, 9], [1.6, 3, 9]]));
+  for (const s of [-1, 1]) deck.push(...rocketStack(0, s * (r + 2.2), my, [[2.2, 34, 9], [1.4, 3, 9]]));
+  for (const s of [-1, 1]) deck.push(box(-8.5, s * 11, 3, 3, my + 11, "steel", 0, my), box(-8.5, s * 11, 2, 2, my + 12, "steel", 2, my + 11));
+  deck.push(...stairs(mx, -9, "e", 3, my, 1));
+  // The service tower west of it round its lift shaft, its swing arms out to the rocket's west
+  // face, a white room at the end of the top one; the hammerhead crane and the lightning mast.
   deck.push(...serviceTower(t.x, t.z, t.w, t.d, t.floors, t.top, arms, "e"));
+  deck.push(box(t.x - 4, t.z, 4.4, 4.4, t.top + 2, "steel", 0));
   for (const k of arms) deck.push(...catwalk(t.x + t.w / 2, 0, -r, 0, towerLevel(k), 2, 2));
-  // On the deck: the pad's equipment room, propellant lines along its north edge, cable boxes and crates as cover.
-  deck.push(...building(28, -16, 9, 6, 3.2, { doors: ["w"], windows: ["s"], scale: HOME }));
-  deck.push(rect(-30, -24, 30, -22.8, 0, 1.2, "steel", 2), rect(-30, -21.8, 30, -21.2, 1.2, 1.5, "steel", 3));
-  deck.push(box(22, 14, 4, 1.4, 1.2, "steel", 1), box(-32, 16, 2, 2, 2, "crate"), box(-30, 16, 2, 2, 1.2, "crate"), box(36, 8, 2.4, 2.4, 1.6, "steel", 3));
-  // Down in the trench beside the low road: blocks of the flame deflector along its east wall.
-  const trench: Box[] = [rect(2, -9, 5, 9, 0, 1.3, "steel", 7)];
+  const white = towerLevel(arms[arms.length - 1]);
+  deck.push(rect(-r - 4, -2.2, -r, 2.2, white + 2.6, white + 3, "steel", 9), rect(-r - 4, -2.2, -r, -1.9, white + 0.5, white + 2.6, "steel", 9), rect(-r - 4, 1.9, -r, 2.2, white + 0.5, white + 2.6, "steel", 9));
+  deck.push(rect(t.x - 12, -1.2, t.x + 26, 1.2, t.top + 2, t.top + 4, "steel", 0), box(t.x - 10, 0, 4, 3, t.top + 2, "wall", 1, t.top - 1), box(t.x + 22, 0, 1.6, 1.6, t.top + 2, "steel", 2, t.top));
+  deck.push(box(t.x, t.z, 1.2, 1.2, t.top + 22, "steel", 2, t.top + 4));
+  // On the deck: the pad's equipment room, propellant lines along its north edge, the water's
+  // main along its south edge, and valve skids by the launcher.
+  deck.push(...building(36, -16, 9, 6, 3.2, { doors: ["w"], windows: ["s"], scale: HOME }));
+  deck.push(rect(-24, -24, 30, -22.8, 0, 1.2, "steel", 2), rect(-24, -21.8, 30, -21.2, 1.2, 1.5, "steel", 3));
+  deck.push(rect(10, 22, 46, 24.4, 0, 2.2, "steel", 2));
+  for (let x = 12; x < 46; x += 6) deck.push(rect(x, 21.4, x + 0.6, 25, 0, 2.6, "steel", 1));
+  deck.push(box(22, 15, 4, 2.4, 1.8, "steel", 1), box(23, 15, 0.8, 0.8, 2.6, "steel", 3, 1.8), box(44, 6, 2.6, 4, 1.8, "steel", 1), box(-44, 14, 4, 2.6, 1.6, "steel", 3));
+  // Down in the trench under the rocket: the flame deflector's scorched wedge, low enough to climb
+  // over, so the trench stays a low road through.
+  const trench: Box[] = [rect(-4.5, -7, 4.5, 7, 0, 1.2, "steel", 7), rect(-4.5, -3, 4.5, 3, 1.2, 2.4, "steel", 7)];
   // Steps from the plateau up onto the deck's north and south edges, laid on the cliff without pressing it.
-  const plateau: Box[] = [...stairs(20, -30, "n", 3, LEVEL.launchPad - LEVEL.plateau, 1), ...stairs(-20, 30, "s", 3, LEVEL.launchPad - LEVEL.plateau, 1)];
+  const steps: Box[] = [...stairs(20, -30, "n", 3, LEVEL.launchPad - LEVEL.plateau, 1), ...stairs(-20, 30, "s", 3, LEVEL.launchPad - LEVEL.plateau, 1)];
+  // On the plateau round the deck. The water tower south-east: its ball on one column, the pump
+  // house at its foot and its main running toward the deck on sleepers.
+  const plateau: Box[] = [...sphereTank(wt.x, wt.z, wt.R, wt.y0, 9), box(wt.x, wt.z, 4, 4, wt.y0 + 1, "steel", 2)];
+  plateau.push(...building(wt.x + 12, wt.z + 4, 10, 7, WORKS.storey, { doors: ["s"], windows: ["w"], scale: WORKS }));
+  for (let x = 24; x < wt.x - 3; x += 14) {
+    plateau.push(rect(x, wt.z - 9.2, x + 11, wt.z - 7, 0.5, 2.7, "steel", 2));
+    for (const k of [x + 1, x + 9]) plateau.push(rect(k, wt.z - 9.6, k + 0.5, wt.z - 6.6, 0, 0.5, "wall", 1));
+  }
+  // The liquid hydrogen and oxygen south-west, lying in tanks of two sizes behind a bund broken
+  // at both ends and in its middle.
+  plateau.push(...lyingTank(-58, -24, lox.z, 4.5, 1, 9), ...lyingTank(-52, -30, lox.z + 13, 3.4, 1, 4));
+  for (const [a, b] of [[-62, -46], [-40, -20]]) plateau.push(rect(a, lox.z - 9, b, lox.z - 8.2, 0, 1.6, "wall", 1));
+  plateau.push(rect(-20.8, lox.z - 9, -20, lox.z + 6, 0, 1.6, "wall", 1));
+  // Gas bottle banks north of the deck, and the camera bunkers out round the pad, facing it.
+  plateau.push(...bottleBank(-44, -52, 14, 4), ...bottleBank(28, -56, 9, 3), ...bottleBank(-12, -70, 11, 2));
+  // Where the trench comes up at both ends, the plume's way out between blast berms of earth on
+  // scorched ground, each pair its own: the north one long and high, broken once on the east.
+  plateau.push(rect(-8, -118, 8, -80, 0, 0.06, "steel", 7), rect(-8, 80, 8, 112, 0, 0.06, "steel", 7));
+  plateau.push(...blastBerm(-15, -120, -82, 6), ...blastBerm(15, -116, -84, 5, [[-102, -96]]));
+  plateau.push(...blastBerm(-14, 84, 106, 4.5), ...blastBerm(14, 82, 114, 5.5, [[96, 101]]));
+  plateau.push(...cameraBunker(-70, -78, "e", 4.4, 3), ...cameraBunker(46, -96, "w", 3.6, 6), ...cameraBunker(-76, 104, "n", 5.2, 1.5), ...cameraBunker(30, 104, "n", 4, 9));
   return [
     [LEVEL.launchPad, deck, "loose"],
     [LEVEL.flameTrench, trench, "loose"],
-    [LEVEL.plateau, plateau, "loose"],
+    [LEVEL.plateau, steps, "loose"],
+    [LEVEL.plateau, plateau],
   ];
 }
 
@@ -2035,32 +2133,109 @@ function walkedRack(alongX: boolean, a: number, b: number, c: number, y: number,
 
 /**
  * The launch site's fuel depot (燃料基地), round (0, 0) in its frame on ground at 0, south of the
- * crawlerway: three spherical tanks in a row along its south side behind a low bund, two upright
- * tanks in its north-west, and pipe racks `rack` high running across it east to west and north to
- * south, crossing between the tanks; stairs climb onto both at their ends, so the racks' walkways
- * are a second floor over the yard. A pump house (the vault) and an office stand in its north,
- * the loading bay with a tanker left under its canopy in its east.
+ * crawlerway: three spherical tanks in a row along its south side behind a bund (`spheres`: each
+ * its x and radius, the hydrogen's the largest), two upright tanks of their own sizes in its
+ * north-west, and pipe racks `rack` high running across it east to west and north to south,
+ * crossing between the tanks; stairs climb onto both at their ends, so the racks' walkways are a
+ * second floor over the yard, and from the east one's end a catwalk runs on to the deck of the
+ * loading gantry over the tanker bays in its east. A pump house (the vault) and an office stand in
+ * its north, the flare stack (`flare`) over its north-west corner, the boil-off burned at its top,
+ * and a siding of tank wagons (`siding`) along its south behind the spheres.
  */
-const FUEL = { rack: 6, alongZ: -8, acrossX: 32, spheres: [-40, -12, 16], sphereZ: 28, R: 9, under: 2.6 } as const;
-function fuelDepot(): Box[] {
-  const { rack: Y, alongZ: rz, acrossX: rx, spheres, sphereZ: sz, R, under } = FUEL;
+const FUEL = {
+  rack: 6,
+  alongZ: -8,
+  acrossX: 32,
+  spheres: [[-40, 12], [-12, 9], [16, 7.5]],
+  sphereZ: 28,
+  under: 2.6,
+  flare: { x: -68, z: -44, top: 70 },
+  siding: { z: 52, x0: -76, x1: 104 },
+} as const;
+
+/** A tank wagon on the siding at x0..x0+len, its tank `r` in radius over a frame on bogies. */
+function tankWagon(x0: number, z: number, len: number, r: number, tint: number): Box[] {
+  return [rect(x0 + 1, z - 1.3, x0 + 3, z + 1.3, 0.15, 1, "steel", 1), rect(x0 + len - 3, z - 1.3, x0 + len - 1, z + 1.3, 0.15, 1, "steel", 1), rect(x0, z - 1.4, x0 + len, z + 1.4, 1, 1.4, "steel", 1), ...lyingTank(x0 + 0.5, x0 + len - 0.5, z, r, 1.4, tint).slice(0, 3)];
+}
+
+/**
+ * A cryogenic transfer line on its low supports from (ax, az) to (bx, bz) along one axis: two
+ * insulated pipes 1.8 m to their top in lengths of 9 m with a step between, and an expansion loop
+ * rising over it every `loop` metres, a frame to walk under.
+ */
+function cryoLine(ax: number, az: number, bx: number, bz: number, loop: number): Box[] {
+  const alongX = az === bz;
+  const [a, b] = alongX ? [Math.min(ax, bx), Math.max(ax, bx)] : [Math.min(az, bz), Math.max(az, bz)];
+  const c = alongX ? az : ax;
+  const span = (lo: number, hi: number, u0: number, u1: number, y0: number, y1: number, kind: BoxKind, tint: number) =>
+    alongX ? rect(lo, c + u0, hi, c + u1, y0, y1, kind, tint) : rect(c + u0, lo, c + u1, hi, y0, y1, kind, tint);
   const out: Box[] = [];
-  for (const x of spheres) out.push(...sphereTank(x, sz, R, under, 9));
-  // The bund in front of the spheres, broken twice to walk in among them.
-  for (const [a, b] of [[-54, -30], [-22, 6], [14, 30]]) out.push(rect(a, sz - R - 5, b, sz - R - 4.2, 0, 1.1, "wall", 1));
-  out.push(...tank(-48, -30, 7, 14, "s", 2), ...tank(-26, -30, 7, 14, "s", 2));
+  let next = a + loop;
+  for (let u = a; u < b; u += 12) {
+    const end = Math.min(u + 9, b);
+    out.push(span(u, end, -1.1, -0.1, 0.5, 1.5, "steel", 4), span(u, end, 0.1, 1.1, 0.7, 1.8, "steel", 4));
+    for (let k = u + 1; k < end; k += 4) out.push(span(k, k + 0.5, -1.4, 1.4, 0, 0.5, "wall", 1));
+    if (end + 3 >= next && end < b) {
+      out.push(span(end, end + 0.6, -1.1, 1.1, 0, 4.6, "steel", 4), span(end + 2.4, end + 3, -1.1, 1.1, 0, 4.6, "steel", 4), span(end, end + 3, -1.1, 1.1, 3.6, 4.6, "steel", 4));
+      next += loop;
+    }
+  }
+  return out;
+}
+
+function fuelDepot(): Box[] {
+  const { rack: Y, alongZ: rz, acrossX: rx, spheres, sphereZ: sz, under, flare: fl, siding: sd } = FUEL;
+  const out: Box[] = [];
+  for (const [x, R] of spheres) out.push(...sphereTank(x, sz, R, under, 9));
+  // The bund in front of the spheres, chest high, broken twice to walk in among them.
+  for (const [a, b] of [[-54, -30], [-22, 6], [14, 30]]) out.push(rect(a, 14, b, 14.8, 0, 1.5, "wall", 1));
+  out.push(...tank(-48, -30, 8, 18, "s", 2), ...tank(-27, -31, 5.5, 11, "e", 1));
   // The racks, crossing at (rx, rz), each with stairs up at its free end.
   out.push(...walkedRack(true, -60, 50, rz, Y, -1, [[rx - 2, rx + 2]]), ...stairs(-60, rz + 0.7, "w", 2.6, Y, 1));
   out.push(...walkedRack(false, -40, 20, rx, Y, -1, [[rz - 2, rz + 2]]), ...stairs(rx + 0.7, -40, "n", 2.6, Y, 1));
+  // The loading gantry over the tanker bays: its deck at the racks' height on six columns, the
+  // loading arms hanging from it, reached on a catwalk from the east rack's end.
+  out.push(...catwalk(49, rz + 2, 49, 14, Y, 2, 2));
+  out.push(rect(42, 14, 62, 34, Y - 0.3, Y, "slab", 1), rect(42, 14, 62, 14.15, Y, Y + 0.5, "steel", 2), rect(42, 33.85, 62, 34, Y, Y + 0.5, "steel", 2), rect(61.85, 14, 62, 34, Y, Y + 0.5, "steel", 2));
+  for (const x of [42.4, 61.6]) for (const z of [14.4, 24, 33.6]) out.push(box(x, z, 0.8, 0.8, Y - 0.3, "steel", 0));
+  for (const [x, z] of [[49, 20], [49, 28], [56, 20], [56, 28]]) out.push(box(x, z, 0.5, 0.5, Y - 0.3, "steel", 3, 3.8));
+  out.push(box(52, 24, 2.6, 9, 3.4, "steel", 9), box(52, 29.75, 2.6, 2.5, 3, "steel", 3));
   // The pump house and the office in the north.
   out.push(...building(8, -32, 16, 10, WORKS.storey, { doors: ["e", "s"], windows: ["n"], scale: WORKS }));
   out.push(...building(50, -30, 12, 9, WORKS.storey, { doors: ["w"], windows: ["s", "e"], scale: WORKS }));
-  // The loading bay: a canopy on four columns over a tanker and its cab.
-  out.push(rect(44, 14, 60, 34, 5.2, 5.5, "slab", 1));
-  for (const [x, z] of [[44.3, 14.3], [59.7, 14.3], [44.3, 33.7], [59.7, 33.7]]) out.push(box(x, z, 0.6, 0.6, 5.2, "steel", 2));
-  out.push(box(52, 24, 2.6, 9, 3.4, "steel", 9), box(52, 29.75, 2.6, 2.5, 3, "steel", 3));
-  // Cover about the yard: drums, crates and a row of barriers by the east gate.
-  out.push(box(-6, -18, 1.2, 1.2, 0.9, "crate"), box(-4.8, -18, 1.2, 1.2, 1.8, "crate"), box(20, -2, 2, 2, 2, "crate"), box(22, -2, 2, 2, 1.2, "crate"));
+  // The flare stack: its knock-out drum lying at its foot, the stack guyed by platforms every
+  // 12 m, the burner at its top scorched.
+  out.push(box(fl.x, fl.z, 2.6, 2.6, fl.top - 2, "steel", 2), box(fl.x, fl.z, 3.4, 3.4, fl.top, "steel", 7, fl.top - 2));
+  for (let y = 14; y < fl.top - 4; y += 12) out.push(box(fl.x, fl.z, 5, 5, y + 0.3, "steel", 0, y));
+  out.push(...lyingTank(fl.x + 4, fl.x + 18, fl.z + 6, 2, 0.8, 2));
+  // The siding behind the spheres: its rails, a wagon of each size left on it and a gap between,
+  // and the low loading platform along its north side.
+  for (const dz of [-0.8, 0.8]) out.push(rect(sd.x0, sd.z + dz - 0.06, sd.x1, sd.z + dz + 0.06, 0, 0.15, "steel", 2));
+  out.push(...tankWagon(-66, sd.z, 16, 1.6, 9), ...tankWagon(-48, sd.z, 16, 1.6, 9), ...tankWagon(-12, sd.z, 12, 1.4, 2), ...tankWagon(18, sd.z, 16, 1.6, 7));
+  out.push(rect(-60, sd.z - 4.2, -10, sd.z - 2, 0, 1.1, "slab", 1));
+  out.push(rect(68, sd.z - 1.4, 82, sd.z + 1.4, 1, 4.2, "steel", 1), rect(69, sd.z - 1.3, 71, sd.z + 1.3, 0.15, 1, "steel", 1), rect(79, sd.z - 1.3, 81, sd.z + 1.3, 0.15, 1, "steel", 1));
+  // North toward the crawlerway: the vaporizers, a grove of finned columns 8 m high that warm the
+  // gas, and the pumps' substation, its transformers behind a blast wall.
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) out.push(box(-44 + i * 3.4, -58 + j * 3.6, 1.4, 1.4, 8.2, "steel", 4), box(-44 + i * 3.4, -58 + j * 3.6, 2, 0.3, 7, "steel", 4, 1));
+  for (let j = 0; j < 3; j++) out.push(rect(-45, -58.3 + j * 3.6, -26.6, -57.7 + j * 3.6, 8.2, 8.8, "steel", 2));
+  for (const x of [-45, -27.2]) out.push(rect(x, -58.3, x + 0.6, -50.2, 8.2, 8.8, "steel", 2));
+  for (const [x, w] of [[30, 4], [37, 3.2], [43.4, 3.6]]) out.push(box(x, -62, w, 2.6, 2.9, "steel", 1), box(x, -60.3, w - 0.6, 0.6, 3.4, "steel", 2, 0.4));
+  out.push(rect(26, -57.6, 47, -56.8, 0, 2.6, "wall", 1), box(52, -63, 0.4, 0.4, 9, "steel", 2), box(26, -66, 0.4, 0.4, 9, "steel", 2), ...strand([26, 8.6, -66], [52, 8.6, -63], 0.1, 2));
+  // South-west past the fire station, the drum store: a roof on posts over pallets of drums.
+  out.push(rect(-96, 74, -70, 90, 4.2, 4.5, "slab", 1));
+  for (const [x, z] of [[-95.6, 74.4], [-83, 74.4], [-70.4, 74.4], [-95.6, 89.6], [-83, 89.6], [-70.4, 89.6]]) out.push(box(x, z, 0.5, 0.5, 4.2, "steel", 0));
+  for (const [x, z, h] of [[-91, 79, 1.9], [-87.6, 79, 1], [-78, 79, 1.9], [-91, 85, 1], [-80, 85, 1.9], [-76.6, 85, 1.9]]) out.push(box(x, z, 3, 3.6, h, "steel", h > 1 ? 0 : 3));
+  // The transfer line to the pad, west out of the yard and north to the crawlerway.
+  out.push(...cryoLine(-64, -14, -118, -14, 30), ...cryoLine(-122, -10, -122, -84, 30));
+  // East by the gate, the tanker park: bays between concrete dividers, two tankers waiting and a
+  // trailer left without its cab.
+  for (const z of [11, 19.5, 28, 36.5]) out.push(rect(78, z - 0.35, 96, z + 0.35, 0, 1.6, "wall", 1));
+  out.push(...tanker(86, 15.2), ...tanker(88, 23.7), box(85, 32.2, 6, 2.2, 3, "steel", 2, 1.3), box(85, 32.2, 6.5, 2.5, 1.3, "prop", PROP.bed));
+  // South past the siding, the fire station: its engine house and the hose tower over it.
+  out.push(...building(-18, 84, 18, 10, WORKS.storey, { doors: ["n", "e"], windows: ["s"], scale: WORKS }), box(-30, 84, 4, 4, 16, "steel", 0), box(-30, 84, 5, 5, 16.6, "slab", 1, 16));
+  // Cover about the yard: totes of additive, a foam trailer and a row of barriers by the east gate.
+  out.push(box(-6, -18, 1.2, 1.2, 1.15, "steel", 4), box(-4.8, -18, 1.2, 1.2, 2.3, "steel", 4), box(-6, -16.8, 1.2, 1.2, 1.15, "steel", 4));
+  out.push(box(20, -2, 4.2, 2.2, 2.4, "steel", 0), box(17.4, -2, 1.2, 0.4, 1.4, "steel", 1));
   out.push(box(66, -2, 0.65, 9, 1.1, "prop", PROP.barrier), box(-58, 22, 2.4, 6, 2.4, "steel", 2));
   return out;
 }
@@ -2709,23 +2884,23 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
     entry: { x: 75, z: 0, yaw: W },
     squads: [
       { name: "発射台の東", members: [{ kind: "heavy", x: 30, z: 12, face: E }, { kind: "grunt", x: 34, z: -10, face: E }] },
-      { name: "整備塔", members: [{ kind: "grunt", x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[0]), face: E }, { kind: "drone", x: -30, z: -12 }] },
-      { name: "発射台の西", members: [{ kind: "grunt", x: -34, z: 8, face: W }, { kind: "charger", x: -34, z: -8, face: N }] },
-      { name: "塔の上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -20, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), face: E }, { kind: "grunt", x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[3]), face: E }] },
+      { name: "整備塔", members: [{ kind: "grunt", x: LAUNCHPAD.tower.x + 3, z: 3, y: towerLevel(LAUNCHPAD.arms[0]), face: E }, { kind: "drone", x: -18, z: -20 }] },
+      { name: "発射台の西", members: [{ kind: "grunt", x: -46, z: 12, face: W }, { kind: "charger", x: -46, z: -12, face: N }] },
+      { name: "塔の上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: LAUNCHPAD.tower.x + 3, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), face: E }, { kind: "grunt", x: LAUNCHPAD.tower.x + 3, z: 3, y: towerLevel(LAUNCHPAD.arms[3]), face: E }] },
     ],
     bins: [
       { x: 26, z: -6 },
       { x: 22, z: 10 },
-      { x: -30, z: 10 },
+      { x: -46, z: 4 },
       { x: 40, z: 0 },
-      { x: -20, z: -3, y: towerLevel(LAUNCHPAD.arms[0]) },
-      { x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[2]) },
-      { x: -20, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), vault: true },
+      { x: LAUNCHPAD.tower.x + 3, z: -3, y: towerLevel(LAUNCHPAD.arms[0]) },
+      { x: LAUNCHPAD.tower.x + 3, z: 3, y: towerLevel(LAUNCHPAD.arms[2]) },
+      { x: LAUNCHPAD.tower.x + 3, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), vault: true },
     ],
     keyFrom: "assembly",
     loot: { weapon: [["lance", 1], ["maul", 1], ["talon", 1], ["pike", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 3], ["core", 2], ["reactor", 1]] },
     floor: [
-      { x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[4]), weapon: ["lance", 2] },
+      { x: LAUNCHPAD.tower.x + 3, z: 3, y: towerLevel(LAUNCHPAD.arms[4]), weapon: ["lance", 2] },
       { x: 30, z: 4, heal: "medkit" },
     ],
   },

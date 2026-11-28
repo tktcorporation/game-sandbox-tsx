@@ -40,13 +40,18 @@ parted into four high bays, work platforms along their walls in four tiers 9 m a
 stair tower in each bay and crossed by catwalks, a rocket half built on its launcher platform in
 the south-west bay, whose door stands open); and the launch pad at the plateau's west end over the
 sea (`launchpad`, 発射台, `launchpad()`, sized by `LAUNCHPAD`: a deck raised 4 m over the plateau,
-a rocket about 90 m high on a slab over the flame trench `炎の溝`, which runs under it as a low road,
-and the service tower, an open steel tower climbed inside to its top platform 95 m over the deck,
-its swing arms reaching the rocket), joined by the crawlerway (`運搬路` in `ROADS`, 30 m of gravel
+a rocket about 90 m high on the mobile launcher, a platform 7 m high on six pedestals over the
+flame trench `炎の溝`, which runs under it as a low road past a deflector's wedge, blast berms of earth
+at both its exits; the service tower, an open steel tower round a red lift shaft climbed inside to
+its top platform 105 m over the deck, its swing arms reaching the rocket, a hammerhead crane on
+top; on the plateau round it the water tower, the oxygen and hydrogen lying in tanks behind a bund,
+gas bottle banks and camera bunkers), joined by the crawlerway (`運搬路` in `ROADS`, 30 m of gravel
 between low banks, the crawler stopped on it, `crawler()`); the fuel depot south of the crawlerway
-(`fuel`, 燃料基地, `fuelDepot()`, sized by `FUEL`: three spherical tanks behind a low bund, two
-upright tanks, and pipe racks crossing it east to west and north to south whose walkways, 6 m up
-and climbed by stairs at their ends, are walked over the yard); and the tracking radar on a ridge
+(`fuel`, 燃料基地, `fuelDepot()`, sized by `FUEL`: three spherical tanks of three sizes behind a
+bund, two upright tanks, and pipe racks crossing it east to west and north to south whose walkways,
+6 m up and climbed by stairs at their ends, are walked over the yard and on to the loading
+gantry's deck; the flare stack 70 m high, a siding of tank wagons, and round it the transfer line
+to the pad, the tanker park, the vaporizers, a substation, the fire station and a drum store); and the tracking radar on a ridge
 in the plateau's north (`radar`, 追跡レーダー, `radar()`, sized by `RADAR`: three white radomes on
 the roofs of their equipment rooms along a walled ridge 14 m over the plateau, `追跡レーダーの尾根`,
 climbed by one road, `レーダーの坂`, and by rock steps up its west end). Control, assembly and pad
