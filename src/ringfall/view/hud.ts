@@ -182,6 +182,11 @@ export class Hud {
 
   /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
   /** Marks POIs that drop the hunt target on the raid map / minimap (and optional source tags). */
+  /** The nodes another player holds too: the map rings those of the player's, whose core a sortie sets out from. */
+  setJumps(ids: readonly string[]) {
+    this.map.jumps = ids;
+  }
+
   setGoalPois(ids: readonly string[], tags: readonly { poi: string; tag: string }[] = []) {
     this.map.goalPois = ids;
     this.map.goalTags = tags;

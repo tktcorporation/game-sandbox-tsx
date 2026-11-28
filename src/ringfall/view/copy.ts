@@ -38,7 +38,6 @@ export type TermId =
   | "returningAlive"
   | "arrivedAtWarehouse"
   | "attack"
-  | "forage"
   | "contest"
   | "revenge"
   | "attackRecord"
@@ -107,8 +106,6 @@ export const TERM = {
    * 【元】取り返す 【案】攻める — docs/ringfall/glossary.md (adopted).
    */
   attack: "攻める",
-  /** The island's own raid (glossary.md 漁り), as the departure's other way beside 攻める. */
-  forage: "漁る",
   /**
    * Contested coastal hub not yet held by anyone (TKT-204 案 A).
    * 【元】（なし） 【案】取り合う 【理由】誰と取り合う拠点かを先に見せる
@@ -411,6 +408,16 @@ export function jumpTitle(hub: string): string {
   return `${hub}の核から${TERM.attack}`;
 }
 
+/** The departure's line for a holding the signal station pointed at, after its owner's name: 「 · 補給所の核から攻める」. */
+export function reachFrom(hub: string): string {
+  return ` · ${hub}の核から${TERM.attack}`;
+}
+
+/** The same line while the player does not hold that node: 「 · 先に補給所を取る」. */
+export function reachAfter(hub: string): string {
+  return ` · 先に${hub}を取る`;
+}
+
 /** Back from the core's sortie: 「浄水場の核に戻った」. */
 export function jumpHome(hub: string): string {
   return `${hub}の核に戻った`;
@@ -503,11 +510,9 @@ export const MP_HOWTO_CARDS: readonly { title: string; body: string }[] = [
   },
   {
     title: TERM.attack,
-    // 【元】「攻める」で相手の拠点を選んで出撃。…／前線の拠点
-    // 【案】門の一覧を先に言う 【理由】攻めるリストが初日の入口だと分かる
-    // 【元】門の「攻める」に相手の拠点が一覧で出る。取れば…
-    // 【案】選ぶとその拠点へ短く攻めに行く、を足す 【理由】攻めは相手の島への短い出撃（holdings-raid.md）
-    body: `門の「${TERM.attack}」に別プレイヤーの陣地が一覧で出る。選ぶとその拠点へ短く攻めに行く。取れば${TERM.trophy}が増える。`,
+    // 【元】門の「攻める」に別プレイヤーの陣地が一覧で出る。選ぶとその拠点へ短く攻めに行く。取れば…
+    // 【案】自分の核から出る 【理由】攻めは、同じ拠点を持つ相手へ自分の核から出る形になった（sim/jump.ts）
+    body: `自分の拠点の核から、同じ拠点を持つ別プレイヤーを攻めに出られる。取れば${TERM.trophy}が増え、終わると核に戻る。`,
   },
   {
     title: TERM.captureCore,

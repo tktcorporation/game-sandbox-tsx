@@ -3621,52 +3621,24 @@ body.touch #camp-prompt {
   font-size: 16px;
   color: var(--mate-light);
 }
-/* The two ways out of the gate: 漁る (the island's raid) and 攻める (a sortie). */
-#depart-mode {
-  display: flex;
-  gap: 6px;
-}
-.screen #depart-mode button {
-  flex: 1 1 0;
-  margin: 0;
-  padding: 8px 12px;
-  border-radius: 0;
-  background: rgb(var(--paper-rgb) / 0.08);
-  color: var(--mist);
-  font-size: 16px;
-  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.14);
-  transform: none;
-}
-.screen #depart-mode button.on {
-  background: var(--hot);
-  color: var(--ink);
-  box-shadow: none;
-}
-.screen #depart-mode button[data-mode="attack"].on {
-  background: var(--rival);
-  color: var(--ink);
-}
-/* 攻める: the board shows the holding chosen, its owner's name over it; the island's starts are not offered. */
-#depart-target {
-  position: absolute;
-  left: 10px;
-  top: 10px;
+/* The holding the signal station pointed at: the core of the player's island that reaches it, or the node to take first. */
+#depart-reach {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   margin: 0;
   padding: 6px 10px;
   background: var(--plate);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
 }
-#depart-target[hidden] {
+#depart-reach[hidden] {
   display: none;
 }
-#depart-target .ico {
+#depart-reach .ico {
   width: 18px;
   height: 18px;
-  margin-right: 4px;
 }
 /* The core's sortie: the other players who hold the same node, a few to choose from, side by side. */
 #jump {
@@ -3713,30 +3685,7 @@ body.jumping #banner,
 body.jumping #touch {
   visibility: hidden;
 }
-#depart.attack #depart-points {
-  display: none;
-}
-#depart.attack #depart-list {
-  flex: 0 0 auto;
-}
-/* The 攻める list: other players' holdings with their defence, trophies and bonus. */
-#depart-attack {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 0;
-  flex: 1 1 auto;
-}
-#depart-attack[hidden] {
-  display: none;
-}
-#depart-attack-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 0;
-  overflow-y: auto;
-}
+/* A row of another player's holding (the core's sortie sheet): their defence, trophies and bonus. */
 .screen .attack-list .attack-row {
   display: flex;
   align-items: flex-start;

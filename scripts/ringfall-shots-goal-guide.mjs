@@ -74,6 +74,7 @@ pg.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`console: ${m.text()}`));
 
 await pg.addInitScript(([k, v]) => localStorage.setItem(k, v), [KEY, JSON.stringify(BASE)]);
+await pg.addInitScript(() => localStorage.setItem("ringfall.mpHowto.v1", "1"));
 await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
 await pg.waitForTimeout(400);
 await pg.click("#start");

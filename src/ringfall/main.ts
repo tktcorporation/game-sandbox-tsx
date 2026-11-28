@@ -190,8 +190,7 @@ addEventListener("keydown", (e) => {
   if (departing) {
     if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "KeyE") answerDepart(true);
     else if (e.code === "Escape" || e.code === "Backspace") answerDepart(false);
-    // Tab switches between the two ways out (漁る / 攻める); the arrows (and A / D) step the start or holding chosen.
-    else if (e.code === "Tab") picker.toggleMode();
+    // The arrows (and A / D) step the start chosen.
     else if (["ArrowRight", "ArrowDown", "KeyD"].includes(e.code)) picker.cycle(1);
     else if (["ArrowLeft", "ArrowUp", "KeyA"].includes(e.code)) picker.cycle(-1);
     e.preventDefault();
@@ -376,6 +375,7 @@ function goJump(t: SortieTarget) {
   parked = state;
   state = jumpOut(parked, sortieStart(t), hub.profile.routes);
   hud.setRivalNames([]);
+  hud.setJumps([]);
   showRun();
   hud.banner(attackGoal(t.title), `${TERM.relayBox}で帰る · 時間切れでも帰る`, false, 3.6);
   if (!touchMode && !bot && !manual) lock();
@@ -400,6 +400,7 @@ function backFromJump(s: State, won: Settlement) {
   state = island;
   // A holding taken is no target for a while: the cores a sortie may set out from are read again.
   state.jumps = hub.jumpNodes().map((id) => nodeIndex(id));
+  hud.setJumps(hub.jumpNodes());
   hud.setRivalNames(raidersFor().map((r) => [r.code, r.name] as [string, string]));
   hud.setTrophies(hub.profile.trophies ?? 0);
   showRun();
@@ -682,8 +683,7 @@ const hub = new Hub(loadedHub, () => {
       const db = (b.x - p.x) ** 2 + (b.z - p.z) ** 2;
       return da - db;
     })[0];
-    // やり返す keeps its holding chosen: a start of the player's island would make it a raid of the island.
-    if (near && !hub.sortieFocus) hub.choose(near.kind, near.id);
+    if (near) hub.choose(near.kind, near.id);
     askDepart(false);
     return;
   }
@@ -1020,18 +1020,9 @@ function start(go: Launch, from?: State) {
   sound.reset();
   // The names the squads that come in this raid go by, for its banners.
   // The AI players next door: the enemy's squads that come at the player's holdings go by their names (決定 B).
-  const raiders = go.sortie ? [] : raidersFor();
+  const raiders = raidersFor();
   hud.setRivalNames(raiders.map((r) => [r.code, r.name] as [string, string]));
-  state = go.sortie
-    ? // A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): played there alone, no battle of the island.
-      newRun(go.seed, kit, region, {
-        sortie: go.sortie,
-        routes: hub.profile.routes,
-        known: hub.profile.known,
-        stashRoom: stashRoom(hub.profile),
-        stashWant: wanted(hub.profile),
-      })
-    : newRun(go.seed, kit, region, {
+  state = newRun(go.seed, kit, region, {
         depots: hub.profile.depots,
         seen: hub.profile.seen,
         from: go.from,
@@ -1077,14 +1068,11 @@ function start(go: Launch, from?: State) {
   hud.setTrophies(hub.profile.trophies ?? 0);
   hud.bag.setProfile(hub.profile);
   hud.setGoalPois(state.goal ? poisWith(state.goal) : [], state.goal ? goalTags(state.goal) : []);
+  hud.setJumps(hub.jumpNodes());
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   // With a hunt goal: 「ダム湖に着いた。タイタンは発着場（○ m）」; else the entry / depot name.
   const hunt = state.goal ? huntSpot(state) : null;
-  if (go.sortie) {
-    const at = NODES[nodeIndex(go.sortie.id)];
-    const name = sortieOwnerName(go.sortie.owner);
-    hud.banner(attackGoal(`${name}の${at.name}`), `${TERM.relayBox}で帰る · 時間切れでも帰る`, false, 3.6);
-  } else if (hunt) {
+  if (hunt) {
     const metres = Math.round(dist2d(state.player.pos, hunt));
     hud.banner(landedIn(regionHere(state.player.pos).name), goalIsAt(hunt.label, hunt.place, metres), false, 3.6);
   } else {

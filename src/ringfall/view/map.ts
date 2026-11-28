@@ -463,6 +463,8 @@ export class IslandMap {
   remotePings: readonly { x: number; z: number }[] = [];
   /** POIs that drop the hunt target (目標); marked on the raid / departure / minimap. */
   goalPois: readonly string[] = [];
+  /** The nodes another player holds too (`Hub.jumpNodes()`): one the player holds is ringed in the other players' colour, a sortie sets out from its core. */
+  jumps: readonly string[] = [];
   /** Extra tags beside a goal mark when the source name is not the POI name (タイタン at 発着場). */
   goalTags: readonly { poi: string; tag: string }[] = [];
   /** The shape last given to the page, which sizes the map by it. */
@@ -1292,6 +1294,17 @@ export class IslandMap {
       }
       g.fill();
       g.stroke();
+      // A core a sortie sets out from: the player's node that another player holds too, ringed in their colour.
+      if (!this.mini && this.jumps.includes(poi.id) && hold(i) === "own") {
+        g.save();
+        g.lineWidth = 2.5 * dpr;
+        g.strokeStyle = alpha(RIVAL_CSS, 0.95);
+        g.setLineDash([5 * dpr, 4 * dpr]);
+        g.beginPath();
+        g.arc(p.x, p.y, r * 1.85, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+      }
       // 目標の材料が出る拠点: a light ring (raid map and minimap) so the hunt has a mark.
       if (this.goalPois.includes(poi.id) && (!this.plain || this.mini > 0)) {
         g.save();

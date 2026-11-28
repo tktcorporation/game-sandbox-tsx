@@ -2,8 +2,7 @@ import { PLAYER } from "../sim/config";
 import { attacksHtml, playAttack } from "./attacks";
 import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
-import { jumpNodes, jumpTargets, sortieStart, sortieTargets, type SortieTarget } from "../meta/sortie";
-import type { Start } from "../sim/state";
+import { jumpNodes, jumpTargets, sortieTargets, type SortieTarget } from "../meta/sortie";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { type Kit } from "../sim/state";
@@ -22,7 +21,7 @@ import { sfx } from "./sfx";
 import { rarityText } from "./palette";
 import { islandDay } from "../meta/days";
 import { collect } from "../meta/income";
-import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, attackGoal, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
+import { NEWS_KEEP, PLAN_GOAL, PHRASE, TERM, aiLabel, lostTodayLine, nextAttack, nextFront, nextFrontCapture, pushNews, relayOf, parcelsBackLine, shieldLine, trophyLine } from "./copy";
 import { TROPHY, clampTrophies, defenceWin, rivalTrophies, trophiesTable } from "../meta/trophies";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
@@ -48,9 +47,9 @@ export function teachFrontCapture(p: Profile): boolean {
   return ownNodes(islandHolds(p)) === 0;
 }
 
-/** The holding the camp suggests attacking: the first on the 攻める list (nearest trophies), or null. */
+/** The holding the camp suggests attacking: the first (nearest trophies) a sortie can set out to from a core the player holds, or null. */
 export function sortieTopFor(p: Profile): SortieTarget | null {
-  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings())[0] ?? null;
+  return sortieTargets(neighboursFor(p), aiSalt(), islandDay(p), p.trophies ?? TROPHY.start, p.raided ?? [], cachedHoldings()).find((t) => p.poiState[t.id]?.state === "own") ?? null;
 }
 
 /** The holding of whoever took one of the player's in this 島の知らせ line, to attack back (やり返す), or null. */
@@ -368,8 +367,6 @@ export interface Launch {
   entry: EntryId;
   /** 「攻める」hub chosen at the gate (TKT-218 star scoring). */
   attack?: { id: NodeId; owner: string; N: number; M: number };
-  /** A sortie to a neighbour's holding (docs/ringfall/holdings-raid.md): the raid is played there. */
-  sortie?: NonNullable<Start["sortie"]>;
 }
 
 /**
@@ -456,10 +453,11 @@ export class Hub {
    * Cleared once the departure opens on it.
    */
   focusPoi: PoiId | null = null;
-  /** The neighbour's holding the departure's 攻める list has chosen (a sortie), or null for a raid of the island. */
-  sortieFocus: { owner: string; id: NodeId } | null = null;
-  /** Whether the departure is set to 攻める (a sortie) and not to the island's raid: its side lists the holdings, and the confirm needs one chosen. */
-  attackMode = false;
+  /**
+   * The holding of another player the signal station pointed at (やり返す, an island's holdings): the
+   * departure names the core of the player's island a sortie to it sets out from. Gone once departed or turned back.
+   */
+  reach: { id: NodeId; ownerName: string } | null = null;
   /** The signal station's top section, which draws itself (`#hub-exped`). */
   private exped: SignalPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -682,7 +680,7 @@ export class Hub {
       return this.open("signal");
     }
     if (act === "revenge") {
-      // やり返す → 攻める一覧でその拠点を選んだ出撃（案 F）。
+      // やり返す → the departure, on the core of the player's island a sortie to that holding sets out from.
       if (arg && this.revenge(arg)) {
         sfx.click();
         this.close();
@@ -850,7 +848,6 @@ export class Hub {
     this.fixStart();
     if (needsOrganize(this.profile)) return TERM.organize;
     // 攻める with no holding to attack: nothing to depart to.
-    if (this.attackMode) return this.sortiePick() ? "" : PHRASE.noAttackTarget;
     if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
@@ -859,7 +856,6 @@ export class Hub {
   /** Whether the chosen start is the gate's own way in: walking out of the gate then starts the raid where the player stands. */
   walksOut(): boolean {
     this.fixStart();
-    if (this.sortiePick()) return false;
     return !this.from && this.region === HOME_REGION.id && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
   }
 
@@ -945,9 +941,6 @@ export class Hub {
   choose(kind: StartPoint["kind"], id: string): boolean {
     const p = this.profile;
     this.peeked = null;
-    // A start on the island's map is a raid of the island: the sortie chosen before goes.
-    this.sortieFocus = null;
-    this.attackMode = false;
     if (kind === "depot") {
       if (!departDepots(p).includes(id as PoiId)) return false;
       this.from = id as PoiId;
@@ -965,14 +958,15 @@ export class Hub {
   }
 
   /**
-   * やり返す (TKT-204 案 F): `arg` is the holding's owner and id (`owner|id`); chooses it on the
-   * 攻める list and opens the departure on it via `focusPoi` (same path as 地図で見る).
+   * やり返す, and an island's holding on the signal station: `arg` is the holding's owner and id
+   * (`owner|id`). A sortie sets out from the same node's core on the player's own island, so the
+   * departure opens on that node (`focusPoi`, as 地図で見る does) and names it (`reach`).
    */
   revenge(arg: string): boolean {
     const [owner, id] = arg.split("|") as [string, NodeId];
-    if (!owner || !id || !this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
-    this.sortieFocus = { owner, id };
-    this.attackMode = true;
+    const t = owner && id ? this.sortieTargets().find((x) => x.owner === owner && x.id === id) : null;
+    if (!t) return false;
+    this.reach = { id, ownerName: t.ownerName };
     this.focusPoi = id;
     return true;
   }
@@ -996,53 +990,13 @@ export class Hub {
     return jumpTargets(this.sortieTargets(), id);
   }
 
-  /** The holding chosen for a sortie, while it is still on the list. */
-  sortiePick(): SortieTarget | null {
-    const f = this.sortieFocus;
-    if (!f) return null;
-    return this.sortieTargets().find((t) => t.owner === f.owner && t.id === f.id) ?? null;
-  }
-
-  /** Chooses holding `id` of `owner` on the 攻める list for the next departure. False when it is not on the list. */
-  selectSortie(owner: string, id: NodeId): boolean {
-    if (!this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
-    this.sortieFocus = { owner, id };
-    this.attackMode = true;
-    this.peeked = null;
-    return true;
-  }
-
-  /**
-   * Sets the departure to 攻める (`on`: the holding chosen before, or the first on the list) or back
-   * to the island's raid (the holding chosen goes, the start on the map stands).
-   */
-  setAttackMode(on: boolean) {
-    this.attackMode = on;
-    this.peeked = null;
-    if (!on) this.sortieFocus = null;
-    else if (!this.sortiePick()) {
-      const first = this.sortieTargets()[0];
-      this.sortieFocus = first ? { owner: first.owner, id: first.id } : null;
-    }
-  }
-
   /**
    * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
    * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
    */
   launch(): Launch | null {
     this.fixStart();
-    // A sortie: the kit as for a way in (no depot's allowance), played at the holding; the island's start stays as it was.
-    const sortie = this.sortiePick();
-    if (sortie) {
-      const taken = takeKit(this.profile, this.startLoad(), null);
-      if (!taken) return null;
-      this.set(taken.profile);
-      this.load = emptyLoadout();
-      this.sortieFocus = null;
-      this.attackMode = false;
-      return { kit: taken.kit, region: poiRegion(sortie.id).id, seed: this.profile.seed, entry: this.profile.entry, sortie: sortieStart(sortie) };
-    }
+    this.reach = null;
     const from = this.from;
     const taken = takeKit(this.profile, this.startLoad(), from);
     if (!taken) return null;
@@ -1342,8 +1296,6 @@ export class Hub {
   departure(): { rows: [string, string][]; warn: string[] } {
     this.fixStart();
     const p = this.profile;
-    const sortie = this.sortiePick();
-    if (sortie) return { rows: [["装備", this.kitMarks()], [PLAN_GOAL, `${flagIcon(SIDE.rival)}${esc(attackGoal(sortie.title))}`]], warn: [] };
     const front = this.frontPick();
     const teach = teachFrontCapture(p) && front;
     const goal = esc(teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
@@ -1390,9 +1342,9 @@ export class Hub {
     // Each value is HTML: marks, and names escaped here.
     const rival = sortieTopFor(p);
     const plan: [string, string][] = [
-      // The front node to raid (first sessions name 核 · 制圧 on it), then the holding to attack.
+      // The front node to raid (first sessions name 核 · 制圧 on it), then the holding a core of the player's reaches.
       [
-        TERM.forage,
+        TERM.front,
         pick
           ? teachFrontCapture(p)
             ? `${esc(pick.name)} · ${TERM.captureCore}`

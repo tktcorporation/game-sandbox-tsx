@@ -115,15 +115,12 @@
 
     <section id="depart" class="screen" hidden>
       <div class="depart-inner" role="dialog" aria-labelledby="depart-title">
-        <div id="depart-board" class="depart-board"><canvas id="depart-map"></canvas><div id="depart-points"></div><p id="depart-target" hidden></p></div>
+        <div id="depart-board" class="depart-board"><canvas id="depart-map"></canvas><div id="depart-points"></div></div>
         <div class="depart-side">
           <h2 id="depart-title">出撃</h2>
-          <div id="depart-mode" role="tablist"><button type="button" role="tab" data-mode="forage"></button><button type="button" role="tab" data-mode="attack"></button></div>
           <p id="depart-start"></p>
           <p id="depart-hint" hidden></p>
-          <section id="depart-attack" hidden>
-            <div id="depart-attack-list" class="attack-list"></div>
-          </section>
+          <p id="depart-reach" hidden></p>
           <div id="depart-carry"></div>
           <dl id="depart-list"></dl>
           <p id="depart-warn" hidden></p>
