@@ -89,6 +89,10 @@ function parts(): { name: string; err: string | null; line: string }[] {
     const time = s.time;
     const robots = s.enemies.length;
     const o = jumpOut(s, target, []);
+    const lying = atCore([HOME]);
+    lying.ally.hp = 0;
+    lying.ally.down = 30;
+    const withDown = jumpOut(lying, target, []);
     const depot = DEPOTS[depotIndex(HOME)];
     for (let i = 0; i < 2 / TICK && o.phase === "play"; i++) step(o, idleInput(), false);
     const err = !o.sortie || o.sortie.node !== nodeIndex(HOME) || o.sortie.owner !== OWNER
@@ -103,6 +107,8 @@ function parts(): { name: string; err: string | null; line: string }[] {
               ? "the raid of the island moved while the sortie was played"
               : o.jumps.length
                 ? "a sortie offers a sortie"
+                : withDown.ally.active && withDown.ally.down !== 30
+                  ? "a teammate down at the core arrived standing"
                 : null;
     out.push({ name: "out", err, line: `the sortie starts ${dist2d(o.player.pos, depot).toFixed(1)} m from the depot with the bag carried; the island's clock stands at ${time.toFixed(1)} s` });
   }

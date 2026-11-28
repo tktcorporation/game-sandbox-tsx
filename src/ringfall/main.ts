@@ -298,7 +298,9 @@ function onEvent(e: GameEvent, s: State) {
     knownBefore = [...hub.profile.known];
     analysed = null;
     const before = hub.profile;
-    profileBefore = before;
+    // The results compare with the profile as the raid set out, before any sortie from its cores was settled.
+    profileBefore = jumpBefore ?? before;
+    jumpBefore = null;
     const settled = withJumps(settle(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before)))));
     settlement = settled;
     hub.reload(settled.profile);
@@ -345,6 +347,8 @@ function onEvent(e: GameEvent, s: State) {
 let parked: State | null = null;
 /** What the sorties from this raid's cores won (`settleSortie()`), for its results. */
 let jumpWon: Settlement[] = [];
+/** The profile before the first of this raid's sorties was settled, for its results. */
+let jumpBefore: Profile | null = null;
 const jumpSheet = new JumpSheet((t) => {
   paused = false;
   if (t) goJump(t);
@@ -384,6 +388,7 @@ function goJump(t: SortieTarget) {
 /** The sortie from a core ended: what it won is settled at once, and the player is back at the core a moment later. */
 function endJump(s: State) {
   const before = hub.profile;
+  jumpBefore ??= before;
   const won = settleSortie(before, s, rivalTrophiesLookup(before.trophies ?? TROPHY.start, trophiesTable(neighboursFor(before))));
   jumpWon.push(won);
   hub.update(won.profile);
@@ -418,8 +423,15 @@ function withJumps(st: Settlement): Settlement {
   const sum = (f: (t: NonNullable<Settlement["trophies"]>) => number | undefined) => [...trop, ...(st.trophies ? [st.trophies] : [])].reduce((n, t) => n + (f(t) ?? 0), 0);
   const takenRival = [...won.flatMap((w) => w.takenRival ?? []), ...(st.takenRival ?? [])];
   const winBonus = won.reduce((n, w) => n + (w.winBonus ?? 0), 0) + (st.winBonus ?? 0);
+  // What the sorties brought to the stash (their depots' sends, the attack's reward, what did not fit) is listed with the raid's.
+  const seized = [...won.flatMap((w) => w.seized ?? []), ...(st.seized ?? [])];
+  const pending = [...won.flatMap((w) => w.pending), ...st.pending];
   return {
     ...st,
+    home: [...won.flatMap((w) => w.home), ...st.home],
+    sold: pending,
+    pending,
+    ...(seized.length ? { seized } : {}),
     ...(trop.length
       ? {
           trophies: {
@@ -1001,6 +1013,7 @@ function start(go: Launch, from?: State) {
   kit = go.kit;
   parked = null;
   jumpWon = [];
+  jumpBefore = null;
   region = go.region;
   settlement = null;
   profileBefore = null;
