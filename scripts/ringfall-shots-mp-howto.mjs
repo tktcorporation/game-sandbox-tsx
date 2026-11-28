@@ -53,8 +53,6 @@ const SAVE = {
   ],
   pending: [],
   goal: null,
-  freedAt: {},
-  threat: 0,
   parcels: [],
   hideout: { infirmary: 1, workbench: 1, radio: 1, pouch: 1, storage: 1 },
 };

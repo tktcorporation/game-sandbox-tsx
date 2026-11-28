@@ -1749,7 +1749,7 @@ lap("island");
 {
   const modGame = {
     v: 28, cash: 2400, stash: [], raids: 8, extracted: 6, time: 5000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 2468, day: 9,
-    depots: ["supply"], threat: 0, known: ["leech", "hush", "grip", "medic", "probe", "damper"], freedAt: { supply: 3 },
+    depots: ["supply"], known: ["leech", "hush", "grip", "medic", "probe", "damper"],
     hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
     poiState: { supply: { state: "freed", lastVisit: 8, since: 0 } },
   };
@@ -1770,20 +1770,9 @@ lap("island");
     const pg = await withProfile(ctx, modGame);
     await toCamp(pg, phone);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
-    // 強度 is not chosen at camp stations (契約板・地図の机 deleted); departure / raid show freedAt on the map.
-    await openDepart(pg);
-    await departUp(pg);
-    if (await pg.locator("#depart .hub-threat, #depart [data-act=threat], #hub-side .hub-threat").count()) errors.push("threat: a camp screen still offers a threat of its own");
-    await pg.locator("#depart-map").scrollIntoViewIfNeeded();
-    await pg.screenshot({ path: tag("80-depart-threat-best.png", "m30-depart-threat-best.png") });
-    await pg.keyboard.press("Escape");
-    await pg.evaluate(() => window.advanceTime(200));
     if (phone) await rideOut(pg, cdp);
     else await walkOutOfGate(pg);
     await pg.evaluate(() => window.ringfallStep(1500));
-    const r0 = await readOf(pg);
-    // Island liberation / cycle 強度 is gone: profile raids play at 0 (no 「強度 N」 on the card).
-    if (r0.threat !== 0 || /強度/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
     await pg.evaluate(() => window.ringfallMods.wear(["leech", "scrambler", "capacitor"]));
     await pg.evaluate(() => window.advanceTime(100));
     const chips = await pg.locator("#mods i").allTextContents();
@@ -1822,7 +1811,7 @@ lap("island");
     await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
     const r2 = await readOf(pg);
     const cards = await pg.locator("#home .analyse [data-analyse]").count();
-    if (r2.screen !== "results" || r2.settled?.threat !== 0 || r2.settled?.analysable?.length !== 3 || cards !== 3) errors.push(`mods: the results offer ${JSON.stringify(r2.settled && { threat: r2.settled.threat, analysable: r2.settled.analysable })} (${cards} cards)`);
+    if (r2.screen !== "results" || r2.settled?.analysable?.length !== 3 || cards !== 3) errors.push(`mods: the results offer ${JSON.stringify(r2.settled && { threat: r2.settled.threat, analysable: r2.settled.analysable })} (${cards} cards)`);
     await pg.locator("#home .analyse").scrollIntoViewIfNeeded().catch(() => undefined);
     await pg.screenshot({ path: tag("83-results-analysis.png", "m33-results-analysis.png") });
     const card = "#home .analyse [data-analyse=scrambler]";

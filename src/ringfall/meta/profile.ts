@@ -1,4 +1,4 @@
-import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { parseAttacks, type Attack } from "./attacks";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
@@ -41,7 +41,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 56;
+  v: 57;
   cash: number;
   stash: Item[];
   raids: number;
@@ -75,13 +75,6 @@ export interface Profile {
   poiState: Island;
   /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
   known: ModKind[];
-  /**
-   * Kept for save compat / map (`freedAt`). Island liberation / cycle 強度 is gone (v43);
-   * raids play at 強度 0 unless a start names `threat` (sim gate / tests).
-   */
-  threat: number;
-  /** The highest 強度 each POI was freed at. */
-  freedAt: Partial<Record<PoiId, number>>;
   /** The camp's factory's level (`FACTORY`): 0 is the factory the camp starts with. */
   factory: number;
   /** What the last raid took out of the stash, so the shelves pick it again while the stash still holds it (`recallLoadout()`). */
@@ -205,7 +198,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 56,
+    v: 57,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -223,8 +216,6 @@ export function newProfile(seed = 1): Profile {
     since: 0,
     poiState,
     known: [...MOD_START],
-    threat: 0,
-    freedAt: {},
     factory: 0,
     lastKit: null,
     logSeq: 0,
@@ -243,12 +234,6 @@ export function newProfile(seed = 1): Profile {
   };
 }
 
-
-/**
- * The 強度 the next raid plays at. Island liberation / cycle is gone (v43): always 0 for a
- * profile. A start may still name `threat` for tests and the sim gate.
- */
-export const raidThreat = (_p?: unknown) => 0;
 
 /** The seed of the raid after one started from `seed`. */
 export const nextSeed = (seed: number) => ((Math.imul(seed + 1, 1103515245) + 12345) >>> 8) & 0xffff;
@@ -583,8 +568,6 @@ export interface Settlement {
   income: number;
   /** Credits for the nodes the raid took after its first, got off alive (`MOMENTUM.spoils`); left out, none. */
   spoils?: number;
-  /** The 強度 the raid was played at. */
-  threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
   /**
@@ -807,9 +790,8 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     spent.add(i);
   }
   const day = awayRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
-  // Overnight change first (freedAt) while today's island still holds the stash packing.
+  // Overnight change first, while today's island still holds the stash packing.
   const change = raidChange(p, day);
-  const threat = s.threat ?? 0;
   const { profile, pending } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
   // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
@@ -827,8 +809,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e))
       : [];
   const entries = knownEntries([...p.entries, ...learned]);
-  const freedAt = { ...p.freedAt };
-  for (const id of change.gained) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
   // Aid parcels left / taken this raid (ux-design C2): keep local until the island server answers.
   // `LOCAL_AID` survives parseProfile when sync never ran (Codex: empty code was dropped).
   const takenIds = new Set(s.takenParcels ?? []);
@@ -841,7 +821,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
     ];
   }
-  const settled = { ...profile, freedAt, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, islandDay(p)) } : {}) };
+  const settled = { ...profile, entries, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: awayRaid ? p.seen : encodeSeen(s.seen), parcels, incursionTaken: [], ...(sortieRaid && s.attack && (s.stats.captured ?? []).includes(s.attack.id) ? { raided: recordRaid(p.raided ?? [], s.attack.owner, s.attack.id, islandDay(p)) } : {}) };
   // Apply the same overnight pass once the raid's haul is on today's island.
   const { profile: night } = applyRaid(settled, day);
   // Trophy (TKT-218): 「攻める」star score, then overnight / other contested moves (★★ remote).
@@ -917,7 +897,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     ...change,
     income,
     ...(spoils > 0 && { spoils }),
-    threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
     ...(tropMoved
       ? {
@@ -1134,6 +1113,7 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v53 and older keep no record of the sorties on the holdings; v54 adds `attacks` (攻められた記録).
  * v54 and older may hold `expeditions` / `incoming` (遠征, removed), which v55 drops.
  * v55 and older may have built the 作業台 or the 無線機 (removed): v56 drops them and pays back what their levels took (`REMOVED_MODULES`).
+ * v56 and older may hold a 強度 and the best each POI was freed at (`threat` / `freedAt`, removed): v57 drops them.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 /**
@@ -1145,7 +1125,7 @@ const REMOVED_MODULES: Record<string, number[]> = { workbench: [0, 1280, 9080], 
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1182,9 +1162,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const v17 = typeof o.v === "number" && o.v >= 17;
   const v19 = typeof o.v === "number" && o.v >= 19;
   const v20 = typeof o.v === "number" && o.v >= 20;
-  const fa = (v17 && o.freedAt && typeof o.freedAt === "object" ? o.freedAt : {}) as Record<string, unknown>;
-  const freedAt: Partial<Record<PoiId, number>> = {};
-  for (const { id } of POIS) if (Number.isInteger(fa[id])) freedAt[id] = Math.max(0, Math.min(THREAT.max, fa[id] as number));
   // A weapon keeps its starter mark only as one of the starter weapons; the others' marks are dropped.
   const asItem = (i: Item): Item => (i.t === "weapon" ? { t: "weapon", kind: i.kind, rarity: i.rarity, ...(i.starter === true ? { starter: true as const } : {}) } : i);
   const items = o.stash.map(migrate).filter(ok).map(asItem);
@@ -1232,7 +1209,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 56,
+    v: 57,
     cash: Math.max(0, Math.floor(o.cash)) + refund,
     stash,
     raids,
@@ -1266,8 +1243,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     attackedAt: typeof o.v === "number" && o.v >= 51 && Number.isFinite(o.attackedAt) ? Math.max(0, o.attackedAt as number) : 0,
     // v43: drop cycle / cycleDay / liberations (島の解放) — island never resets.
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
-    threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
-    freedAt,
   };
 }
 

@@ -56,14 +56,14 @@ import { META } from "../src/ringfall/sim/config";
 import { fireRange } from "../src/ringfall/sim/awareness";
 import { nextSeed } from "../src/ringfall/meta/profile";
 import { raidDay, unfreeable } from "../src/ringfall/meta/island";
-import { MOD, MOD_KINDS, MOD_START, MODS, RETURN, THREAT, type ModKind } from "../src/ringfall/sim/config";
+import { MOD, MOD_KINDS, MOD_START, MODS, type ModKind } from "../src/ringfall/sim/config";
 import { binMod, robotMod } from "../src/ringfall/sim/mods";
 import { Bot } from "../src/ringfall/sim/bot";
 import { searchFor } from "../src/ringfall/sim/world";
 import { healTime, tacticalCooldown } from "../src/ringfall/sim/player";
 import { helpTime, reviveTime } from "../src/ringfall/sim/ally";
 import { shoot } from "../src/ringfall/sim/combat";
-import { analyse, factoryNeeded, raidThreat, recallLoadout, wanted } from "../src/ringfall/meta/profile";
+import { analyse, factoryNeeded, recallLoadout, wanted } from "../src/ringfall/meta/profile";
 import { raidClock, strengthFor } from "../src/ringfall/sim/state";
 import { pacing, type Pool } from "./ringfall-pacing";
 import { movementLines } from "./ringfall-movement";
@@ -2151,7 +2151,7 @@ function checkStrength(): string | null {
         const mine = packs.filter((q) => regionHere(q.patrol[0]).id === r.id).length;
         if (mine !== Math.min(l.packs[r.id], regionPacks(r.id))) return `strength scenario: a raid at level ${n} flies ${mine} packs in ${r.id}, not ${l.packs[r.id]}`;
       }
-      // At threat 0 plates are the garrisons' (by their node's tier) and the raiders': a roaming squad or a pack wears none.
+      // Plates are the garrisons' (by their node's tier) and the raiders': a roaming squad or a pack wears none.
       const plain = s.enemies.filter((e) => e.poi < 0 && !e.elite && (s.squads[e.squad]?.roam || s.squads[e.squad]?.pack));
       if (plain.some((e) => e.plate > 0)) return `strength scenario: a roaming robot wears a plate at level ${n} (seed ${seed})`;
       if (s.enemies.some((e) => e.poi >= 0 && e.plate > 0 && e.plate !== Math.max(TIER[POIS[e.poi].id as NodeId] ?? 0, 1))) return `strength scenario: a garrison's robot wears a plate not of its node's tier at level ${n} (seed ${seed})`;
@@ -3474,12 +3474,16 @@ function withoutWalkers(s: State): State {
  * walking over them or by the use key; only a raid got off alive may analyse one.
  */
 function checkMods(): string | null {
+  /** How many times a raid's own odds of a part the scenario's raids are played at. */
+  const RICH = 2.5;
   if (MOD_START.length !== 6 || MOD_KINDS.length < 18) return `mod scenario: ${MOD_START.length} kinds known from the start of ${MOD_KINDS.length}`;
   // The same raid with parts and without: the bot leaves the parts lying, and every random number and id is drawn alike.
   let dropped = 0;
   // Played one after the other: each raid starts with the hunters' fields empty, as a raid of the tables does.
   const play = (seed: number, region: RegionId, noMods: boolean) => {
-    const s = newRun(seed, starterKit(), region, { threat: THREAT.max, noMods });
+    const s = newRun(seed, starterKit(), region, { noMods });
+    // Parts more often than a raid lays them, so two raids are sure to show one.
+    s.modOdds *= RICH;
     const bot = new Bot(SKILLS[2], 7);
     let prev = false;
     while (s.time < 420 && s.phase !== "done") {
@@ -3497,14 +3501,15 @@ function checkMods(): string | null {
     if (look(a) !== look(b)) return `mod scenario: a ${region} raid (seed ${seed}) with mod parts lying about played out unlike the same raid without them`;
     if (a.player.mods.length) return "mod scenario: the bot put a mod part on";
   }
-  if (!dropped) return "mod scenario: no mod part turned up in two bot raids at the top threat";
-  // Bins hold only known kinds, robots any; more of them at a higher threat; the same for the same seed.
+  if (!dropped) return "mod scenario: no mod part turned up in two bot raids with parts laid thick";
+  // Bins hold only known kinds, robots any; more of them the higher the raid's odds; the same for the same seed.
   let low = 0;
   let high = 0;
   const robotKinds = new Set<string>();
   for (let seed = 1; seed <= 40; seed++) {
     const s0 = newRun(seed, starterKit(), "reservoir", { known: ["leech", "hush"] });
-    const s5 = newRun(seed, starterKit(), "reservoir", { threat: 5, known: ["leech", "hush"] });
+    const s5 = newRun(seed, starterKit(), "reservoir", { known: ["leech", "hush"] });
+    s5.modOdds *= RICH;
     for (const b of s0.bins) {
       const m = binMod(s0, b);
       if (m) low++;
@@ -3518,17 +3523,18 @@ function checkMods(): string | null {
       if (m) robotKinds.add(m);
     }
   }
-  if (!(low > 0) || !(high > low * 1.8)) return `mod scenario: ${low} bins hold a part at threat 0 and ${high} at threat 5`;
+  if (!(low > 0) || !(high > low * 1.8)) return `mod scenario: ${low} bins hold a part and ${high} with parts laid thick`;
   if (![...robotKinds].some((k) => !MOD_START.includes(k as ModKind))) return "mod scenario: robots never drop a kind the profile does not know";
   // Robots drop theirs where they fall, under an id of their own.
   {
-    const s = newRun(9, starterKit(), "reservoir", { threat: 5 });
+    const s = newRun(9, starterKit(), "reservoir");
+    s.modOdds *= RICH;
     const e = s.enemies.find((o) => robotMod(s, o));
-    if (!e) return "mod scenario: no robot of a threat-5 raid carries a part";
+    if (!e) return "mod scenario: no robot of a raid with parts laid thick carries a part";
     kill(s, e, false);
     const l = s.loot.find((o) => o.kind === "mod");
     if (!l || l.mod !== robotMod(s, e) || l.id >= 0) return "mod scenario: a robot carrying a part fell without dropping it";
-    const plain = newRun(9, starterKit(), "reservoir", { threat: 5, noMods: true });
+    const plain = newRun(9, starterKit(), "reservoir", { noMods: true });
     kill(plain, plain.enemies.find((o) => o.id === e.id)!, false);
     if (plain.rng !== s.rng || plain.nextId !== s.nextId) return "mod scenario: a robot's part drew on the raid's numbers";
   }
@@ -3696,67 +3702,18 @@ function checkMods(): string | null {
 }
 
 /**
- * The threat: 0 is the island's own raid; higher changes times and plates; a POI freed records
- * that raid's threat in `freedAt`. Profile `raidThreat()` is always 0 (島の解放 / cycle gone);
- * a start may still name `threat` for tests. Saves before v17 load at threat 0.
+ * The 強度 is gone (v57): a save that kept one, or the best each POI was freed at, loads without
+ * them, and the mod kinds it knew load as before (the starting kinds for a save from before v17).
  */
 function checkThreat(): string | null {
-  // The island at each of the enemy's strengths: the player holding none, three or all of the nodes.
-  for (const k of [0, 3, NODES.length]) {
-    const island = holds({ poiState: { ...blankIsland(), ...Object.fromEntries(NODES.slice(0, k).map((o) => [o.id, { state: "own" as const }])) } });
-    const n = strengthFor(k);
-    const l = STRENGTH.levels[n];
-    for (const seed of [5, 91]) {
-      const plain = newRun(seed, starterKit(), "reservoir", { island });
-      const zero = newRun(seed, starterKit(), "reservoir", { island, threat: 0 });
-      if (zero.reinforceT !== l.reinforce.first || zero.raiderT !== l.raiders || raidClock(n, 0).every !== l.reinforce.every) return `threat scenario: threat 0 at strength ${n} waits ${zero.reinforceT} s and ${zero.raiderT} s`;
-      if (JSON.stringify([plain.enemies, plain.squads, plain.rng, plain.nextId]) !== JSON.stringify([zero.enemies, zero.squads, zero.rng, zero.nextId])) return `threat scenario: threat 0 at strength ${n} is not the island's raid`;
-      const top = newRun(seed, starterKit(), "reservoir", { island, threat: THREAT.max });
-      const clock = raidClock(n, THREAT.max);
-      if (!(top.reinforceT < l.reinforce.first) || !(clock.every < l.reinforce.every) || !(top.raiderT < l.raiders) || top.reinforceT !== clock.first || top.raiderT !== clock.raiders) return `threat scenario: threat ${THREAT.max} at strength ${n} waits ${top.reinforceT} s and ${top.raiderT} s`;
-      const plated = (s: State) => s.enemies.filter((e) => (e.kind === "grunt" || e.kind === "heavy") && !e.elite && e.plate > 0).length;
-      if (!(plated(top) > plated(zero))) return `threat scenario: threat ${THREAT.max} at strength ${n} plates ${plated(top)} robots, threat 0 ${plated(zero)}`;
-    }
-  }
-  // Robots answer shots from afar from further at a higher threat.
-  const answer = (threat: number) => {
-    const s = newRun(5, starterKit(), "reservoir", { threat });
-    const g = s.enemies.find((e) => e.kind === "grunt")!;
-    s.squads[g.squad].shotT = 5;
-    return fireRange(s, g);
-  };
-  if (answer(0) !== RETURN.range.grunt || !(answer(THREAT.max) > answer(0))) return `threat scenario: a grunt answers from ${answer(0)} m at threat 0 and ${answer(THREAT.max)} m at threat ${THREAT.max}`;
-  // The best threat each POI was freed at, kept through a later freeing at a lower one.
-  {
-    let p = newProfile(6);
-    const freeSupply = (threat: number) => {
-      const s = newRun(p.seed, starterKit(), "reservoir", { threat, island: holds(p) });
-      s.outcome = "extracted";
-      s.stats.cleared = [SUPPLY];
-      s.stats.captured = ["supply"];
-      return settle({ ...p, threat }, s);
-    };
-    p = freeSupply(4).profile;
-    if (p.freedAt.supply !== 4) return `threat scenario: freeing the supply depot at threat 4 recorded ${p.freedAt.supply}`;
-    p = { ...p, poiState: { ...p.poiState, supply: { state: "foe" } } };
-    p = freeSupply(1).profile;
-    if (p.freedAt.supply !== 4 || p.freedAt.quarry !== undefined) return `threat scenario: a later freeing at threat 1 left the record ${JSON.stringify(p.freedAt)}`;
-  }
-  // raidThreat is always 0 (島の解放 gone); profile.threat is save-compat only.
-  {
-    const p0 = newProfile();
-    if (raidThreat(p0) !== 0) return `threat scenario: a fresh profile plays at 強度 ${raidThreat(p0)}`;
-    if (raidThreat({ ...p0, threat: 4 }) !== 0) return `threat scenario: profile.threat still drives raidThreat (${raidThreat({ ...p0, threat: 4 })})`;
-  }
-  // Saves: before v17 a profile knows the starting kinds, plays at threat 0 and has freed nothing at a threat; a v17 one keeps them.
-  const v16 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 16, known: undefined, threat: undefined, freedAt: undefined })));
-  if (!v16 || v16.v !== SAVE_V || v16.known.join() !== MOD_START.join() || v16.threat !== 0 || Object.keys(v16.freedAt).length) return `threat scenario: a v16 save loaded as ${JSON.stringify(v16 && { v: v16.v, known: v16.known, threat: v16.threat, freedAt: v16.freedAt })}`;
-  const v16junk = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 16, known: ["stock"], threat: 4, freedAt: { supply: 5 } })));
-  if (!v16junk || v16junk.known.includes("stock") || v16junk.threat !== 0 || v16junk.freedAt.supply !== undefined) return "threat scenario: a v16 save took fields it could not have had";
-  const v17 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), known: [...MOD_START, "stock"], freedAt: { supply: 3, pad: 9 as number }, threat: 4 })));
-  if (!v17 || v17.threat !== 4 || !v17.known.includes("stock") || v17.freedAt.supply !== 3 || v17.freedAt.pad !== THREAT.max) return `threat scenario: a v17 save loaded as ${JSON.stringify(v17 && { known: v17.known, threat: v17.threat, freedAt: v17.freedAt })}`;
-  const weird = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), known: ["nope", "stock", "stock"], threat: 99 })));
-  if (!weird || weird.threat !== THREAT.max || weird.known.filter((k) => k === "stock").length !== 1 || weird.known.includes("nope" as ModKind)) return "threat scenario: a v17 save with bad fields was not cleaned";
+  const v16 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 16, known: undefined })));
+  if (!v16 || v16.v !== SAVE_V || v16.known.join() !== MOD_START.join()) return `threat scenario: a v16 save loaded as ${JSON.stringify(v16 && [v16.v, v16.known])}`;
+  const v16junk = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 16, known: ["stock"] })));
+  if (!v16junk || v16junk.known.includes("stock")) return "threat scenario: a v16 save kept fields it never had";
+  const v56 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 56, known: [...MOD_START, "stock"], threat: 4, freedAt: { supply: 3 } })));
+  if (!v56 || v56.v !== SAVE_V || "threat" in v56 || "freedAt" in v56 || !v56.known.includes("stock")) return `threat scenario: a v56 save with a 強度 loaded as ${JSON.stringify(v56 && [v56.v, Object.keys(v56).filter((k) => k === "threat" || k === "freedAt"), v56.known])}`;
+  const weird = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), known: ["nope", "stock", "stock"] })));
+  if (!weird || weird.known.filter((k) => k === "stock").length !== 1 || weird.known.includes("nope" as ModKind)) return "threat scenario: a save with junk in its known kinds loaded with it";
   return null;
 }
 /**
@@ -3979,7 +3936,7 @@ function checkFront(): string | null {
  * landed and bound for it, which takes it back when nobody holds it. Nodes stay as the battle ended.
  */
 /** The profile's version (`Profile.v`): what a new profile is, and what every older save loads as. Raised here with each migration. */
-const SAVE_V = 56;
+const SAVE_V = 57;
 
 /** A new profile on an island all the enemy's: a new island starts with the four shores (`ROUTE_SHORES`) the player's, which the scenarios about one node's taking leave out. */
 const bareProfile = (seed?: number): Profile => ({ ...newProfile(seed), poiState: blankIsland() });
@@ -4083,7 +4040,6 @@ function checkPushPull(): string | null {
     const after = settle(endP, nr);
     if ((after as { liberated?: unknown }).liberated) return "titan: settle still reports liberation";
     if (after.profile.factory !== 3 || playerNodes(after.profile).length === 0) return `titan: settle reset the island (factory ${after.profile.factory}, nodes ${playerNodes(after.profile).length})`;
-    if (raidThreat(after.profile) !== 0) return `titan: raidThreat after titan kill is ${raidThreat(after.profile)}`;
     // A v42 save with cycle fields loads as v47 without them; island standings stay.
     const legacy = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 42, cycle: 3, cycleDay: 10, liberations: [20, 18] })));
     if (!legacy || legacy.v !== SAVE_V || "cycle" in legacy || "cycleDay" in legacy || "liberations" in legacy) return `titan: v42 liberation fields loaded as ${JSON.stringify(legacy && { v: legacy.v })}`;

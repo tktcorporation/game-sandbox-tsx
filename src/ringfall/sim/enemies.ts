@@ -17,7 +17,7 @@ import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
-import { activePacks, garrison, netPlated, poiTier, rivalDefenceSquad, tierPlated } from "./island";
+import { activePacks, garrison, poiTier, rivalDefenceSquad, tierPlated } from "./island";
 import { rivalOf } from "./holds";
 import { modScale } from "./mods";
 import { mix, rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
@@ -76,11 +76,10 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   const pick = o.hashed ? hashed : o.roam ? roamRand : rand;
   const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? pick(s) * Math.PI * 2;
-  // A raised threat plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
   const plain = (kind === "grunt" || kind === "heavy") && !o.elite;
   // A garrison's grunts and heavies wear its node's tier of plate, picked from the seed and the robot.
   const tierPlate = plain && o.tier && tierPlated(s.seed, id, o.tier) ? o.tier : 0;
-  const plate = Math.max(o.plate ?? (plain && netPlated(s.seed, id, s.threat ?? 0) ? 1 : 0), tierPlate);
+  const plate = Math.max(o.plate ?? 0, tierPlate);
   const e: Enemy = {
     id,
     kind,
