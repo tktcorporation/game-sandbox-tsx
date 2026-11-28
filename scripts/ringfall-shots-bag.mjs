@@ -54,7 +54,7 @@ export async function bagShots({ browser, port, out, errors }) {
     // `swap`: a gyro picked up with a full bag, a parts and the fuse left behind for it.
     const haul = swap ? [kind, kind, "board", "parts", "gyro"] : [kind, kind, "board", "parts", "parts", "fuse"];
     const at = ["relay", null];
-    await pg.evaluate(([h, a]) => window.ringfallBag(h, { at: a, keys: ["relay"] }), [haul, at]);
+    await pg.evaluate(([h, a]) => window.ringfallBag(h, { at: a }), [haul, at]);
     await pg.evaluate(() => window.ringfallMods.wear(["grip", "probe"]));
   };
   /** The first pickup card, if it is on screen and seen: inside the window, opaque and visible, it and every parent. */

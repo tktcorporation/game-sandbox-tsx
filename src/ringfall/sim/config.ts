@@ -421,8 +421,6 @@ export const DEPOT = {
   weaponCost: [1, 2, 3, 4],
   /** Points armour costs, by tier (tier 0 is no armour). */
   armorCost: [0, 1, 2, 3],
-  /** Points a vault key costs: it opens a POI's best bin, worth a step of rarity in a weapon. */
-  keyCost: 1,
 };
 
 /**
@@ -697,8 +695,6 @@ export const META = {
   /** Armour by tier (1 to 3); tier 0 is none. */
   armor: [0, 400, 1200, 3000],
   heal: { cell: 60, battery: 250, syringe: 60, medkit: 250 } as Record<HealKind, number>,
-  /** What a key counts as for selling (the trader never sells keys). */
-  key: 800,
   /** Share of the price the trader pays for gear (valuables sell at their full value). */
   sellShare: 0.4,
   /**
@@ -776,12 +772,10 @@ export const HIDEOUT_EFFECT = {
 export const SEARCH = { time: 2.2, flareTime: 3.5, vaultTime: 5, noise: 9 };
 
 /**
- * Vaults: one locked bin per POI, opened only with that POI's key. A key turns up in the
- * bins of the POI before it (`(poi + 3) % 4`, so the supply depot's key is at the landing
- * pad), comes home like any other find and opens its vault on every later raid.
+ * Vaults: one bin per POI that holds its best (a top weapon, armour, heals and dear valuables),
+ * slower to search (`SEARCH.vaultTime`) and watched by a guard in a plate. Anyone may open it.
  */
 export const VAULT = {
-  keyChance: 0.15,
   weapon: [["talon", 3], ["lance", 3], ["pike", 3], ["hornet", 3], ["maul", 2]] as [WeaponKind, Rarity][],
   armor: 3 as Rarity,
   /**

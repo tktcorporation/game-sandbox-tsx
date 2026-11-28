@@ -28,7 +28,7 @@ export const recordOf = (s: State): RaidRecord => ({
   sentVia: [...s.sentVia],
   depots: [...s.depots],
   seen: [...s.seen],
-  player: structuredClone({ weapons: s.player.weapons, armor: s.player.armor, heals: s.player.heals, haul: s.player.haul, keys: s.player.keys }),
+  player: structuredClone({ weapons: s.player.weapons, armor: s.player.armor, heals: s.player.heals, haul: s.player.haul }),
 });
 
 /** Raids played per skill and region. */

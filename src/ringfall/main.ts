@@ -1373,7 +1373,7 @@ declare global {
       take: (i: number, soon?: boolean) => void;
     };
     ringfallNews: (entries: IslandLogEntry[]) => void;
-    ringfallBag: (haul: string[], more?: { at?: (string | null)[]; keys?: string[] }) => void;
+    ringfallBag: (haul: string[], more?: { at?: (string | null)[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
       wear: (kinds: string[]) => void;
@@ -1407,7 +1407,6 @@ window.render_game_to_text = () => {
     settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, learned: settlement.learned, gained: settlement.gained, front: settlement.front, raid: settlement.raid, after: settlement.after, income: settlement.income, analysable: settlement.analysable, analysed },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
-    keys: p.keys,
     phase: s.phase,
     time: +s.time.toFixed(1),
     outcome: s.outcome,
@@ -1873,14 +1872,13 @@ window.ringfallMods = {
  */
 /**
  * Automation only: fills the bag with `haul` in the raid under way, for screenshots of the bag's
- * slots; `more` sets the POI each valuable came out of (`at`, by id) and the keys.
+ * slots; `more` sets the POI each valuable came out of (`at`, by id).
  */
 window.ringfallBag = (haul, more = {}) => {
   if (!running) return;
   const p = state.player;
   p.haul = haul.filter((k): k is keyof typeof VALUABLES => k in VALUABLES);
   p.haulAt = p.haul.map((_, i) => (more.at?.[i] ? poiIndex(more.at[i] as PoiId) : -1));
-  if (more.keys) p.keys = more.keys.map((k) => poiIndex(k as PoiId));
 };
 window.ringfallEnd = (how, haul = [], found = []) => {
   if (!running || state.phase === "done") return false;

@@ -16,7 +16,7 @@ import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, ZIPS, type EntryId } from "../sim/map";
 import { islandHolds } from "../meta/island";
 import { isAiOwner, rivalHold, rivalOf, type PoiHold } from "../sim/holds";
-import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
+import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
 import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
@@ -31,12 +31,9 @@ import type { World } from "./world";
 import { FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
-import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
+import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, factoryIcon, fightIcon, flagIcon, flareIcon, hideoutIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, stashIcon, upIcon } from "./icons";
 import { capturable, momentum, siegeWaves } from "../sim/front";
 import { terrainHeight } from "../sim/terrain";
-
-/** The POI whose bins drop the key to POI `poi`'s vault (its `keyFrom`), by name. */
-const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
 
 import { BagView } from "./bag";
 import { UI } from "./palette";
@@ -457,9 +454,6 @@ export class Hud {
         this.dirs.push({ el, x: e.fromX, z: e.fromZ, t: 0.9 });
         break;
       }
-      case "locked":
-        this.toast(`${keyIcon()}${POIS[e.poi].name}<span class="toast-sub">${keyIcon()}▸${esc(keySource(e.poi))}の補給箱</span>`, 0, 3600);
-        break;
       case "pickup":
         // Bag card (view/bag.ts) carries the detail; a short toast confirms the grab (Round 4 juice).
         if (e.kind === "shard") break;
@@ -470,7 +464,7 @@ export class Hud {
           this.toast(`${TERM.goal} · ${esc(VALUABLES[e.valuable].label)} ${have} / ${s.goalNeed}`, e.rarity ?? 0, 2200);
           break;
         }
-        if (["valuable", "key", "mod"].includes(e.kind)) {
+        if (["valuable", "mod"].includes(e.kind)) {
           this.toast(esc(e.label), e.rarity ?? 0, 1600);
           break;
         }
@@ -1305,8 +1299,6 @@ export class Hud {
       const b = s.bins[t.index];
       const what = b.vault ? "保管庫" : "補給箱";
       if (q?.bin === t.index) return tip(`${what} <b>${Math.floor((q.t / searchFor(p, b)) * 100)}%</b>`);
-      // Shut: whose key opens it, and the POI whose bins hold that key.
-      if (!canOpen(s, b)) return tip(`${what} ${lockIcon()}${keyIcon(RARITY_CSS[3])}${esc(POIS[b.poi].name)} <small>▸ ${esc(keySource(b.poi))}の補給箱</small>`);
       return tip(`${key("E")}${what} ${noiseIcon()}`);
     }
     if (t.kind === "swap") {

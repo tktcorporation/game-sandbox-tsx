@@ -671,10 +671,8 @@ export interface Poi {
   entry: { x: number; z: number; yaw: number };
   /** Clearing the POI means beating every one of these squads. */
   squads: Squad[];
-  /** The one with `vault` is locked: it takes this POI's key (`VAULT`). */
+  /** The one with `vault` is its vault (`VAULT`). */
   bins: { x: number; z: number; y?: number; vault?: true }[];
-  /** The POI whose bins may hold this POI's key. */
-  keyFrom: PoiId;
   loot: LootTable;
   floor: { x: number; z: number; y?: number; weapon?: [WeaponKind, Rarity]; armor?: Rarity; heal?: HealKind }[];
   carePackage?: { x: number; z: number; weapon: [WeaponKind, Rarity] };
@@ -2313,7 +2311,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: BRIDGES.cab, z: -26.5, y: ASSEMBLY.crane },
       { x: -84, z: -56.5, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "pad",
     loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: [["fuse", 3], ["parts", 4], ["wire", 2], ["drive", 1]] },
     floor: [
       { x: 6, z: 104, weapon: ["hornet", 0] },
@@ -2350,7 +2347,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: (BWE_CAB.x0 + BWE_CAB.x1) / 2, z: 16, y: LEVEL.quarryTop + BWE_CAB.y - LEVEL.quarryMid },
       { x: -31, z: -55, y: WORKS.storey * 2, vault: true },
     ],
-    keyFrom: "supply",
     loot: { weapon: [["pike", 1], ["maul", 1], ["lance", 1], ["hornet", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["wire", 4], ["fuse", 1], ["gyro", 1]] },
     floor: [{ x: -20, z: 12, heal: "medkit" }],
     carePackage: { x: -15, z: 22, weapon: ["lance", 1] },
@@ -2379,7 +2375,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: DISH_STAIRS.x - 1.5, z: DISH_STAIRS.z + 2, y: DISH_STAIRS.floors * STOREY },
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "radar",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["lance", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
       { x: -20, z: -18, y: WORKS.storey, weapon: ["lance", 1] },
@@ -2402,7 +2397,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 0, z: -24 },
       { x: 80, z: 4, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "relay",
     loot: { weapon: [], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["core", 1]] },
     floor: [],
     boss: true,
@@ -2435,7 +2429,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -22, z: -8, y: SHIP_DECK },
       { x: 54, z: -10, y: SHIP_DECK + STOREY * 3, vault: true },
     ],
-    keyFrom: "smelter",
     loot: { weapon: [["talon", 1], ["lance", 1], ["maul", 1], ["pike", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 2], ["core", 1]] },
     floor: [
       { x: 2, z: -4, y: WORKS.storey, heal: "medkit" },
@@ -2468,7 +2461,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -73, z: -1, y: WORKS.storey },
       { x: 47.8, z: 22, y: CRANE, vault: true },
     ],
-    keyFrom: "wreck",
     loot: { weapon: [["hornet", 1], ["maul", 1], ["pike", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["board", 3], ["drive", 2], ["gyro", 1]] },
     floor: [
       { x: 14, z: -12, heal: "battery" },
@@ -2498,7 +2490,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -34, z: 17 },
       { x: 35, z: -7, y: WORKS.storey * 2, vault: true },
     ],
-    keyFrom: "yard",
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["gyro", 3], ["drive", 2], ["board", 2], ["reactor", 1]] },
     floor: [{ x: 37, z: -9, y: WORKS.storey * 3, weapon: ["talon", 1] }],
   },
@@ -2527,7 +2518,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 0, z: -21 },
       { x: 8, z: -19, y: STOREY, vault: true },
     ],
-    keyFrom: "powerplant",
     loot: { weapon: [["pike", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["gyro", 2], ["board", 2], ["fuse", 1]] },
     floor: [{ x: 9, z: -17, heal: "battery" }],
   },
@@ -2554,7 +2544,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 30, z: 2 },
       { x: -4, z: 23, y: STOREY, vault: true },
     ],
-    keyFrom: "station",
     loot: { weapon: [["pike", 1], ["maul", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["fuse", 2], ["wire", 2], ["drive", 1]] },
     floor: [{ x: 6, z: -12, heal: "syringe" }],
   },
@@ -2581,7 +2570,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -4, z: 26 },
       { x: -16, z: 20, vault: true },
     ],
-    keyFrom: "cannery",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 2], ["wire", 2], ["gyro", 2], ["board", 2]] },
     floor: [{ x: 22, z: -10, heal: "medkit" }],
   },
@@ -2608,7 +2596,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 6, z: 24 },
       { x: -21, z: 16, y: STOREY, vault: true },
     ],
-    keyFrom: "coldstore",
     loot: { weapon: [["talon", 1], ["lance", 1], ["pike", 1]], armor: [1], heals: 2, valuable: [["board", 2], ["drive", 2], ["gyro", 2], ["wire", 1]] },
     floor: [{ x: -14, z: -12, heal: "battery" }],
   },
@@ -2635,7 +2622,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -28, z: 10 },
       { x: 25, z: 16, y: STOREY, vault: true },
     ],
-    keyFrom: "lodge",
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["board", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -16, z: -4, heal: "medkit" }],
   },
@@ -2666,7 +2652,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -10, z: 0.5, y: TERMINAL.mezz },
       { x: -8, z: 22, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "waterworks",
     loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 2], ["wire", 2], ["core", 1]] },
     floor: [{ x: 4, z: 0, heal: "medkit" }],
   },
@@ -2694,7 +2679,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 8, z: 10, y: carDeck(4) },
       { x: -4, z: -18, y: carDeck(4), vault: true },
     ],
-    keyFrom: "terminal",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["parts", 3], ["fuse", 2], ["board", 2]] },
     floor: [{ x: 6, z: -8, heal: "battery" }],
   },
@@ -2726,7 +2710,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -51, z: 20, y: WORKS.storey * 5 },
       { x: -51, z: 20, y: WORKS.storey * 3, vault: true },
     ],
-    keyFrom: "carpark",
     loot: { weapon: [["lance", 2], ["maul", 2], ["talon", 1], ["pike", 1], ["hornet", 1]], armor: [1, 2], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 3], ["core", 2], ["reactor", 1]] },
     floor: [
       { x: -46, z: 18, y: WORKS.storey * 5, weapon: ["lance", 2] },
@@ -2763,7 +2746,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 20, z: -34, y: HIGHRISE.c.floors * OFFICE.storey },
       { x: 24, z: 44, y: HIGHRISE.bridge * OFFICE.storey, vault: true },
     ],
-    keyFrom: "robotworks",
     loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 2], ["wire", 2], ["core", 1]] },
     floor: [
       { x: 26, z: 34, heal: "battery" },
@@ -2797,7 +2779,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -24, z: 40, y: POWERPLANT.mezz },
       { x: 2, z: 2, y: POWERPLANT.boilerTop, vault: true },
     ],
-    keyFrom: "highrise",
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -8, z: 40, heal: "medkit" }],
   },
@@ -2830,7 +2811,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 0, z: 3, y: CONTROL.roof },
       { x: -10, z: 3, y: 2 * WORKS.storey, vault: true },
     ],
-    keyFrom: "quarry",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["wire", 3], ["gyro", 2], ["drive", 1]] },
     floor: [{ x: 2, z: -2, heal: "battery" }],
   },
@@ -2864,7 +2844,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 30, z: 69.5, y: VAB.tier },
       { x: 40, z: -69.5, y: 3 * VAB.tier, vault: true },
     ],
-    keyFrom: "control",
     loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 3], ["wire", 2], ["core", 1]] },
     floor: [
       { x: -22, z: 22, heal: "medkit" },
@@ -2897,7 +2876,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: LAUNCHPAD.tower.x + 3, z: 3, y: towerLevel(LAUNCHPAD.arms[2]) },
       { x: LAUNCHPAD.tower.x + 3, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), vault: true },
     ],
-    keyFrom: "assembly",
     loot: { weapon: [["lance", 1], ["maul", 1], ["talon", 1], ["pike", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 3], ["core", 2], ["reactor", 1]] },
     floor: [
       { x: LAUNCHPAD.tower.x + 3, z: 3, y: towerLevel(LAUNCHPAD.arms[4]), weapon: ["lance", 2] },
@@ -2931,7 +2909,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: FUEL.acrossX + 0.6, z: -20, y: FUEL.rack },
       { x: 12, z: -32, vault: true },
     ],
-    keyFrom: "launchpad",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 1]] },
     floor: [
       { x: -5, z: 0, heal: "battery" },
@@ -2965,7 +2942,6 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 4, z: RADAR.z - 7.3, y: WORKS.storey },
       { x: 45, z: -6, vault: true },
     ],
-    keyFrom: "fuel",
     loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 3], ["wire", 2], ["core", 1]] },
     floor: [
       { x: -45, z: 2, heal: "medkit" },

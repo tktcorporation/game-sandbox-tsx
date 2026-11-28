@@ -328,11 +328,6 @@ function openBin(s: State, binIndex: number) {
   const kinds = !b.outside && b.poi === s.boost.poi ? boosted(table.valuable, s.boost.kind) : table.valuable;
   const rolled = b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds);
   spillValuable(s, b, rolled, b.outside ? -1 : b.poi);
-  // Keys lie only in the POIs themselves, so each one is found where the route says.
-  if (!b.outside && rand(s) < VAULT.keyChance) {
-    const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);
-    spill(s, b.x, b.y, b.z, { kind: "key", key: vault, rarity: 3 });
-  }
 }
 
 /** A uniform number in [0, 1) from the raid's seed, a bin and a salt, drawing nothing from `rand`. */
@@ -421,12 +416,6 @@ export function stepLoot(s: State, input: Input) {
       bagIn(p, l.valuable, l.from ?? -1);
       const v = VALUABLES[l.valuable];
       s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}`, valuable: l.valuable });
-      return false;
-    }
-    if (l.kind === "key" && l.key !== undefined) {
-      // A second copy is kept too: it comes home as a spare (one carried is lost on a wipe).
-      p.keys.push(l.key);
-      s.events.push({ t: "pickup", kind: "key", rarity: 3, label: `${POIS[l.key].name}の鍵` });
       return false;
     }
     if (l.kind === "flare" && p.flares < 1) {
@@ -554,16 +543,9 @@ function swapInto(s: State, l: Loot) {
   s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k.kind].label).join("・")}を捨てた）` });
 }
 
-/** Whether the player may search a bin: a vault takes its POI's key, unless the POI is owned. */
-export const canOpen = (s: State, b: Bin) => !b.vault || s.player.keys.includes(b.poi) || s.hold[b.poi] === "own";
-
 function startSearch(s: State, bin: number) {
   const p = s.player;
   if (p.search?.bin === bin) return;
-  if (!canOpen(s, s.bins[bin])) {
-    s.events.push({ t: "locked", poi: s.bins[bin].poi });
-    return;
-  }
   p.search = { bin, t: 0 };
   const b = s.bins[bin];
   makeNoise(s, b.x, b.z, SEARCH.noise);

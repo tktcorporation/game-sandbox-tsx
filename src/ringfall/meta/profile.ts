@@ -34,8 +34,7 @@ export type Item =
   | { t: "weapon"; kind: WeaponKind; rarity: Rarity; starter?: true }
   | { t: "armor"; tier: Rarity }
   | { t: "heal"; kind: HealKind }
-  | { t: "valuable"; kind: ValuableKind }
-  | { t: "key"; poi: PoiId };
+  | { t: "valuable"; kind: ValuableKind };
 
 /** What persists between raids. */
 export interface Profile {
@@ -139,7 +138,6 @@ export interface KitPicks {
   weapons: { kind: WeaponKind; rarity: Rarity; starter?: true }[];
   /** The armour's tier, 0 for none. */
   armor: Rarity;
-  keys: PoiId[];
   heals: Record<HealKind, number>;
 }
 
@@ -244,8 +242,6 @@ export function price(i: Item): number {
       return META.heal[i.kind];
     case "valuable":
       return VALUABLES[i.kind].value;
-    case "key":
-      return META.key;
   }
 }
 
@@ -256,7 +252,6 @@ export const buyPrice = (i: Item) => (i.t === "valuable" ? Math.round(price(i) *
 export const sellPrice = (i: Item) => (i.t === "valuable" ? price(i) : Math.round(price(i) * META.sellShare));
 
 /** Key names, for lists and the HUD. */
-export const keyName = (poi: PoiId) => `${POIS[poiIndex(poi)].name}の鍵`;
 
 /** Everything the trader sells: gear up to the rarity the nodes held open (`shopRarity()`), every valuable. */
 export function wares(p: Profile): Item[] {
@@ -290,10 +285,9 @@ export interface Loadout {
   weapons: number[];
   armor: number | null;
   heals: Record<HealKind, number>;
-  keys: number[];
 }
 
-export const emptyLoadout = (): Loadout => ({ weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+export const emptyLoadout = (): Loadout => ({ weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } });
 
 /** How many of a heal the stash holds. */
 export const healCount = (p: Profile, k: HealKind) => p.stash.filter((i) => i.t === "heal" && i.kind === k).length;
@@ -327,17 +321,13 @@ export function kitPicks(p: Profile, l: Loadout): KitPicks {
       return i?.t === "weapon" ? [{ kind: i.kind, rarity: i.rarity, ...(i.starter ? { starter: true as const } : {}) }] : [];
     }),
     armor: a?.t === "armor" ? a.tier : 0,
-    keys: k.keys.flatMap((n) => {
-      const i = p.stash[n];
-      return i?.t === "key" ? [i.poi] : [];
-    }),
     heals: Object.fromEntries(HEAL_KINDS.map((h) => [h, Math.max(0, Math.min(l.heals[h], healRoom(p, h)))])) as Record<HealKind, number>,
   };
 }
 
 /**
- * The last raid's loadout picked again from the stash as it stands: each weapon, the armour and
- * each key while the stash still holds one like it, and the heals up to what it holds now. A
+ * The last raid's loadout picked again from the stash as it stands: each weapon and the armour
+ * while the stash still holds one like it, and the heals up to what it holds now. A
  * weapon of it no longer in the stash leaves its slot to a starter weapon not picked yet, so the
  * shelves always pick two weapons (with no last raid, the two starters).
  */
@@ -359,46 +349,32 @@ export function recallLoadout(p: Profile): Loadout {
     const n = find((i) => i.t === "armor" && i.tier === last.armor);
     if (n >= 0) l.armor = n;
   }
-  for (const poi of last.keys) {
-    const n = find((i) => i.t === "key" && i.poi === poi);
-    if (n >= 0) l.keys.push(n);
-  }
   for (const h of HEAL_KINDS) l.heals[h] = Math.max(0, Math.min(last.heals[h] ?? 0, healRoom(p, h)));
   for (const n of starterPicks(p)) if (l.weapons.length < 2 && !l.weapons.includes(n)) l.weapons.push(n);
   return armed(p, l);
 }
 
 /**
- * The stash entries a loadout really takes, resolved as `takeKit()` does: up to two weapons,
- * one armour, one key per POI. Picks that are not of their kind are dropped.
+ * The stash entries a loadout really takes, resolved as `takeKit()` does: up to two weapons
+ * and one armour. Picks that are not of their kind are dropped.
  */
-function picks(p: Profile, l: Loadout): { weapons: number[]; armor: number | null; keys: number[] } {
+function picks(p: Profile, l: Loadout): { weapons: number[]; armor: number | null } {
   const weapons = [...new Set(l.weapons.slice(0, 2))].filter((n) => p.stash[n]?.t === "weapon");
   const armor = l.armor !== null && p.stash[l.armor]?.t === "armor" ? l.armor : null;
-  const keys: number[] = [];
-  const pois = new Set<PoiId>();
-  for (const n of l.keys) {
-    const i = p.stash[n];
-    if (i?.t === "key" && !keys.includes(n) && !pois.has(i.poi)) {
-      keys.push(n);
-      pois.add(i.poi);
-    }
-  }
-  return { weapons, armor, keys };
+  return { weapons, armor };
 }
 
 /** What one stash entry costs of a depot start's allowance (`DEPOT`): the starter weapons, heals and valuables nothing. */
 export function itemCost(i: Item): number {
   if (i.t === "weapon") return i.starter ? 0 : DEPOT.weaponCost[i.rarity];
   if (i.t === "armor") return DEPOT.armorCost[i.tier];
-  if (i.t === "key") return DEPOT.keyCost;
   return 0;
 }
 
 /** What a loadout costs of a depot start's allowance. The starter weapons and all heals cost nothing. */
 export function loadoutCost(p: Profile, l: Loadout): number {
   const k = picks(p, armed(p, l));
-  return [...k.weapons, ...(k.armor === null ? [] : [k.armor]), ...k.keys].reduce((n, at) => n + itemCost(p.stash[at]), 0);
+  return [...k.weapons, ...(k.armor === null ? [] : [k.armor])].reduce((n, at) => n + itemCost(p.stash[at]), 0);
 }
 
 /** A depot's standing: its level, the allowance it gives, what has gone through it, and what the next level still needs (null at the top). */
@@ -475,16 +451,7 @@ export function takeKit(p: Profile, given: Loadout, from: PoiId | null = null): 
       }
     });
   }
-  const keys: number[] = [];
-  for (const n of l.keys) {
-    const i = p.stash[n];
-    if (i?.t === "key" && !take.has(n) && !keys.includes(poiIndex(i.poi))) {
-      take.add(n);
-      keys.push(poiIndex(i.poi));
-    }
-  }
   const kit: Kit = {
-    keys,
     weapons,
     armor,
     heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, heals[k] + issued[k]])) as Record<HealKind, number>,
@@ -665,14 +632,14 @@ export function wanted(p: Profile): Record<ValuableKind, number> {
 }
 
 /**
- * The order in which things claim stash room: keys, then valuables the hideout still
+ * The order in which things claim stash room: valuables the hideout still
  * wants, then gear (the dearest first, since the better of it is found only on the
  * island), then the other valuables, which are worth the same sold now
  * or later (a tool that opens a route is spent before anything is stored).
  */
 export function keepOrder(items: Item[], want: Record<ValuableKind, number>): Item[] {
   const left = { ...want };
-  const rankOf = (i: Item) => (i.t === "key" ? 0 : i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
+  const rankOf = (i: Item) => (i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
   // Dearer valuables claim what the hideout wants first.
   const ranked = [...items].sort((a, b) => price(b) - price(a)).map((i) => ({ i, r: rankOf(i) }));
   return ranked.sort((a, b) => a.r - b.r || price(b.i) - price(a.i)).map((x) => x.i);
@@ -728,7 +695,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     // Every heal left comes home, the issued ones too.
     for (const k of HEAL_KINDS) for (let i = pl.heals[k]; i > 0; i--) home.push({ t: "heal", kind: k });
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
-    for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
   } else {
     const kept = pouchKeep(pl.haul, pouchSlots(p.hideout));
     for (const v of kept.haul) home.push({ t: "valuable", kind: v });
@@ -892,7 +858,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
  * here and no raid is counted: that is `settle()`'s, when the island's raid ends.
  */
 export function settleSortie(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
-  const bare: State = { ...s, player: { ...s.player, weapons: [], armor: 0, heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, 0])) as State["player"]["heals"], haul: [], haulAt: [], keys: [], mods: [] } };
+  const bare: State = { ...s, player: { ...s.player, weapons: [], armor: 0, heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, 0])) as State["player"]["heals"], haul: [], haulAt: [], mods: [] } };
   const r = settle(p, bare, rivalTrop);
   return { ...r, profile: { ...r.profile, raids: p.raids, extracted: p.extracted, time: p.time, seed: p.seed, goal: p.goal ?? null, lastKit: p.lastKit } };
 }
@@ -1081,7 +1047,7 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v54 and older may hold `expeditions` / `incoming` (遠征, removed), which v55 drops.
  * v55 and older may have built the 作業台 or the 無線機 (removed): v56 drops them and pays back what their levels took (`REMOVED_MODULES`).
  * v56 and older may hold a 強度 and the best each POI was freed at (`threat` / `freedAt`, removed): v57 drops them.
- * v57 and older may hold routes opened and tools in the stash (removed): v58 drops the routes and pays each tool's price back (`REMOVED_TOOLS`).
+ * v57 and older may hold routes opened and tools in the stash (removed), and vault keys (removed): v58 drops the routes and pays each tool and key back (`REMOVED_ITEMS`).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 /**
@@ -1089,8 +1055,8 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * credits and its valuables at their worth. A save that built them is paid that back, once, as it loads.
  */
 const REMOVED_MODULES: Record<string, number[]> = { workbench: [0, 1280, 9080], radio: [0, 2010, 9110] };
-/** What a tool left in the stash (or waiting for it) of a save from before v58 is paid back at: its price as it stood. */
-const REMOVED_TOOLS: Record<string, number> = { cutter: 700, charge: 900 };
+/** What a tool or a vault's key left in the stash (or waiting for it) of a save from before v58 is paid back at: what the trader paid for it. */
+const REMOVED_ITEMS: Record<string, (i: Record<string, unknown>) => number> = { tool: (i) => ({ cutter: 700, charge: 900 })[i.kind as string] ?? 0, key: () => 320 };
 
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
@@ -1109,14 +1075,13 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     if (x.t === "armor") return [1, 2, 3].includes(x.tier as number);
     if (x.t === "heal") return HEAL_KINDS.includes(x.kind as HealKind);
     if (x.t === "valuable") return typeof x.kind === "string" && x.kind in VALUABLES;
-    if (x.t === "key") return typeof x.poi === "string" && poiIndex(x.poi as PoiId) >= 0;
     return false;
   };
   const h = (o.hideout ?? {}) as Record<string, unknown>;
   const hideout = emptyHideout();
   for (const m of MODULES) if (Number.isInteger(h[m])) hideout[m] = Math.max(0, Math.min(HIDEOUT[m].levels.length, h[m] as number));
   // v56: the modules that are gone give back what they took.
-  const toolsBack = [...o.stash, ...(Array.isArray(o.pending) ? o.pending : [])].reduce((n: number, i: unknown) => n + (i && typeof i === "object" && (i as Record<string, unknown>).t === "tool" ? (REMOVED_TOOLS[(i as Record<string, unknown>).kind as string] ?? 0) : 0), 0);
+  const toolsBack = [...o.stash, ...(Array.isArray(o.pending) ? o.pending : [])].reduce((n: number, i: unknown) => n + (i && typeof i === "object" ? (REMOVED_ITEMS[(i as Record<string, unknown>).t as string]?.(i as Record<string, unknown>) ?? 0) : 0), 0);
   const refund = toolsBack + Object.entries(REMOVED_MODULES).reduce((n, [m, paid]) => n + (Number.isInteger(h[m]) ? paid[Math.max(0, Math.min(paid.length - 1, h[m] as number))] : 0), 0);
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
@@ -1224,10 +1189,9 @@ function parseKitPicks(raw: unknown): KitPicks | null {
     .slice(0, 2)
     .map((w) => ({ kind: w.kind, rarity: w.rarity, ...(w.starter === true ? { starter: true as const } : {}) }));
   const armor = ([0, 1, 2, 3].includes(r.armor as number) ? r.armor : 0) as Rarity;
-  const keys = [...new Set((Array.isArray(r.keys) ? r.keys : []).filter((k): k is PoiId => typeof k === "string" && poiIndex(k as PoiId) >= 0))];
   const h = (r.heals && typeof r.heals === "object" ? r.heals : {}) as Record<string, unknown>;
   const heals = Object.fromEntries(HEAL_KINDS.map((k) => [k, Number.isInteger(h[k]) ? Math.max(0, Math.min(HEAL_SPECS[k].max, h[k] as number)) : 0])) as Record<HealKind, number>;
-  return { weapons, armor, keys, heals };
+  return { weapons, armor, heals };
 }
 
 /** What building the factory's next level takes, or null once it is at its top. */

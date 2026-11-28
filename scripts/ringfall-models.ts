@@ -74,7 +74,7 @@ const entries: Entry[] = [
   // Every loot item buildLootItem draws: a dropped gun is the gun's model scaled, so it counts as a gun.
   ...WEAPONS.map((w): Entry => ({ id: `loot:${w}`, group: "gun", root: M.buildLootItem("weapon", 0, w) })),
   // The loot kinds with no table of their own (LootKind in sim/state.ts); a new one is added here.
-  ...(["armor", "key", "mod", "flare", "shard"] as const).map((k): Entry => ({ id: `loot:${k}`, group: "loot", root: M.buildLootItem(k, 0) })),
+  ...(["armor", "mod", "flare", "shard"] as const).map((k): Entry => ({ id: `loot:${k}`, group: "loot", root: M.buildLootItem(k, 0) })),
   ...keys(HEALS).map((h): Entry => ({ id: `loot:${h}`, group: "loot", root: M.buildLootItem("heal", 0, undefined, h) })),
   ...keys(VALUABLES).map((v): Entry => ({ id: `loot:${v}`, group: "loot", root: M.buildLootItem("valuable", 3, undefined, undefined, v) })),
   { id: "bin", group: "world", root: M.buildBin().root },

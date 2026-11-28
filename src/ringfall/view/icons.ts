@@ -48,8 +48,6 @@ export const lockIcon = (c = "currentColor") => svg(`<rect x="3.5" y="7" width="
 /** A pushpin, for a starter weapon: it stays pinned in the stash, never lost and never sold. */
 export const pinIcon = (c = "currentColor") => svg(`<path d="M5 1.5 H11 L10 6 L12.5 9 H3.5 L6 6 Z" fill="${c}"/><path d="M8 9 V15" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>`, "pin");
 
-/** A key. */
-export const keyIcon = (c = "currentColor") => svg(`<circle cx="5" cy="8" r="3.3" fill="none" stroke="${c}" stroke-width="2"/><path d="M8.2 8 H14.5 M12.2 8 V11 M14.2 8 V10.4" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`, "key");
 
 /** A bag: the slots the player carries. */
 export const bagIcon = (c = "currentColor") => svg(`<path d="M3 6 H13 L12 15 H4 Z" fill="${c}"/><path d="M5.5 6 V4.5 a2.5 2.5 0 0 1 5 0 V6" stroke="${c}" stroke-width="1.6" fill="none"/>`, "bag");

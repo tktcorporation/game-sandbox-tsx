@@ -5,7 +5,7 @@ import type { State } from "../sim/state";
 import { factoryNeeded, newProfile, nextFactory, pouchKeep, wanted, type Profile } from "../meta/profile";
 import { MODULES, nextLevel, pouchSlots, stillNeeded } from "../meta/hideout";
 import { RARITY_CSS } from "./models";
-import { bagIcon, checkIcon, crossIcon, factoryIcon, hideoutIcon, keyIcon, modIcon, POUCH, pouchIcon } from "./icons";
+import { bagIcon, checkIcon, crossIcon, factoryIcon, hideoutIcon, modIcon, POUCH, pouchIcon } from "./icons";
 
 /*
  * What the player carries, for a glance during a raid: the bag peek (Tab held, or the bag button
@@ -77,11 +77,10 @@ function row(e: Entry, one = false): string {
   return `<div class="bp-row${kept ? " kept" : ""}"><span class="bp-pic" style="--c:${e.color}">${cells}</span><span class="bp-name" style="color:${rarityText(e.color)}">${esc(e.name)}${n > 1 ? `<i>×${n}</i>` : ""}</span>${pouch}<b class="bp-val">${value || ""}</b><span class="bp-uses">${e.uses}</span></div>`;
 }
 
-/** What the player has on them outside the bag's slots: keys and mod parts worn. */
+/** What the player has on them outside the bag's slots: the mod parts worn. */
 function extras(s: State): string {
-  const keys = s.player.keys.map((k) => `<span class="bp-x" style="color:${RARITY_CSS[3]}">${keyIcon()}${esc(POIS[k].name)}</span>`);
   const mods = s.player.mods.map((m) => `<span class="bp-x mod">${modIcon()}${esc(MODS[m].name)}</span>`);
-  return keys.length || mods.length ? `<div class="bp-extra">${[...keys, ...mods].join("")}</div>` : "";
+  return mods.length ? `<div class="bp-extra">${mods.join("")}</div>` : "";
 }
 
 /** Everything a pickup can add, counted, to tell what came in and what went out between two frames. */
@@ -90,7 +89,6 @@ function census(s: State): Map<string, number> {
   const add = (k: string) => m.set(k, (m.get(k) ?? 0) + 1);
   const p = s.player;
   for (const k of p.haul) add(`v:${k}`);
-  for (const k of p.keys) add(`k:${k}`);
   for (const k of p.mods) add(`m:${k}`);
   return m;
 }
@@ -99,8 +97,7 @@ function census(s: State): Map<string, number> {
 function lostName(id: string): string {
   const [t, k] = id.split(":");
   if (t === "v") return VALUABLES[k as ValuableKind].label;
-  if (t === "m") return MODS[k as ModKind].name;
-  return POIS[Number(k)].name;
+  return MODS[k as ModKind].name;
 }
 
 /** Seconds a pickup's card stays, and how many stand at once. */
@@ -183,17 +180,15 @@ export class BagView {
     const went = [...was].filter(([k, n]) => n > (now.get(k) ?? 0)).map(([k]) => k);
     const list = entries(this.profile, s);
     for (const id of came) {
-      const [t, k] = id.split(":");
+      const [, k] = id.split(":");
       const e = list.find((x) => x.id === id);
       const body = e
         ? row(e, true)
-        : t === "k"
-          ? `<div class="bp-row"><span class="bp-pic icon" style="color:${RARITY_CSS[3]}">${keyIcon()}</span><span class="bp-name" style="color:${RARITY_CSS[3]}">${esc(POIS[Number(k)].name)}</span></div>`
-          : `<div class="bp-row"><span class="bp-pic icon">${modIcon()}</span><span class="bp-name" style="color:${UI.r2Text}">${esc(MODS[k as ModKind].name)}</span></div>`;
+        : `<div class="bp-row"><span class="bp-pic icon">${modIcon()}</span><span class="bp-name" style="color:${UI.r2Text}">${esc(MODS[k as ModKind].name)}</span></div>`;
       const out = went.length ? `<div class="bp-lost">${crossIcon()}${went.map((w) => `<s>${esc(lostName(w))}</s>`).join("")}</div>` : "";
       const el = document.createElement("div");
       el.className = "bag-card";
-      el.style.setProperty("--c", e?.color ?? (t === "m" ? RARITY_CSS[2] : RARITY_CSS[3]));
+      el.style.setProperty("--c", e?.color ?? RARITY_CSS[2]);
       el.innerHTML = body + out;
       el.style.opacity = "0";
       this.cardsEl.appendChild(el);

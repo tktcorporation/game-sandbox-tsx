@@ -347,7 +347,7 @@ export const sfx = {
       tone(990, 0.12, { type: "triangle", vol: 0.06, at: 0.12 });
     });
   },
-  /** A locked bin without its key. */
+  /** Something shut: a start that may not be chosen. */
   locked() {
     ui(0.25, () => {
       tone(180, 0.08, { type: "square", vol: 0.07 });

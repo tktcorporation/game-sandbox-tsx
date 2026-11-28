@@ -431,9 +431,6 @@ export class Soundscape {
       case "binOpen":
         sfx.bin();
         break;
-      case "locked":
-        sfx.locked();
-        break;
       case "tactical":
         sfx.tactical();
         break;

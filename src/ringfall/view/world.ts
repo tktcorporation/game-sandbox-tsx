@@ -1911,7 +1911,7 @@ export class World {
     extra.add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glow(PAL.orb, 0.35)));
     extra.add(new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), glow(PAL.orb)));
     extra.add(haloSprite(PAL.orb, 1, 0.5));
-    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse"));
+    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse"));
     for (const heal of ["cell", "battery", "syringe", "medkit"] as const) extra.add(buildLootItem("heal", 1, undefined, heal));
     extra.add(buildBin(false).root, buildBin(true).root, buildFlareSmoke(), buildCare(), buildDropship(), buildBoat());
     const guns = new THREE.Group();

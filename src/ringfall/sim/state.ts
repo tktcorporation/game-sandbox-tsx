@@ -31,8 +31,6 @@ export interface Kit {
   armor: Rarity;
   /** Heals carried: those issued to every raid and those taken from the stash, alike. */
   heals: Record<HealKind, number>;
-  /** Vault keys taken along, as POI indices. */
-  keys: number[];
 }
 
 /** The starter weapons with the heals issued to every raid: a new player's kit, and the default for the gates. */
@@ -40,7 +38,6 @@ export const starterKit = (): Kit => ({
   weapons: META.starter.weapons.map((w) => ({ ...w, starter: true })),
   armor: 0,
   heals: { ...META.starter.heals },
-  keys: [],
 });
 
 export interface Player {
@@ -102,8 +99,6 @@ export interface Player {
    * found anywhere else.
    */
   haulAt: number[];
-  /** Keys on the ring, as the POIs whose vaults they open (copies included). They take no bag space. */
-  keys: number[];
   /** Mod parts worn (`MODS`), the one worn longest first: at most `MOD.slots`, gone when the raid ends. */
   mods: ModKind[];
   /** The bin being searched and for how long, or null. */
@@ -373,7 +368,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "mod";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "mod";
 
 export interface Loot {
   id: number;
@@ -381,8 +376,6 @@ export interface Loot {
   weapon?: Weapon;
   heal?: HealKind;
   valuable?: ValuableKind;
-  /** For a key: the POI whose vault it opens. */
-  key?: number;
   mod?: ModKind;
   /** For a part a taken core laid out (`coreReward()`): the node, as a place in `NODES`. One of a node's is taken, by the use key; the rest go with it. */
   choice?: number;
@@ -462,7 +455,6 @@ export type GameEvent =
   | { t: "zipOff"; line: number; cut: boolean }
   | { t: "land"; speed: number }
   | { t: "pickup"; kind: LootKind; rarity: Rarity; label: string; valuable?: ValuableKind }
-  | { t: "locked"; poi: number }
   | { t: "binOpen"; id: number }
   | { t: "tactical"; targets: Vec3[] }
   | { t: "tacticalMiss" }
@@ -649,7 +641,7 @@ export interface State {
   cleared: boolean[];
   /**
    * Who holds each POI on the island this raid, by POI index (`PoiHold`): its garrison. A freed
-   * POI starts cleared, with no robots, its vault open to search and its depot on.
+   * POI starts cleared, with no robots and its depot on.
    */
   hold: PoiHold[];
   /**
@@ -1104,7 +1096,6 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
       flares: 0,
       haul: [],
       haulAt: [],
-      keys: [...kit.keys],
       mods: [],
       search: null,
       healing: null,

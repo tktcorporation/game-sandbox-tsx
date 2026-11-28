@@ -112,7 +112,7 @@ export const CUES: Cue[] = [
   { id: "shard", label: "シールドの欠片", group: "拾う", run: () => sfx.shard() },
   { id: "search", label: "補給箱を調べる", group: "拾う", run: () => sfx.search() },
   { id: "bin", label: "補給箱が開く", group: "拾う", run: () => sfx.bin() },
-  { id: "locked", label: "鍵がかかっている", group: "拾う", run: () => sfx.locked() },
+  { id: "locked", label: "選べない", group: "拾う", run: () => sfx.locked() },
   { id: "depot-on", label: "中継ボックス起動", group: "拾う", run: () => sfx.depotOn() },
   { id: "deposit", label: "倉庫へ送る", group: "拾う", run: () => sfx.deposit() },
   ...ROBOTS.map(([k, n]) => ({ id: `enemy-fire-${k}`, label: `${n}の射撃（正面 12 m）`, group: "敵", run: () => walls(null, () => sfx.enemyFire(around(0, 12), k)) })),

@@ -3,11 +3,11 @@ import { attacksHtml, playAttack } from "./attacks";
 import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { jumpNodes, jumpTargets, sortieTargets, type SortieTarget } from "../meta/sortie";
-import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
+import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
 import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildBuying, keepParcels, buildFactory, buy, buyPrice, canBuild, canBuildFactory, shortPrice, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
+import { armed, build, buildBuying, keepParcels, buildFactory, buy, buyPrice, canBuild, canBuildFactory, shortPrice, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 // buyPrice / canStartIn used by sourceGuide
 import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { saveProfile } from "../meta/storage";
@@ -92,8 +92,6 @@ export function itemName(i: Item): string {
       return HEAL_SPECS[i.kind].label;
     case "valuable":
       return VALUABLES[i.kind].label;
-    case "key":
-      return keyName(i.poi);
   }
 }
 
@@ -140,7 +138,7 @@ interface Needs {
 /**
  * An item's line under its name, in names and numbers: a weapon's class and numbers, armour's
  * shield, a heal's mark (blue shield, green health) and amount, and for a valuable the hideout's and
- * the factory's count of it still to use (`need`). Keys have none: the name says it.
+ * the factory's count of it still to use (`need`). 
  */
 function itemNote(i: Item, need?: Needs): string {
   switch (i.t) {
@@ -153,8 +151,6 @@ function itemNote(i: Item, need?: Needs): string {
     }
     case "armor":
       return `シールド ${PLAYER.shieldByTier[i.tier]}`;
-    case "key":
-      return "";
     case "heal": {
       const h = HEAL_SPECS[i.kind];
       return `${healIcon(h.shield)}${h.amount ? `+${h.amount}` : "MAX"}`;
@@ -182,20 +178,19 @@ export const itemColor = (i: Item) =>
 
 /** An item's rarity colour as it stands (the epic's own purple); `itemColor()` is it for a name in text. */
 const itemShade = (i: Item) =>
-  i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" ? RARITY_CSS[3] : "var(--white)";
+  i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : "var(--white)";
 
 /** Player-facing type headers (棚・屋台・整理). Existing kit / objective words only. */
 export const ITEM_SECTION: Record<Item["t"], string> = {
   weapon: "武器",
   armor: "アーマー",
-  key: "鍵",
   heal: "回復",
   valuable: "回収品",
 };
 
 export type StashRow = { item: Item; index: number[] };
 
-/** Weapons, armour and keys are listed one by one; heals and valuables are counted. */
+/** Weapons and armour are listed one by one; heals and valuables are counted. */
 export function rows(stash: Item[]): StashRow[] {
   const out: StashRow[] = [];
   stash.forEach((item, n) => {
@@ -284,7 +279,7 @@ const $ = (id: string) => document.getElementById(id)!;
 /** A starter weapon's mark before its name: a pin, since it stays in the stash. "" for anything else. */
 const starterMark = (i: Item | undefined) => (isStarter(i) ? `<i class="starter">${pinIcon()}</i>` : "");
 
-const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
+const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : ""}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
 
@@ -398,16 +393,11 @@ export function sourceGuide(kind: ValuableKind, p: Profile): string {
       const pct = Math.round(Math.min(1, s.share) * 100);
       const region = s.region ? ` · ${esc(s.region)}` : "";
       const lock = s.poi && !open(s) ? ` ${lockIcon()}` : "";
-      let note = "";
-      if (s.from === "vault") {
-        const keys = [...new Set(POIS.filter((o) => o.bins.some((b) => b.vault)).map((o) => POIS[poiIndex(o.keyFrom)].name))];
-        note = keys.length ? `<small>鍵は${keys.slice(0, 3).map(esc).join("・")}の補給箱</small>` : "";
-      }
       const map =
         s.poi && open(s)
           ? `<button type="button" class="src-map" data-act="src-map" data-poi="${s.poi}" data-kind="${kind}">${TERM.seeOnMap}</button>`
           : "";
-      return `<div class="src-row${s.poi && !open(s) ? " locked" : ""}"><span>${esc(s.where)}${region}${lock}<b>${pct}%</b></span>${note}${map}</div>`;
+      return `<div class="src-row${s.poi && !open(s) ? " locked" : ""}"><span>${esc(s.where)}${region}${lock}<b>${pct}%</b></span>${map}</div>`;
     })
     .join("");
   const buy = `<div class="src-row trader">${TERM.traderStall}で買える <b>${buyPrice({ t: "valuable", kind }).toLocaleString("ja-JP")}</b></div>`;
@@ -660,7 +650,6 @@ export class Hub {
       weapons,
       armor: l.armor !== null && st[l.armor]?.t === "armor" ? l.armor : null,
       heals,
-      keys: l.keys.filter((n) => st[n]?.t === "key"),
     };
   }
 
@@ -669,7 +658,7 @@ export class Hub {
     const map = (n: number) => (gone.includes(n) ? -1 : n - gone.filter((g) => g < n).length);
     const keep = (ns: number[]) => ns.map(map).filter((n) => n >= 0);
     const armor = this.load.armor === null ? -1 : map(this.load.armor);
-    this.load = { weapons: keep(this.load.weapons), armor: armor < 0 ? null : armor, heals: this.load.heals, keys: keep(this.load.keys) };
+    this.load = { weapons: keep(this.load.weapons), armor: armor < 0 ? null : armor, heals: this.load.heals };
   }
 
   private act(act: string, arg: string, kind = "") {
@@ -765,12 +754,10 @@ export class Hub {
       sfx.click();
       const n = pick[0];
       const it = this.profile.stash[n];
-      const toggle = (ns: number[]) => (ns.includes(n) ? ns.filter((x) => x !== n) : [...ns, n]);
       if (it?.t === "weapon") {
         const w = this.load.weapons;
         this.load.weapons = w.includes(n) ? w.filter((x) => x !== n) : w.length < 2 ? [...w, n] : [w[1], n];
       } else if (it?.t === "armor") this.load.armor = this.load.armor === n ? null : n;
-      else if (it?.t === "key") this.load.keys = toggle(this.load.keys);
       this.load = this.fit(this.load);
     } else if (act === "heal+" || act === "heal-") {
       sfx.click();
@@ -1215,7 +1202,7 @@ export class Hub {
   carryBoxes(budget: number): string {
     const p = this.profile;
     const l = this.startLoad();
-    const all = [...new Set(l.weapons)].slice(0, 2).concat(l.armor === null ? [] : [l.armor], l.keys).map((n) => p.stash[n]).filter((i): i is Item => !!i);
+    const all = [...new Set(l.weapons)].slice(0, 2).concat(l.armor === null ? [] : [l.armor]).map((n) => p.stash[n]).filter((i): i is Item => !!i);
     const taken = all.filter((i) => itemCost(i) > 0);
     let used = 0;
     const segs = taken.map((i) => {
@@ -1253,15 +1240,13 @@ export class Hub {
     };
     const heal = (k: (typeof HEAL_KINDS)[number]) =>
       `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>${TERM.warehouse} ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `<span class="issued">${issueIcon()}${issued[k]}</span>` : ""}</small></div>`;
-    const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
-    // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
+    // A row stands only for what the stash can fill: no armour and no heal of a kind means no row for it.
     const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
     const kit =
       this.depotSlot() +
       weapons +
       (has("armor") ? slot("アーマー", this.load.armor) : "") +
-      (has("key") ? `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` : "") +
       HEAL_KINDS.filter((k) => healCount(p, k) + issued[k] > 0)
         .map(heal)
         .join("") +
@@ -1284,8 +1269,7 @@ export class Hub {
     const worn = l.armor === null ? null : p.stash[l.armor];
     const armor = worn?.t === "armor" ? `<span style="color:${itemColor(worn)}">${armorIcon()}<b>${worn.tier}</b></span>` : `<span class="none">${armorIcon()}</span>`;
     const heals = HEAL_KINDS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}<b>${l.heals[k] + issued[k]}</b></span>`);
-    const keys = l.keys.length ? `<span style="color:${RARITY_CSS[3]}">${keyIcon()}<b>${l.keys.length}</b></span>` : "";
-    return `<span class="kit">${[...weapons, armor, ...heals, keys].join("")}</span>`;
+    return `<span class="kit">${[...weapons, armor, ...heals].join("")}</span>`;
   }
 
   /**
@@ -1380,7 +1364,7 @@ export class Hub {
     // A start chosen in an earlier visit may not be allowed by a profile loaded since.
     this.fixStart();
     if (panel.stash) {
-      const used = new Set([...this.load.weapons, ...this.load.keys, ...(this.load.armor === null ? [] : [this.load.armor])]);
+      const used = new Set([...this.load.weapons, ...(this.load.armor === null ? [] : [this.load.armor])]);
       const list = rows(p.stash);
       $("hub-stash").innerHTML =
         withSectionHeaders(list, ({ item, index }) => {
@@ -1390,7 +1374,7 @@ export class Hub {
           // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
           const fixed = isStarter(item);
           const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
-          const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
+          const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor") ? "pick" : undefined;
           return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.sellConfirm === index.join(",") });
         }) || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
