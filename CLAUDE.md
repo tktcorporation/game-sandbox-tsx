@@ -151,7 +151,7 @@ The quest board (入門／今日の依頼／物語の依頼, `meta/quests.ts` / 
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 57), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 58), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -161,7 +161,7 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node; a save from before v28 may hold `cycle` / `cycleDay` / `liberations` (島の解放) which v43 drops; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`; a save from before v35 drops `events`; a save from before v36 has nothing night-related on Profile to drop — night was ephemeral; a save from before v37 has nothing map-table-related on Profile — the station was UI-only; a save from before v38 has nothing vehicle-related on Profile — the camp vehicle was UI-only; a save from before v39 has nothing fortify-related on Profile — fortify was raid/server only; a save from before v40 holds no island-news archive (`Profile.news`); a save from before v41 has nothing contested-hub-specific on Profile — ownership is `poiState` rival holds, accepted as v41 for stack consistency; a save from before v42 holds no `pending` / `goal` — overflow on load and after settle waits for 倉庫の整理, goal is auto; a save from before v43 drops `cycle` / `cycleDay` / `liberations` — the island never resets; a save from before v44 marks outer-edge contested hubs (作り順②) for stack consistency — ownership still in `poiState`; a save from before v45 holds no `outerGuard` — anti-snowball island shield / loss cap start empty; a save from before v49 holds no `raided` — no neighbour's holding taken by a sortie; a save from before v50 may hold `team` / `teamBattle` (チーム・部隊戦, removed), which v50 drops; a save from before v51 may hold other players' nodes on the player's own island, which v51 makes the enemy's, and starts its `attackedAt` clock at the first look; a save from before v52 counts its day by raids, which v52 keeps as calendar days since it started, `since`; a save from before v53 was paid 拠点の収入 at each settle and starts its holdings' `stores` empty; a save from before v54 keeps no record of the sorties on its holdings, `attacks`; a save from before v55 may hold `expeditions` / `incoming` (遠征, removed), which v55 drops; a save from before v56 may have built the 作業台 or the 無線機 (removed), which v56 drops, paying back what their levels took; a save from before v57 may hold a 強度 and the best each POI was freed at, `threat` / `freedAt` (removed), which v57 drops) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 may hold `cycle` / `cycleDay` / `liberations` (島の解放) which v43 drops; a save from before v29 knows of no expedition coming; a save from before v30 holds no parcel; a save from before v32 starts with starter trophies; a save from before v33 normalizes held/freed to foe/own; a save from before v34 drops `quests` / `board` / `taken` / `records`; a save from before v35 drops `events`; a save from before v36 has nothing night-related on Profile to drop — night was ephemeral; a save from before v37 has nothing map-table-related on Profile — the station was UI-only; a save from before v38 has nothing vehicle-related on Profile — the camp vehicle was UI-only; a save from before v39 has nothing fortify-related on Profile — fortify was raid/server only; a save from before v40 holds no island-news archive (`Profile.news`); a save from before v41 has nothing contested-hub-specific on Profile — ownership is `poiState` rival holds, accepted as v41 for stack consistency; a save from before v42 holds no `pending` / `goal` — overflow on load and after settle waits for 倉庫の整理, goal is auto; a save from before v43 drops `cycle` / `cycleDay` / `liberations` — the island never resets; a save from before v44 marks outer-edge contested hubs (作り順②) for stack consistency — ownership still in `poiState`; a save from before v45 holds no `outerGuard` — anti-snowball island shield / loss cap start empty; a save from before v49 holds no `raided` — no neighbour's holding taken by a sortie; a save from before v50 may hold `team` / `teamBattle` (チーム・部隊戦, removed), which v50 drops; a save from before v51 may hold other players' nodes on the player's own island, which v51 makes the enemy's, and starts its `attackedAt` clock at the first look; a save from before v52 counts its day by raids, which v52 keeps as calendar days since it started, `since`; a save from before v53 was paid 拠点の収入 at each settle and starts its holdings' `stores` empty; a save from before v54 keeps no record of the sorties on its holdings, `attacks`; a save from before v55 may hold `expeditions` / `incoming` (遠征, removed), which v55 drops; a save from before v56 may have built the 作業台 or the 無線機 (removed), which v56 drops, paying back what their levels took; a save from before v57 may hold a 強度 and the best each POI was freed at, `threat` / `freedAt` (removed), which v57 drops; a save from before v58 may hold routes opened and tools in its stash (removed), which v58 drops, paying each tool's price back) and moves its
 start to one it may choose (`allowedStart()`).
 Island day events (破片の落下 / 嵐 / 回収部隊: `EVENTS`, `DEBRIS`, `STORM`, `CREW`, `Profile.events`)
 were removed 2026-11-24 without feature flags (restore from Git history before that PR). Night raids
@@ -177,21 +177,7 @@ A start from a depot carries a limited loadout: `loadoutCost()` prices stash wea
 (the starter weapons and heals are free), `depotAllowance()` gives the depot's level and budget from the
 credits' worth sent through it (`Profile.depotSent`, added up in `settle()` from `State.sentVia`), and
 `takeKit(p, loadout, from)` refuses a loadout over it (`fitsStart()`); the numbers are in `DEPOT`.
-Some ways are blocked until a tool opens them for good: `ROUTES` in `map.ts` (a stable `RouteId`,
-the tool, the obstacle boxes `closed`, what stands once open `open`, and for a way through rock a
-`carve`, a trench cut into the terrain only while the route is open). The tools (`TOOLS` in
-`config.ts`) lie in the bins of one POI each, decided by `toolIn()` in `world.ts` from the raid's
-seed and the bin, never from `rand(s)`; they fill bag slots (`Player.tools`, `bagLoad()`), are taken
-with the use key (the bot passes `Input.leaveTools`), go home through a depot (`State.sentTools`) or
-the pouch, and `settle()` spends each one home on the first of its routes still closed
-(`Profile.routes`, `Settlement.opened`). `newRun(seed, kit, region, { routes })` plays in the world
-with those routes open: `routes.ts` keeps one world in place at a time (`useRoutes()`, called by
-`newRun()` and every `step()`), carving the terrain (`carveTerrain()`), swapping the routes' boxes in
-the collision grid (`setRouteBoxes()` in `geom.ts`) and dropping the bot's and the hunters' grids
-(`resetNav()`, `resetHunt()`); the view rebuilds the chunks a route touches when `worldKey()`
-changes. With every route closed the terrain, the map's boxes and the walkers' grids are the ones
-before routes existed, and the obstacles stand in cliffs and on a deck where path finding does not
-go (its grids and its sight checks, `los(a, b, true)`, leave them out).
+The ways a tool opened (`ROUTES`: the mountain tunnel, the dam's gallery, the wreck's gangway; the tools `TOOLS` in the bins, `Player.tools`, `Profile.routes`, `sim/routes.ts`, the terrain's carves and the routes' boxes swapped in the collision grid) were **removed** (code deleted 2026-11-29; revive from Git history, not a feature flag): the world is the one with every route closed, without the obstacles, and never changes between raids.
 The island has a state between raids (`docs/ringfall/island-v2.md`): no raid moves the day, which is the
 calendar's in Japan (`meta/days.ts`: `islandDay()` counts the calendar days since the island started, `Profile.since`, set at its first camp; nothing shows a count of days), and each POI is the enemy's (`foe`), the player's (`own`) or another
 player's (`rival:` and that player's id, `RivalHold` in `sim/holds.ts`; docs/ringfall/multiplayer.md)
@@ -446,7 +432,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   storeys of hull holed on both sides, bulkheads cutting the holds, stairs at both ends to the
   main deck, deck cargo stacked in bays (`DECK_BAYS`) with gaps between them, the accommodation
   block five storeys over the deck with the bridge's wings over both sides, the funnel, and
-  containers lost overboard on the sand. Its gangway route climbs the north side to the deck.
+  containers lost overboard on the sand.
   The world was the ground base of an orbital ring (the brief's 「世界の由来」), and the fallen
   tether lies east and west through the anchor in four lengths 12 m across (`TETHER`, each a
   `tetherPiece()`): the root end, its back level with the plinth's top; a corridor through the
@@ -550,9 +536,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   scripts and the world map name are data in `map.ts` (`FRAMES`, `LANDMARKS`, `STOPS`).
   Tuning numbers are in `config.ts`. `npm run sim:ringfall` first
   checks that every authored point (POI entries, ways in, bins, loot, squad posts, patrols) stands
-  on a floor and not inside a box, and that the pass and the railway bridge are walkable end to end;
-  `checkRoutes()` walks each route closed (the long way round) and open (straight through), with
-  the authored points checked again in the world with every route open.
+  on a floor and not inside a box, and that the pass and the railway bridge are walkable end to end.
 - The player moves fast (`PLAYER`, `CLIMB`, `ZIP` in `config.ts`, `player.ts`): a sprint of 7.6 m/s;
   a jump out of a slide adds `slideJumpBoost` up to `slideJumpMax` (a faster slide keeps its own
   speed), the air keeps it, a landing with the crouch held slides on (event `slide` with `chain`),
@@ -704,7 +688,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   page audit check them). `bag.ts` (`Hud.bag`) is the bag peek, shown while Tab or the phone's bag
   button is held, the game running on under it with nothing to manage, and the card a pickup slides
   in: each thing carried as its slots in its rarity's colour, its name, credits and what it is for
-  (the hideout module and factory level whose next level takes it, the route a tool opens) as the
+  (the hideout module and factory level whose next level takes it) as the
   base's marks, and the pouch's mark on what a wipe keeps. It reads the state and the profile the
   raid started from (`BagView.setProfile()`),
   and finds a pickup by comparing what is carried frame to frame. Past a sprint's speed the view widens with the speed (up to 12° on a

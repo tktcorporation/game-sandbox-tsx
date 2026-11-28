@@ -4,7 +4,7 @@ import { aiSalt, cachedHoldings, neighboursFor } from "../island-net";
 import { isContestedShore, neighbourNameByCode } from "../meta/neighbours";
 import { jumpNodes, jumpTargets, sortieTargets, type SortieTarget } from "../meta/sortie";
 import { armorIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, pinIcon, pouchIcon, robotIcon, SIDE, stashIcon, turretIcon, upIcon } from "./icons";
-import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, PLATE, RARITY, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { armed, build, buildBuying, keepParcels, buildFactory, buy, buyPrice, canBuild, canBuildFactory, shortPrice, factoryNeeded, nextFactory, canStartIn, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, healCount, healRoom, keyName, kitPicks, loadoutCost, needsOrganize, stashUsed, price, recallLoadout, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
@@ -94,8 +94,6 @@ export function itemName(i: Item): string {
       return VALUABLES[i.kind].label;
     case "key":
       return keyName(i.poi);
-    case "tool":
-      return TOOLS[i.kind].label;
   }
 }
 
@@ -142,7 +140,7 @@ interface Needs {
 /**
  * An item's line under its name, in names and numbers: a weapon's class and numbers, armour's
  * shield, a heal's mark (blue shield, green health) and amount, and for a valuable the hideout's and
- * the factory's count of it still to use (`need`). Keys and tools have none: the name says it.
+ * the factory's count of it still to use (`need`). Keys have none: the name says it.
  */
 function itemNote(i: Item, need?: Needs): string {
   switch (i.t) {
@@ -156,7 +154,6 @@ function itemNote(i: Item, need?: Needs): string {
     case "armor":
       return `シールド ${PLAYER.shieldByTier[i.tier]}`;
     case "key":
-    case "tool":
       return "";
     case "heal": {
       const h = HEAL_SPECS[i.kind];
@@ -185,25 +182,24 @@ export const itemColor = (i: Item) =>
 
 /** An item's rarity colour as it stands (the epic's own purple); `itemColor()` is it for a name in text. */
 const itemShade = (i: Item) =>
-  i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" || i.t === "tool" ? RARITY_CSS[3] : "var(--white)";
+  i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" ? RARITY_CSS[3] : "var(--white)";
 
 /** Player-facing type headers (棚・屋台・整理). Existing kit / objective words only. */
 export const ITEM_SECTION: Record<Item["t"], string> = {
   weapon: "武器",
   armor: "アーマー",
   key: "鍵",
-  tool: "道具",
   heal: "回復",
   valuable: "回収品",
 };
 
 export type StashRow = { item: Item; index: number[] };
 
-/** Weapons, armour and keys are listed one by one; heals, valuables and tools are counted. */
+/** Weapons, armour and keys are listed one by one; heals and valuables are counted. */
 export function rows(stash: Item[]): StashRow[] {
   const out: StashRow[] = [];
   stash.forEach((item, n) => {
-    if (item.t === "heal" || item.t === "valuable" || item.t === "tool") {
+    if (item.t === "heal" || item.t === "valuable") {
       const row = out.find((r) => r.item.t === item.t && (r.item as { kind: string }).kind === item.kind);
       if (row) return void row.index.push(n);
     }

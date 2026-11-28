@@ -1,19 +1,19 @@
-import { BAG, HIDEOUT, MODS, TOOLS, VALUABLES, type ModKind, type ToolKind, type ValuableKind } from "../sim/config";
+import { BAG, HIDEOUT, MODS, VALUABLES, type ModKind, type ValuableKind } from "../sim/config";
 import { rarityText, UI } from "./palette";
-import { POIS, ROUTES } from "../sim/map";
+import { POIS } from "../sim/map";
 import type { State } from "../sim/state";
 import { factoryNeeded, newProfile, nextFactory, pouchKeep, wanted, type Profile } from "../meta/profile";
 import { MODULES, nextLevel, pouchSlots, stillNeeded } from "../meta/hideout";
 import { RARITY_CSS } from "./models";
-import { bagIcon, checkIcon, crossIcon, factoryIcon, hideoutIcon, keyIcon, modIcon, POUCH, pouchIcon, routeIcon } from "./icons";
+import { bagIcon, checkIcon, crossIcon, factoryIcon, hideoutIcon, keyIcon, modIcon, POUCH, pouchIcon } from "./icons";
 
 /*
  * What the player carries, for a glance during a raid: the bag peek (Tab held, or the bag button
  * held on a phone) and the card that slides in when something enters the bag. Both read the raid's
  * state and the profile the raid started from, and change neither: there is nothing to manage.
  * Each thing is drawn as its slots in its rarity's colour, its name, its credits and what it is
- * for, as the base's marks with numbers: a hideout module or the factory whose next level takes it,
- * the route a tool opens; the pouch's mark on what a wipe would still bring home.
+ * for, as the base's marks with numbers: a hideout module or the factory whose next level takes it;
+ * the pouch's mark on what a wipe would still bring home.
  */
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -53,28 +53,16 @@ function valuableUses(p: Profile, k: ValuableKind): string {
   return out.join("");
 }
 
-/** The routes a tool would open, in the order `settle()` spends tools on them: one closed route per tool carried. */
-function toolUses(p: Profile, k: ToolKind, n: number): string {
-  return ROUTES.filter((r) => r.tool === k && !p.routes.includes(r.id))
-    .slice(0, n)
-    .map((r) => chip(`${routeIcon(false)}${esc(r.name)}`))
-    .join("");
-}
-
 /** The bag's lines: what the pouch keeps first, then by credits. */
 function entries(p: Profile, s: State): Entry[] {
   const pl = s.player;
-  const kept = pouchKeep(pl.haul, pl.tools, pouchSlots(p.hideout));
+  const kept = pouchKeep(pl.haul, pouchSlots(p.hideout));
   const out: Entry[] = [];
   const keptHaul = new Set(kept.at);
   for (const k of [...new Set(pl.haul)]) {
     const at = pl.haul.flatMap((x, i) => (x === k ? [i] : []));
     const v = VALUABLES[k];
     out.push({ id: `v:${k}`, size: v.size, color: RARITY_CSS[v.rarity], name: v.label, n: at.length, value: v.value * at.length, uses: valuableUses(p, k), kept: at.filter((i) => keptHaul.has(i)).length });
-  }
-  for (const k of [...new Set(pl.tools)]) {
-    const n = pl.tools.filter((x) => x === k).length;
-    out.push({ id: `t:${k}`, size: TOOLS[k].size, color: RARITY_CSS[3], name: TOOLS[k].label, n, value: TOOLS[k].value * n, uses: toolUses(p, k, n), kept: kept.tools.filter((x) => x === k).length });
   }
   return out.sort((a, b) => Number(b.kept > 0) - Number(a.kept > 0) || b.value - a.value);
 }
@@ -102,7 +90,6 @@ function census(s: State): Map<string, number> {
   const add = (k: string) => m.set(k, (m.get(k) ?? 0) + 1);
   const p = s.player;
   for (const k of p.haul) add(`v:${k}`);
-  for (const k of p.tools) add(`t:${k}`);
   for (const k of p.keys) add(`k:${k}`);
   for (const k of p.mods) add(`m:${k}`);
   return m;
@@ -112,7 +99,6 @@ function census(s: State): Map<string, number> {
 function lostName(id: string): string {
   const [t, k] = id.split(":");
   if (t === "v") return VALUABLES[k as ValuableKind].label;
-  if (t === "t") return TOOLS[k as ToolKind].label;
   if (t === "m") return MODS[k as ModKind].name;
   return POIS[Number(k)].name;
 }
@@ -174,7 +160,7 @@ export class BagView {
     if (!this.open) return;
     const list = entries(this.profile, s);
     const worth = list.reduce((n, e) => n + e.value, 0);
-    const load = s.player.haul.reduce((n, k) => n + VALUABLES[k].size, 0) + s.player.tools.reduce((n, k) => n + TOOLS[k].size, 0);
+    const load = s.player.haul.reduce((n, k) => n + VALUABLES[k].size, 0);
     const head = `<div class="bp-head">${bagIcon()}<b>${load}/${BAG.slots}</b>${strip}<b class="bp-worth">${worth}</b><span class="bp-slots" style="color:${POUCH}">${pouchIcon()}<b>${pouchSlots(this.profile.hideout)}</b></span></div>`;
     const html = head + `<div class="bp-rows">${list.map((e) => row(e)).join("")}</div>` + extras(s);
     if (html !== this.lastHtml) {

@@ -1,7 +1,6 @@
-import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { DEPOT, FACTORY, FACTORY_TOP, HEAL_KINDS, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { parseAttacks, type Attack } from "./attacks";
-import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
-import { openRoutes } from "../sim/routes";
+import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, REGIONS, regionOf, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
 import { islandDay, sinceFor } from "./days";
@@ -36,12 +35,11 @@ export type Item =
   | { t: "armor"; tier: Rarity }
   | { t: "heal"; kind: HealKind }
   | { t: "valuable"; kind: ValuableKind }
-  | { t: "key"; poi: PoiId }
-  | { t: "tool"; kind: ToolKind };
+  | { t: "key"; poi: PoiId };
 
 /** What persists between raids. */
 export interface Profile {
-  v: 57;
+  v: 58;
   cash: number;
   stash: Item[];
   raids: number;
@@ -63,8 +61,6 @@ export interface Profile {
   depotSent: Partial<Record<PoiId, number>>;
   /** The explored map (`encodeSeen()`), grown by every raid. */
   seen: string;
-  /** The routes opened for good (`ROUTES` order): every raid's world has them open. */
-  routes: RouteId[];
   /**
    * When the island started (ms; 0 until the first camp sets it): its day is the calendar day
    * counted from it (`islandDay()` in meta/days.ts). No raid moves it. v51 and older count their
@@ -198,7 +194,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 57,
+    v: 58,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -212,7 +208,6 @@ export function newProfile(seed = 1): Profile {
     depots: [],
     depotSent: {},
     seen: "",
-    routes: [],
     since: 0,
     poiState,
     known: [...MOD_START],
@@ -251,16 +246,14 @@ export function price(i: Item): number {
       return VALUABLES[i.kind].value;
     case "key":
       return META.key;
-    case "tool":
-      return TOOLS[i.kind].value;
   }
 }
 
 /** What the trader charges for an item: common valuables cost more than they sell for. */
 export const buyPrice = (i: Item) => (i.t === "valuable" ? Math.round(price(i) * META.materials.markup) : price(i));
 
-/** What the trader pays for an item: valuables and spare tools at full value, gear at a share of its price. */
-export const sellPrice = (i: Item) => (i.t === "valuable" || i.t === "tool" ? price(i) : Math.round(price(i) * META.sellShare));
+/** What the trader pays for an item: valuables at full value, gear at a share of its price. */
+export const sellPrice = (i: Item) => (i.t === "valuable" ? price(i) : Math.round(price(i) * META.sellShare));
 
 /** Key names, for lists and the HUD. */
 export const keyName = (poi: PoiId) => `${POIS[poiIndex(poi)].name}の鍵`;
@@ -500,21 +493,12 @@ export function takeKit(p: Profile, given: Loadout, from: PoiId | null = null): 
 }
 
 /**
- * What comes home through the pouch on a wipe: the tools, in the order taken, while they fit
- * (they are what opens a route), then the most valuable valuables in the slots left (`at`: their
- * places in `haul`). This is the wipe path; `bestFitValuables` is only the valuables knapsack
- * used by pacing.
+ * What comes home through the pouch on a wipe: the most valuable valuables that fit its slots
+ * (`at`: their places in `haul`).
  */
-export function pouchKeep(haul: ValuableKind[], tools: ToolKind[], slots: number = META.pouch): { haul: ValuableKind[]; tools: ToolKind[]; at: number[] } {
-  const kept: ToolKind[] = [];
-  let left = slots;
-  for (const k of tools)
-    if (TOOLS[k].size <= left) {
-      kept.push(k);
-      left -= TOOLS[k].size;
-    }
-  const at = bestFitValuableSlots(haul, left);
-  return { haul: at.map((n) => haul[n]), tools: kept, at };
+export function pouchKeep(haul: ValuableKind[], slots: number = META.pouch): { haul: ValuableKind[]; at: number[] } {
+  const at = bestFitValuableSlots(haul, slots);
+  return { haul: at.map((n) => haul[n]), at };
 }
 
 /** The most valuable valuables that fit in `slots` bag slots (valuables only; wipe uses `pouchKeep`). */
@@ -537,13 +521,11 @@ function bestFitValuableSlots(haul: ValuableKind[], slots: number): number[] {
 }
 
 /**
- * What a raid brings home, the routes its tools opened (the tools spent on them are in `home`
- * but not in the stash), the ways in it taught, and what the stash had no room for (倉庫の整理待ち).
+ * What a raid brings home, the ways in it taught, and what the stash had no room for (倉庫の整理待ち).
  */
 export interface Settlement {
   profile: Profile;
   home: Item[];
-  opened: RouteId[];
   /** Ways in the raid walked to that the base did not offer before (only when the player got off alive). */
   learned: EntryId[];
   /**
@@ -685,12 +667,12 @@ export function wanted(p: Profile): Record<ValuableKind, number> {
 /**
  * The order in which things claim stash room: keys, then valuables the hideout still
  * wants, then gear (the dearest first, since the better of it is found only on the
- * island), then the other valuables and spare tools, which are worth the same sold now
+ * island), then the other valuables, which are worth the same sold now
  * or later (a tool that opens a route is spent before anything is stored).
  */
 export function keepOrder(items: Item[], want: Record<ValuableKind, number>): Item[] {
   const left = { ...want };
-  const rankOf = (i: Item) => (i.t === "key" ? 0 : i.t === "tool" ? 3 : i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
+  const rankOf = (i: Item) => (i.t === "key" ? 0 : i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
   // Dearer valuables claim what the hideout wants first.
   const ranked = [...items].sort((a, b) => price(b) - price(a)).map((i) => ({ i, r: rankOf(i) }));
   return ranked.sort((a, b) => a.r - b.r || price(b.i) - price(a.i)).map((x) => x.i);
@@ -738,9 +720,7 @@ export function keepParcels(before: Pick<Profile, "poiState" | "parcels">, after
  */
 export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
   const pl = s.player;
-  // A record of a raid kept from before tools were carried has none.
-  const tools = pl.tools ?? [];
-  const home: Item[] = [...s.sent.map((v): Item => ({ t: "valuable", kind: v })), ...(s.sentTools ?? []).map((k): Item => ({ t: "tool", kind: k }))];
+  const home: Item[] = s.sent.map((v): Item => ({ t: "valuable", kind: v }));
   if (s.outcome === "extracted") {
     // The starter weapons never left the stash.
     for (const w of pl.weapons) if (w && !w.starter) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
@@ -749,11 +729,9 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
     for (const k of HEAL_KINDS) for (let i = pl.heals[k]; i > 0; i--) home.push({ t: "heal", kind: k });
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
     for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
-    for (const k of tools) home.push({ t: "tool", kind: k });
   } else {
-    const kept = pouchKeep(pl.haul, tools, pouchSlots(p.hideout));
+    const kept = pouchKeep(pl.haul, pouchSlots(p.hideout));
     for (const v of kept.haul) home.push({ t: "valuable", kind: v });
-    for (const k of kept.tools) home.push({ t: "tool", kind: k });
   }
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
@@ -779,20 +757,10 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
       home.push({ t: "valuable", kind: raidReserveKind(s.seed ^ 0xc2b2ae35, a.id, k) });
     }
   }
-  // Each tool home opens the first of its routes still closed, and is spent on it.
-  const opened: RouteId[] = [];
-  const spent = new Set<Item>();
-  for (const i of home) {
-    if (i.t !== "tool") continue;
-    const r = ROUTES.find((o) => o.tool === i.kind && !p.routes.includes(o.id) && !opened.includes(o.id));
-    if (!r) continue;
-    opened.push(r.id);
-    spent.add(i);
-  }
   const day = awayRaid ? { ...raidDay(s), captured: [] as NodeId[], battle: undefined } : raidDay(s);
   // Overnight change first, while today's island still holds the stash packing.
   const change = raidChange(p, day);
-  const { profile, pending } = store({ ...p, routes: openRoutes([...p.routes, ...opened]) }, home.filter((i) => !spent.has(i)));
+  const { profile, pending } = store(p, home);
   // 倉庫へ届いた must list only what store kept — overflow stays in pending / 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
   // Field raids enable synthetic depots for every "own" field node — never copy those into the home profile.
@@ -888,7 +856,6 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   return {
     profile: fresh,
     home,
-    opened,
     learned,
     // Until 倉庫の整理: overflow listed under the old results line (soldFor 0 — not sold).
     sold: pending,
@@ -925,7 +892,7 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
  * here and no raid is counted: that is `settle()`'s, when the island's raid ends.
  */
 export function settleSortie(p: Profile, s: State, rivalTrop?: (owner: string) => number): Settlement {
-  const bare: State = { ...s, player: { ...s.player, weapons: [], armor: 0, heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, 0])) as State["player"]["heals"], haul: [], haulAt: [], keys: [], tools: [], mods: [] } };
+  const bare: State = { ...s, player: { ...s.player, weapons: [], armor: 0, heals: Object.fromEntries(HEAL_KINDS.map((k) => [k, 0])) as State["player"]["heals"], haul: [], haulAt: [], keys: [], mods: [] } };
   const r = settle(p, bare, rivalTrop);
   return { ...r, profile: { ...r.profile, raids: p.raids, extracted: p.extracted, time: p.time, seed: p.seed, goal: p.goal ?? null, lastKit: p.lastKit } };
 }
@@ -1114,6 +1081,7 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v54 and older may hold `expeditions` / `incoming` (遠征, removed), which v55 drops.
  * v55 and older may have built the 作業台 or the 無線機 (removed): v56 drops them and pays back what their levels took (`REMOVED_MODULES`).
  * v56 and older may hold a 強度 and the best each POI was freed at (`threat` / `freedAt`, removed): v57 drops them.
+ * v57 and older may hold routes opened and tools in the stash (removed): v58 drops the routes and pays each tool's price back (`REMOVED_TOOLS`).
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 /**
@@ -1121,11 +1089,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * credits and its valuables at their worth. A save that built them is paid that back, once, as it loads.
  */
 const REMOVED_MODULES: Record<string, number[]> = { workbench: [0, 1280, 9080], radio: [0, 2010, 9110] };
+/** What a tool left in the stash (or waiting for it) of a save from before v58 is paid back at: its price as it stood. */
+const REMOVED_TOOLS: Record<string, number> = { cutter: 700, charge: 900 };
 
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1140,14 +1110,14 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     if (x.t === "heal") return HEAL_KINDS.includes(x.kind as HealKind);
     if (x.t === "valuable") return typeof x.kind === "string" && x.kind in VALUABLES;
     if (x.t === "key") return typeof x.poi === "string" && poiIndex(x.poi as PoiId) >= 0;
-    if (x.t === "tool") return typeof x.kind === "string" && x.kind in TOOLS;
     return false;
   };
   const h = (o.hideout ?? {}) as Record<string, unknown>;
   const hideout = emptyHideout();
   for (const m of MODULES) if (Number.isInteger(h[m])) hideout[m] = Math.max(0, Math.min(HIDEOUT[m].levels.length, h[m] as number));
   // v56: the modules that are gone give back what they took.
-  const refund = Object.entries(REMOVED_MODULES).reduce((n, [m, paid]) => n + (Number.isInteger(h[m]) ? paid[Math.max(0, Math.min(paid.length - 1, h[m] as number))] : 0), 0);
+  const toolsBack = [...o.stash, ...(Array.isArray(o.pending) ? o.pending : [])].reduce((n: number, i: unknown) => n + (i && typeof i === "object" && (i as Record<string, unknown>).t === "tool" ? (REMOVED_TOOLS[(i as Record<string, unknown>).kind as string] ?? 0) : 0), 0);
+  const refund = toolsBack + Object.entries(REMOVED_MODULES).reduce((n, [m, paid]) => n + (Number.isInteger(h[m]) ? paid[Math.max(0, Math.min(paid.length - 1, h[m] as number))] : 0), 0);
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
   const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
@@ -1209,7 +1179,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 57,
+    v: 58,
     cash: Math.max(0, Math.floor(o.cash)) + refund,
     stash,
     raids,
@@ -1223,7 +1193,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     depots,
     depotSent,
     seen: (typeof o.v === "number" && o.v >= 25) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
-    routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     since,
     poiState,
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,

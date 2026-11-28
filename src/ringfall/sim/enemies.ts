@@ -1,5 +1,5 @@
 import { ALLY, AWARE, CHARGER, CONQUEST, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, SUPPORT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
-import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
+import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, senseUnseen, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
@@ -254,20 +254,19 @@ function flyHeight(x: number, z: number): number {
  * stood is mostly where it stepped to the tick before. The same question in the same world has
  * the same answer.
  */
-type GroundAsked = { x: number; z: number; r: number; feet: number; world: number; g: number };
+type GroundAsked = { x: number; z: number; r: number; feet: number; g: number };
 const groundAsked = new WeakMap<Enemy, GroundAsked>();
 function groundUnder(e: Enemy, x: number, z: number, r: number, feet: number): number {
   const a = groundAsked.get(e);
-  if (a && a.world === worldVersion && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet) && a.r === r) return a.g;
+  if (a && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet) && a.r === r) return a.g;
   const g = groundAt(x, z, r, feet);
   if (a) {
     a.x = x;
     a.z = z;
     a.r = r;
     a.feet = feet;
-    a.world = worldVersion;
     a.g = g;
-  } else groundAsked.set(e, { x, z, r, feet, world: worldVersion, g });
+  } else groundAsked.set(e, { x, z, r, feet, g });
   return g;
 }
 
@@ -307,7 +306,7 @@ function markNear(s: State) {
  * standing at their posts, and each would test the boxes round them again for nothing.
  * Numbers are matched with Object.is, so a -0 is never taken for a 0.
  */
-type Stood = { x: number; y: number; z: number; hx: number; hy: number; hz: number; world: number; out: boolean };
+type Stood = { x: number; y: number; z: number; hx: number; hy: number; hz: number; out: boolean };
 const stood = new WeakMap<Enemy, Stood>();
 const still = (e: Enemy) => Object.is(e.vel.x, 0) && Object.is(e.vel.y, 0) && Object.is(e.vel.z, 0);
 
@@ -315,12 +314,12 @@ function moveBody(e: Enemy, vx: number, vz: number): boolean {
   if (!Object.is(vx, 0) || !Object.is(vz, 0) || !still(e)) return stepBody(e, vx, vz);
   const { pos, home } = e;
   const a = stood.get(e);
-  if (a && a.world === worldVersion && Object.is(a.x, pos.x) && Object.is(a.y, pos.y) && Object.is(a.z, pos.z) && Object.is(a.hx, home.x) && Object.is(a.hy, home.y) && Object.is(a.hz, home.z)) return a.out;
+  if (a && Object.is(a.x, pos.x) && Object.is(a.y, pos.y) && Object.is(a.z, pos.z) && Object.is(a.hx, home.x) && Object.is(a.hy, home.y) && Object.is(a.hz, home.z)) return a.out;
   const x = pos.x;
   const y = pos.y;
   const z = pos.z;
   const out = stepBody(e, 0, 0);
-  if (Object.is(pos.x, x) && Object.is(pos.y, y) && Object.is(pos.z, z) && still(e)) stood.set(e, { x, y, z, hx: home.x, hy: home.y, hz: home.z, world: worldVersion, out });
+  if (Object.is(pos.x, x) && Object.is(pos.y, y) && Object.is(pos.z, z) && still(e)) stood.set(e, { x, y, z, hx: home.x, hy: home.y, hz: home.z, out });
   return out;
 }
 

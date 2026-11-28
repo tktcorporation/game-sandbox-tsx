@@ -1,4 +1,4 @@
-import type { PoiId, RegionId } from "./map";
+import type { RegionId } from "./map";
 /**
  * Every tuning number of RINGFALL. Units are metres, seconds and degrees unless noted.
  * Change a number here only together with a re-run of `npm run sim:ringfall` and an
@@ -879,21 +879,6 @@ export const MOD = {
   /** Seconds the slipstream part's speed lasts after a kill from behind or unseen. */
   haste: 4,
 };
-
-export type ToolKind = "cutter" | "charge";
-
-/**
- * Tools open the blocked routes (`ROUTES` in map.ts) for good once one reaches the stash.
- * Each lies in the bins of one POI (`from`): every bin there but the vault holds it with
- * `chance`, decided from the raid's seed and the bin rather than the raid's random numbers, so
- * the rest of every bin's loot is the same with tools as without. A tool fills `size` bag
- * slots, and one whose routes are all open sells for `value`.
- */
-export const TOOLS: Record<ToolKind, { label: string; size: number; value: number; from: PoiId; chance: number }> = {
-  cutter: { label: "ボルトカッター", size: 2, value: 700, from: "yard", chance: 0.1 },
-  charge: { label: "発破キット", size: 3, value: 900, from: "quarry", chance: 0.1 },
-};
-export const TOOL_KINDS = Object.keys(TOOLS) as ToolKind[];
 
 /**
  * Reinforcements: a squad beams in somewhere `dist` metres from the player, out of

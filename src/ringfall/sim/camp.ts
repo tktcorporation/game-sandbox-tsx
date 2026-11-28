@@ -1,9 +1,8 @@
 import { PLAYER } from "./config";
 import { stepAlly, placeAlly } from "./ally";
 import { groundAt } from "./geom";
-import { CAMP, HOME_REGION, inCamp, type CampSpot, type RouteId } from "./map";
+import { CAMP, HOME_REGION, inCamp, type CampSpot } from "./map";
 import { stepPlayer } from "./player";
-import { useRoutes } from "./routes";
 import { starterKit, idleInput, newRun, type Input, type Kit, type State } from "./state";
 import { hypot2 } from "./hypot";
 
@@ -16,8 +15,8 @@ import { hypot2 } from "./hypot";
  */
 
 /** The camp's state: the player waking in front of the tent with `kit` in hand, the teammate beside them. */
-export function newCamp(seed: number, routes: readonly RouteId[] = [], kit: Kit = starterKit()): State {
-  const s = newRun(seed, kit, HOME_REGION.id, { routes: [...routes] });
+export function newCamp(seed: number, kit: Kit = starterKit()): State {
+  const s = newRun(seed, kit, HOME_REGION.id);
   s.enemies = [];
   s.squads = [];
   s.parties = [];
@@ -43,7 +42,6 @@ function campInput(input: Input): Input {
 
 /** One 1/60 s tick of the camp: the player walks, the teammate keeps beside them. The raid's clock does not run. */
 export function stepCamp(s: State, input: Input, prevCrouch: boolean) {
-  useRoutes(s.routes);
   s.events = [];
   stepPlayer(s, campInput(input), prevCrouch);
   stepAlly(s);

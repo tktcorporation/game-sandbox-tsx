@@ -27,7 +27,6 @@ const BASE = {
   depots: ["supply", "quarry"],
   seen: "",
   entries: ["beach", "checkpoint", "jetty"],
-  routes: [],
   known: [],
   pending: [],
   goal: null,

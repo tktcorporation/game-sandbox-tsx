@@ -24,7 +24,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { extname, join } from "node:path";
 import { chromium } from "playwright-core";
 import { WORLD } from "../src/ringfall/sim/config";
-import { BOXES, FRAMES, ROUTES, type Box } from "../src/ringfall/sim/map";
+import { BOXES, FRAMES, type Box } from "../src/ringfall/sim/map";
 import { terrainHeight } from "../src/ringfall/sim/terrain";
 import { drawField, fieldLine, fieldNumbers, measureField } from "./ringfall-field";
 import { measureVariety, varietyLine, varietyNumbers } from "./ringfall-variety";
@@ -105,9 +105,6 @@ const lay = (b: Box, n: number, tall: boolean) => {
     }
 };
 BOXES.forEach((b, n) => lay(b, n, true));
-// Numbered as the view numbers them: closed in the world the look shows (no route opened), open as when all are.
-ROUTES.flatMap((r) => r.closed).forEach((b, n) => lay(b, BOXES.length + n, true));
-ROUTES.flatMap((r) => r.open).forEach((b, n) => lay(b, BOXES.length + n, false));
 // The world's baseline is kept with the place's, so a baseline taken at another place never
 // stands in for this one's; it records its grid, so a grid of another size is never compared.
 const worldBin = `${baseDir}/world.bin`;

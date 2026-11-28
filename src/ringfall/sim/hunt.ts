@@ -1,6 +1,5 @@
 import { WORLD } from "./config";
 import { BOXES, DECKS, inCamp } from "./map";
-import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
 
@@ -58,7 +57,7 @@ function grid() {
   // Boxes in a walker's way: higher than a step above the ground and low enough to walk into.
   // The camp's are left out: no hunter goes in (`inCamp()` stops it at the fence), so its fence
   // and furniture leave the field over the beach round it as the open sand it would be without them.
-  for (const b of [...BOXES, ...routeBoxesOpen]) {
+  for (const b of BOXES) {
     if (inCamp({ x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2 }, 0.5)) continue;
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
     if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
@@ -299,20 +298,6 @@ const CACHE = 8;
  * target so costs a field every few metres instead of every cell it enters.
  */
 const NEAR = 3;
-/**
- * Forgets the grid and every field, for a world whose open routes changed (routes.ts): they are
- * built again on first use.
- */
-export function resetHunt() {
-  open = height = main = mask = null;
-  forgetFields();
-  parked.clear();
-  kept.clear();
-  keptCells = 0;
-  spareMarks.length = 0;
-  spareRings.length = 0;
-}
-
 /** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
 export function forgetFields() {
   fieldUses++;
@@ -366,7 +351,7 @@ const spare: { dist: Float32Array; order: Int32Array; count: number }[] = [];
  * about half of it) that is written back once keeps its distances whole from then on, every cell
  * in its place (`whole`), and is written back again in one copy rather than cell by cell. Many
  * such fields are dropped without being written back, so only those that are pay for the larger
- * copy. Kept across raids, since the grid is the same; dropped with the grid (`resetHunt()`). The
+ * copy. Kept across raids, since the grid is the same; never dropped. The
  * oldest copies go once they hold more than `KEPT_CELLS` cells, a whole copy counted by its
  * field's cells too, so the same copies are kept either way.
  */

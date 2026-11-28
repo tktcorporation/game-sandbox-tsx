@@ -216,7 +216,6 @@ export class Bot {
     inp.heal = false;
     inp.touch = false;
     inp.keepArmor = true;
-    inp.leaveTools = true;
     inp.leaveMods = true;
     inp.noClimb = true;
     // Ornstein-Uhlenbeck aim error: wanders, stationary std = aimErr.
@@ -1169,7 +1168,7 @@ export class Bot {
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       // A valuable the bag can take, or one worth throwing cheaper things out for.
-      if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, [])) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+      if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
     const best = cands.sort((a, b) => a.d - b.d)[0] ?? null;
     // A thing at the edge of its reach whose way round leads off first drops out of reach and

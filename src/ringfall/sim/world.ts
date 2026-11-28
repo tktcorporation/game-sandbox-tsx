@@ -1,6 +1,6 @@
-import { ALLY, AWARE, BAG, BIN_GEAR, DEPOT, ENEMIES, ENTRY, FRONT, HEALS, HOME, MOD, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, USE, VALUABLES, VAULT, WORLD, type EnemyKind, type HealKind, type ToolKind, type ValuableKind } from "./config";
+import { ALLY, AWARE, BAG, BIN_GEAR, DEPOT, ENEMIES, ENTRY, FRONT, HEALS, HOME, MOD, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOP_BINS, USE, VALUABLES, VAULT, WORLD, type EnemyKind, type HealKind, type ValuableKind } from "./config";
 import { grabZip, zipInReach, zipPoint } from "./zips";
-import { dist2d, groundAt, los, solidAt, worldVersion } from "./geom";
+import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, poiIndex, REGIONS, regionOf, ZIPS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
@@ -333,25 +333,10 @@ function openBin(s: State, binIndex: number) {
     const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);
     spill(s, b.x, b.y, b.z, { kind: "key", key: vault, rarity: 3 });
   }
-  for (const k of TOOL_KINDS) if (toolIn(s, b, k)) spillTool(s, b, k);
 }
 
 /** A uniform number in [0, 1) from the raid's seed, a bin and a salt, drawing nothing from `rand`. */
 const hashed = (s: State, b: Bin, salt: number) => mix(Math.imul(s.seed ^ 0x2c1b3c6d, 0x9e3779b1) + Math.imul(b.id, 7919) + Math.imul(salt + 1, 104729)) / 4294967296;
-
-/** Whether bin `b` holds tool `k` this raid (`TOOLS`). Vaults hold none. */
-export const toolIn = (s: State, b: Bin, k: ToolKind) => !b.vault && !b.outside && POIS[b.poi].id === TOOLS[k].from && hashed(s, b, TOOL_KINDS.indexOf(k)) < TOOLS[k].chance;
-
-/**
- * A tool tossed out of an opened bin as `spill()` tosses loot, its direction from the hash and
- * its id the bin's own, negated: neither the raid's random numbers nor its ids move for it.
- */
-function spillTool(s: State, b: Bin, k: ToolKind) {
-  const p = s.player;
-  const a = Math.atan2(p.pos.z - b.z, p.pos.x - b.x) + (hashed(s, b, 7) - 0.5) * 1.6;
-  const sp = b.y > terrainHeight(b.x, b.z) + 0.5 ? 1.2 : 2.6;
-  s.loot.push({ id: -(b.id * TOOL_KINDS.length + TOOL_KINDS.indexOf(k) + 1), kind: "tool", tool: k, rarity: 3, pos: { x: b.x, y: b.y + 1.0, z: b.z }, vel: { x: Math.cos(a) * sp, y: 4.2, z: Math.sin(a) * sp }, age: 0 });
-}
 
 const weaponLabel = (w: Weapon) => w.kind.toUpperCase();
 
@@ -360,19 +345,18 @@ const weaponLabel = (w: Weapon) => w.kind.toUpperCase();
  * put back on the ground it fell to, and its slide halves until it no longer moves. The same
  * question in the same world has the same answer.
  */
-type LootGround = { x: number; z: number; feet: number; world: number; g: number };
+type LootGround = { x: number; z: number; feet: number; g: number };
 const lootAsked = new WeakMap<Loot, LootGround>();
 function lootGround(l: Loot, x: number, z: number, feet: number): number {
   const a = lootAsked.get(l);
-  if (a && a.world === worldVersion && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet)) return a.g;
+  if (a && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet)) return a.g;
   const g = groundAt(x, z, 0.2, feet);
   if (a) {
     a.x = x;
     a.z = z;
     a.feet = feet;
-    a.world = worldVersion;
     a.g = g;
-  } else lootAsked.set(l, { x, z, feet, world: worldVersion, g });
+  } else lootAsked.set(l, { x, z, feet, g });
   return g;
 }
 
@@ -472,12 +456,11 @@ export function stepLoot(s: State, input: Input) {
   stepSearch(s, alive);
   if (!alive) return;
   // Cycle the sticky focus even when not pressing use, so the prompt moves before the next press.
-  if (input.cycleUse) useTarget(s, !input.keepArmor, !input.leaveTools, !input.leaveMods, !input.noClimb, true);
+  if (input.cycleUse) useTarget(s, !input.keepArmor, !input.leaveMods, !input.noClimb, true);
   if (!input.interact) return;
-  const t = useTarget(s, !input.keepArmor, !input.leaveTools, !input.leaveMods, !input.noClimb);
+  const t = useTarget(s, !input.keepArmor, !input.leaveMods, !input.noClimb);
   if (t?.kind === "ally") startHelp(s);
   else if (t?.kind === "mod") wearMod(s, t.loot);
-  else if (t?.kind === "tool") takeTool(s, t.loot);
   else if (t?.kind === "bin") startSearch(s, t.index);
   else if (t?.kind === "care") openCare(s);
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
@@ -510,11 +493,8 @@ function wearArmor(s: State, l: Loot, shed: Loot[]) {
 /** Bag slots the haul takes up. */
 export const bagUsed = (haul: ValuableKind[]) => haul.reduce((n, k) => n + VALUABLES[k].size, 0);
 
-/** Bag slots the tools take up. */
-export const toolsUsed = (tools: ToolKind[]) => tools.reduce((n, k) => n + TOOLS[k].size, 0);
-
-/** Bag slots taken: the haul and the tools together. */
-export const bagLoad = (p: Pick<Player, "haul" | "tools">) => bagUsed(p.haul) + toolsUsed(p.tools);
+/** Bag slots taken. */
+export const bagLoad = (p: Pick<Player, "haul">) => bagUsed(p.haul);
 
 /** Where each valuable in the bag came from (`Player.haulAt`); all -1 when the haul was set without them. */
 export const haulOrigins = (p: Pick<Player, "haul"> & { haulAt?: number[] }): number[] => (p.haulAt?.length === p.haul.length ? p.haulAt : p.haul.map(() => -1));
@@ -540,13 +520,13 @@ function bagOut(p: Player, out: number[]): { kind: ValuableKind; from: number }[
  * the cheapest one is worth as much as `kind`. The bag holds at most `BAG.slots` items, so
  * trying every set is cheap.
  */
-export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[]): number[] | null {
-  return roomFor(haul, VALUABLES[kind].size + toolsUsed(tools), VALUABLES[kind].value);
+export function makeRoom(haul: ValuableKind[], kind: ValuableKind): number[] | null {
+  return roomFor(haul, VALUABLES[kind].size, VALUABLES[kind].value);
 }
 
 /**
  * The cheapest set of the haul (its indices) to throw out for `size` more slots, kept only
- * when it is worth less than `worth`; [] when the room is there already. Tools are never thrown out.
+ * when it is worth less than `worth`; [] when the room is there already.
  */
 function roomFor(haul: ValuableKind[], size: number, worth: number): number[] | null {
   const need = bagUsed(haul) + size - BAG.slots;
@@ -561,30 +541,10 @@ function roomFor(haul: ValuableKind[], size: number, worth: number): number[] | 
   return best && best.lost < worth ? best.set : null;
 }
 
-/**
- * What taking tool `k` throws out of the bag: the cheapest valuables that make room, whatever
- * they are worth, since a tool is carried for the route it opens. Null when even the whole
- * haul does not make room (other tools fill the bag).
- */
-export const roomForTool = (p: Pick<Player, "haul" | "tools">, k: ToolKind) => roomFor(p.haul, TOOLS[k].size + toolsUsed(p.tools), Infinity);
-
-/** Takes a tool up, dropping what `roomForTool()` throws out. */
-function takeTool(s: State, l: Loot) {
-  const p = s.player;
-  const k = l.tool;
-  const out = k ? roomForTool(p, k) : null;
-  if (!k || !out) return;
-  const dropped = bagOut(p, out);
-  for (const v of dropped) spillValuable(s, p.pos, v.kind, v.from);
-  s.loot = s.loot.filter((o) => o !== l);
-  p.tools.push(k);
-  s.events.push({ t: "pickup", kind: "tool", rarity: 3, label: `${TOOLS[k].label}${dropped.length ? `（${dropped.map((v) => VALUABLES[v.kind].label).join("・")}を捨てた）` : ""}` });
-}
-
 /** Drop the cheapest items on the ground and bag the better one. */
 function swapInto(s: State, l: Loot) {
   const p = s.player;
-  const out = l.valuable ? makeRoom(p.haul, l.valuable, p.tools) : null;
+  const out = l.valuable ? makeRoom(p.haul, l.valuable) : null;
   if (!out || !l.valuable) return;
   const dropped = bagOut(p, out);
   for (const k of dropped) spillValuable(s, p.pos, k.kind, k.from);
@@ -642,7 +602,6 @@ export type UseTarget =
   | { kind: "swap"; loot: Loot }
   | { kind: "armor"; loot: Loot }
   | { kind: "depot"; index: number }
-  | { kind: "tool"; loot: Loot }
   | { kind: "mod"; loot: Loot }
   | { kind: "core"; node: number }
   | { kind: "jump"; node: number }
@@ -666,7 +625,7 @@ const faceCut = (yaw: number, from: { x: number; z: number }, x: number, z: numb
  * by distance, facing and `USE.prefer`. The HUD and the press both read this list through
  * `useTarget`, so the prompt never promises something else.
  */
-export function useCandidates(s: State, armor = true, tools = true, mods = true, zips = true): UseCand[] {
+export function useCandidates(s: State, armor = true, mods = true, zips = true): UseCand[] {
   const p = s.player;
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
   const a = s.ally;
@@ -690,10 +649,8 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
     const d = dist2d(l.pos, p.pos);
     if (l.kind === "weapon" && l.weapon) push(`loot:${l.id}`, d, USE.prefer.weapon, { kind: "weapon", loot: l }, l.pos.x, l.pos.y, l.pos.z);
     else if (armor && l.kind === "armor" && l.worn && l.rarity !== p.armor) push(`loot:${l.id}`, d, USE.prefer.armor, { kind: "armor", loot: l }, l.pos.x, l.pos.y, l.pos.z);
-    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools)?.length) {
+    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)?.length) {
       push(`loot:${l.id}`, d, USE.prefer.swap, { kind: "swap", loot: l }, l.pos.x, l.pos.y, l.pos.z);
-    } else if (tools && l.kind === "tool" && l.tool && roomForTool(p, l.tool)) {
-      push(`loot:${l.id}`, d, USE.prefer.tool, { kind: "tool", loot: l }, l.pos.x, l.pos.y, l.pos.z);
     } else if (mods && l.kind === "mod" && l.mod && !hasMod(p, l.mod)) {
       push(`loot:${l.id}`, d, USE.prefer.mod, { kind: "mod", loot: l }, l.pos.x, l.pos.y, l.pos.z);
     }
@@ -733,8 +690,8 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
  * prompt never promises something else. A focus chosen with the cycle key (`useHeld`) stays
  * until it leaves reach or the player cycles again, so a later ordinary read does not snap back.
  */
-export function useTarget(s: State, armor = true, tools = true, mods = true, zips = true, cycle = false): UseTarget | null {
-  const cands = useCandidates(s, armor, tools, mods, zips);
+export function useTarget(s: State, armor = true, mods = true, zips = true, cycle = false): UseTarget | null {
+  const cands = useCandidates(s, armor, mods, zips);
   if (!cands.length) {
     s.useFocus = null;
     s.useHeld = false;
@@ -757,7 +714,7 @@ export function useTarget(s: State, armor = true, tools = true, mods = true, zip
 }
 
 /** How many use candidates are in reach (for the prompt's cycle hint). */
-export const useCandCount = (s: State, armor = true, tools = true, mods = true, zips = true) => useCandidates(s, armor, tools, mods, zips).length;
+export const useCandCount = (s: State, armor = true, mods = true, zips = true) => useCandidates(s, armor, mods, zips).length;
 
 /** Where the focused use target stands, for the world's highlight ring; null when none. */
 export function useFocusMark(s: State): { x: number; y: number; z: number } | null {
@@ -776,16 +733,17 @@ export function depotInReach(s: State): number {
 }
 
 /**
- * Order bag valuables + tools for a depot send (same ranks as stash keepOrder, without keys/gear):
- * wanted valuables first, then the rest by price, then tools.
+ * The bag's valuables in the order a depot sends them (as the stash keeps them): those still
+ * wanted first, then the rest by price.
  */
-function depotSendOrder(s: State): ({ t: "v"; i: number } | { t: "tool"; i: number })[] {
+function depotSendOrder(s: State): number[] {
   const p = s.player;
   const left = { ...s.stashWant };
-  const rankV = (k: ValuableKind) => ((left[k] ?? 0) > 0 ? ((left[k] = (left[k] ?? 0) - 1), 0) : 1);
-  const vs = p.haul.map((k, i) => ({ t: "v" as const, i, r: rankV(k), price: VALUABLES[k].value }));
-  const ts = p.tools.map((k, i) => ({ t: "tool" as const, i, r: 2, price: TOOLS[k].value }));
-  return [...vs, ...ts].sort((a, b) => a.r - b.r || b.price - a.price).map(({ t, i }) => (t === "v" ? { t, i } : { t, i }));
+  const rank = (k: ValuableKind) => ((left[k] ?? 0) > 0 ? ((left[k] = (left[k] ?? 0) - 1), 0) : 1);
+  return p.haul
+    .map((k, i) => ({ i, r: rank(k), price: VALUABLES[k].value }))
+    .sort((a, b) => a.r - b.r || b.price - a.price)
+    .map((o) => o.i);
 }
 
 /**
@@ -796,7 +754,7 @@ function depotSendOrder(s: State): ({ t: "v"; i: number } | { t: "tool"; i: numb
  */
 function useDepot(s: State, index: number) {
   const p = s.player;
-  const bag = p.haul.length + p.tools.length;
+  const bag = p.haul.length;
   if (bag && s.stashRoom <= 0) {
     // 倉庫が満杯: do not send; allow 切り上げて生還 with the bag.
     if (s.leaving) return;
@@ -813,31 +771,26 @@ function useDepot(s: State, index: number) {
     }
     const room = Number.isFinite(s.stashRoom) ? Math.max(0, Math.floor(s.stashRoom)) : bag;
     const order = depotSendOrder(s);
-    const take = order.slice(0, Math.min(room, order.length));
-    const takeV = new Set(take.filter((x) => x.t === "v").map((x) => x.i));
-    const takeT = new Set(take.filter((x) => x.t === "tool").map((x) => x.i));
+    const takeV = new Set(order.slice(0, Math.min(room, order.length)));
     const sentHaul = p.haul.filter((_, i) => takeV.has(i));
-    const sentTools = p.tools.filter((_, i) => takeT.has(i));
     const keepHaul = p.haul.filter((_, i) => !takeV.has(i));
     const keepAt = haulOrigins(p).filter((_, i) => !takeV.has(i));
-    const keepTools = p.tools.filter((_, i) => !takeT.has(i));
     const value = sentHaul.reduce((n, k) => n + VALUABLES[k].value, 0);
     const stock = sentHaul[0];
-    const left = keepHaul.length + keepTools.length;
+    const left = keepHaul.length;
     s.events.push({
       t: "deposit",
-      n: sentHaul.length + sentTools.length,
+      n: sentHaul.length,
       value,
       ...(left ? { left } : {}),
-      room: Number.isFinite(s.stashRoom) ? Math.max(0, s.stashRoom - (sentHaul.length + sentTools.length)) : undefined,
-      ...(sentHaul.length + sentTools.length === 0 ? { full: true } : {}),
+      room: Number.isFinite(s.stashRoom) ? Math.max(0, s.stashRoom - sentHaul.length) : undefined,
+      ...(sentHaul.length === 0 ? { full: true } : {}),
     });
-    if (sentHaul.length || sentTools.length) {
+    if (sentHaul.length) {
       s.sentAt.push(...haulOrigins(p).filter((_, i) => takeV.has(i)));
       s.sent.push(...sentHaul);
-      s.sentTools.push(...sentTools);
       s.sentVia[index] += value;
-      if (Number.isFinite(s.stashRoom)) s.stashRoom = Math.max(0, s.stashRoom - (sentHaul.length + sentTools.length));
+      if (Number.isFinite(s.stashRoom)) s.stashRoom = Math.max(0, s.stashRoom - sentHaul.length);
       // Silent defence stock: the island DO spends these while the owner is away. Not a world pickup.
       if (stock) {
         const d = DEPOTS[index];
@@ -846,7 +799,6 @@ function useDepot(s: State, index: number) {
     }
     p.haul = keepHaul;
     p.haulAt = keepAt;
-    p.tools = keepTools;
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });

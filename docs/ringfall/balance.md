@@ -1251,3 +1251,5 @@ AI の島を 30 日に入れた変更（`scripts/ringfall-campaign.ts` と `meta
 核から攻めに出る変更（`State.jumps`、`sim/jump.ts`）：自分の核で使うキーを押したときの候補が 1 つ増えただけで、`Start.jumps` を渡さない出撃（ゲートとボット）は何も変わらない。続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 103.7 秒（読み込み 8.4 秒）、変更後が 116.8 秒（読み込み 10.6 秒）で、2 コアの機械。読み込みも同じ割合で伸びているので、機械の揺れと見ている（増えた計算は、使うキーの候補を作るときに自分の核までの距離を 1 回ずつ測る分だけ）。ハッシュはどちらも c550863ed55b。`RINGFALL_SIM_CHECK=checkJump,checkSortie,checkSortieSettle,checkFront` は通る。30 周の表は取り直していない。
 
 強度を消した変更（`THREAT`、`Start.threat`、`netPlated()`、`Profile.threat` / `freedAt`、セーブは v57）：強度 0 の出撃は、消す前と同じ数字で動く。続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 110.5 秒、変更後が 105.0 秒（2 コアの機械、揺れの範囲）。ハッシュはどちらも c550863ed55b。`checkMods` は強度 5 の代わりに、その出撃の MOD の出やすさを 2.5 倍にして確かめる。30 周の表は取り直していない。
+
+道具と「道を開ける」仕組みを消した変更（`ROUTES`、`TOOLS`、`sim/routes.ts`、地形の掘り込み、セーブは v58）：世界は「どの道も閉じている」状態に固定で、障害物の箱もなくなる。坑道と点検通路の線に沿って遮蔽を置かない帯もなくなったので、貯水池の遮蔽が 15 個増えた（2697 → 2712）。続けて測った `npm run bench:ringfall -- 1` は変更前が CPU 108.4 秒、変更後が 114.9 秒（2 コアの機械、揺れの範囲）。ハッシュは c550863ed55b → d8af9626354a で、10 本のうち変わったのは「battle, 2 nodes, casual」の 1 本だけ（86f55dee7a77 → 017cf90be7ed）。30 周の表は取り直していない。

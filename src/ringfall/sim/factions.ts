@@ -2,7 +2,6 @@ import { AMBUSH, AWARE, BAG, DEG, FACTION, NOISE, PATROL, PLATE, ROGUE, SHOT, SI
 import { dist2d, los, lookAngles, wrapAngle } from "./geom";
 import { EXTRACTS, GATES, MOBILES, RING_GAPS, regionHere, type Mobile, type RegionId } from "./map";
 import { onMainGround, walkLine } from "./hunt";
-import { worldKey } from "./routes";
 import { mix, type Enemy, type Point, type SquadState, type State } from "./state";
 import { alertSquad, headOf, standable } from "./awareness";
 import { bodyCenter, fall } from "./combat";
@@ -48,7 +47,7 @@ const walks = new Map<string, Point[]>();
  * way. Built once per world; it builds fields, so a raid that builds it forgets them after.
  */
 export function mobileWalk(m: Mobile): Point[] {
-  const key = `${worldKey()}|${m.name}`;
+  const key = m.name;
   const kept = walks.get(key);
   if (kept) return kept;
   const out: Point[] = [{ x: m.nodes[0][0], z: m.nodes[0][1] }];

@@ -4,7 +4,6 @@ import { dist2d } from "./geom";
 import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { fieldUses, forgetFields, onMainGround, walkLine } from "./hunt";
 import { inArea } from "./areas";
-import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
 import { dueCounter, frontNodes, garrisonLeaves, garrisonOf, momentum, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
 import { allyUp } from "./ally";
@@ -205,21 +204,21 @@ function traceLinks() {
 
 /** Traces one link's walk, both ways, unless it is traced already in the current world. */
 function traceLink(a: number, b: number) {
-  const key = `${worldKey()}|${a}|${b}`;
+  const key = `${a}|${b}`;
   if (walks.has(key)) return;
   const from = nodePoint(a);
   const to = nodePoint(b);
   const line = walkLine(from, to, 3);
   const pts = line.length > 1 ? [from, ...line] : [from, to];
   walks.set(key, pathOfPoints(pts));
-  walks.set(`${worldKey()}|${b}|${a}`, pathOfPoints([...pts].reverse()));
+  walks.set(`${b}|${a}`, pathOfPoints([...pts].reverse()));
 }
 
 /**
  * A trace of the links spread over several `warmLinks()` calls: its world, the next link, the
  * walks it traced so far, and `fieldUses` as it left the cache.
  */
-let warm: { key: string; next: number; traced: string[]; uses: number } | null = null;
+let warm: { next: number; traced: string[]; uses: number } | null = null;
 
 /**
  * Lets a trace spread over several calls go, with the walks it traced. A walk depends on the
@@ -240,20 +239,19 @@ function dropWarm() {
  * starts the trace over, as does a raid starting before it is done. True once every link is traced.
  */
 export function warmLinks(budgetMs: number): boolean {
-  const key = worldKey();
   const all = links();
-  if (warm && (warm.key !== key || warm.uses !== fieldUses)) dropWarm();
+  if (warm && warm.uses !== fieldUses) dropWarm();
   if (!warm) {
-    if (all.every(([a, b]) => walks.has(`${key}|${a}|${b}`))) return true;
+    if (all.every(([a, b]) => walks.has(`${a}|${b}`))) return true;
     forgetFields();
-    warm = { key, next: 0, traced: [], uses: fieldUses };
+    warm = { next: 0, traced: [], uses: fieldUses };
   }
   const t0 = performance.now();
   while (warm.next < all.length) {
     const [a, b] = all[warm.next++];
-    if (!walks.has(`${key}|${a}|${b}`)) {
+    if (!walks.has(`${a}|${b}`)) {
       traceLink(a, b);
-      warm.traced.push(`${key}|${a}|${b}`, `${key}|${b}|${a}`);
+      warm.traced.push(`${a}|${b}`, `${b}|${a}`);
     }
     if (performance.now() - t0 >= budgetMs) break;
   }
@@ -269,7 +267,7 @@ export function warmLinks(budgetMs: number): boolean {
 /** The walk of a squad from `from` to `to` (a squad standing at a node walks nowhere). */
 function pathOf(from: number, to: number): Path {
   if (from === to) return pathOfPoints([nodePoint(to)]);
-  return walks.get(`${worldKey()}|${from}|${to}`) ?? pathOfPoints([nodePoint(from), nodePoint(to)]);
+  return walks.get(`${from}|${to}`) ?? pathOfPoints([nodePoint(from), nodePoint(to)]);
 }
 
 /** The point `d` metres along `p`. */

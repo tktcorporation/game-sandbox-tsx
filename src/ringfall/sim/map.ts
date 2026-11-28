@@ -1,8 +1,8 @@
-import { FRONT, VAULT, WORLD, ZIP, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
+import { FRONT, VAULT, WORLD, ZIP, type EnemyKind, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "./config";
 import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { LENGTHS, offStreet, STREETS } from "./streets";
 import { layZips, type ZipLine } from "./ziplayout";
-import { buildTerrain, type Carve, CRATERS, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
+import { buildTerrain, CRATERS, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
 
 /**
@@ -6118,19 +6118,6 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.radarRidge, place(POI_AT.radar[0], POI_AT.radar[1], radar())),
 ];
 
-/**
- * The routes' trenches (`ROUTES`), carved only while a route is open. Cover is kept off the
- * ground they lower (`scatterCover`), which is otherwise left as it is: pressing it flat would
- * change the closed world.
- */
-// The tunnel under the mountains, straight through them north of the landing pad, its floor at
-// the open ground's level at either mouth.
-const TUNNEL: Carve = { name: "坑道", line: [[40, -270], [40, -430]], floor: 3, levels: [10, 4], slope: 2.4 };
-// The dam's inspection gallery, in the heart's frame: from the lakebed at the dam's foot, up
-// through the dam under its crest to the pad behind it.
-const GALLERY: Carve = { name: "点検通路", line: [[20 + AREA.heart[0], -105 + AREA.heart[1]], [20 + AREA.heart[0], -171 + AREA.heart[1]]], floor: 2.5, levels: [LEVEL.lakebed, LEVEL.dam], slope: 2.4 };
-/** Metres either side of a trench's floor that its walls may lower the ground. */
-const TRENCH_ROOM = 10;
 
 /**
  * Cover scattered over the open ground so that a fight is mostly about breaking
@@ -6315,13 +6302,6 @@ function clearance(authored: Box[], { points, segments }: Keep, within?: { x0: n
     if (nearBy(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r)) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
   };
   for (const q of [...points, ...depots, ...stops, yard]) room(q);
-  // A trench's line keeps cover off as far as its walls may lower the ground.
-  for (const c of [TUNNEL, GALLERY]) {
-    const [[ax, az], [bx, bz]] = c.line;
-    const n = Math.ceil(hypot2(bx - ax, bz - az));
-    const r = c.floor + TRENCH_ROOM;
-    for (let k = 0; k <= n; k++) room({ x: ax + ((bx - ax) * k) / n, z: az + ((bz - az) * k) / n, r });
-  }
   for (const sg of segments) {
     const n = Math.max(1, Math.ceil(hypot2(sg.bx - sg.ax, sg.bz - sg.az)));
     for (let k = 0; k <= n; k++) {
@@ -7771,184 +7751,3 @@ export function deckAt(x: number, z: number): number | null {
   return null;
 }
 
-export type RouteId = "tunnel" | "dam" | "gangway";
-
-/**
- * A way through the world that an obstacle blocks until its tool (`TOOLS`) reaches the stash;
- * from then on the obstacle is gone in every raid. A route through rock is a trench carved into
- * the ground (`carve`) only while it is open, roofed where it runs under high ground: closed,
- * the ground is the one every raid had before, so nothing walks, hunts or scatters over it, and
- * its obstacles (`closed`) stand set into the cliff where the way will open. `open` holds what
- * stands only once it is open (a roof, a gangway). Neither list is among `BOXES`.
- */
-export interface Route {
-  id: RouteId;
-  name: string;
-  tool: ToolKind;
-  /** What opening it gives, in a line for the base. */
-  note: string;
-  /** Its way on foot from end to end: drawn on the world map, walked by the sim gate. */
-  path: { x: number; z: number }[];
-  /** On the ground in front of each obstacle, where the prompt naming the tool shows. */
-  at: { x: number; y: number; z: number }[];
-  carve?: Carve;
-  closed: Box[];
-  open: Box[];
-}
-
-/** Metres from an obstacle's `at` within which the HUD names the tool that opens it. */
-export const ROUTE_PROMPT = 4.5;
-
-/** Headroom under a route's roof, and the least rock left over it. */
-const ROUTE_CEIL = 3.6;
-const ROUTE_ROCK = 0.8;
-
-/**
- * The first point, walking along z from `z` at `x` by `dir`, where the ground turns to cliff:
- * the foot of the rock a route cuts into.
- */
-function cliffFoot(x: number, z: number, dir: 1 | -1): { z: number; y: number } {
-  for (let d = 0; d < 80; d += 0.25) if (steepAt(x, z + dir * d)) return { z: z + dir * d, y: terrainHeight(x, z + dir * (d - 0.5)) };
-  throw new Error(`no cliff from ${x},${z}`);
-}
-
-/**
- * The roof over a carved route that runs straight along z, in two-metre lengths: from
- * `ROUTE_CEIL` over the floor up to the lowest of the ground it was cut from, wide enough to
- * close the trench's walls below that. A length with less rock than `ROUTE_ROCK` over its
- * headroom stays open to the sky (a cutting at either end).
- */
-function roofOver(c: Carve, kind: BoxKind, tint: number): Box[] {
-  const [[x, za], [, zb]] = c.line;
-  const dir = Math.sign(zb - za);
-  const level = (z: number) => c.levels[0] + ((c.levels[1] - c.levels[0]) * (z - za)) / (zb - za);
-  const out: Box[] = [];
-  for (let k = 0; k < Math.round(Math.abs(zb - za) / 2); k++) {
-    const z0 = za + dir * k * 2;
-    const z1 = z0 + dir * 2;
-    let top = Infinity;
-    for (let t = 0; t <= 2; t += 0.5) for (let dx = -c.floor; dx <= c.floor; dx += 0.5) top = Math.min(top, terrainHeight(x + dx, z0 + dir * t));
-    const lo = Math.min(level(z0), level(z1));
-    const y0 = Math.max(level(z0), level(z1)) + ROUTE_CEIL;
-    if (top < y0 + ROUTE_ROCK) continue;
-    const half = c.floor + (top - lo) / c.slope + 0.4;
-    out.push(rect(x - half, Math.min(z0, z1), x + half, Math.max(z0, z1), y0, top, kind, tint));
-  }
-  return out;
-}
-
-/**
- * How far into a cliff, past its foot, an obstacle's front stands: further than a body pressed
- * against the foot reaches (PLAYER.radius), so nothing that walks there ever touches it, and sight
- * between bodies on the ground in front never passes through it.
- */
-const SET_IN = 0.45;
-
-/**
- * A concrete frame set into a cliff at its foot (`foot`, the cliff rising toward `dir`),
- * `half` metres either side of x, filled with `fill`. It stands within the cliff's slope, off
- * the ground in front, which keeps that ground as it was for everything that walks it.
- */
-function portal(x: number, foot: { z: number; y: number }, dir: 1 | -1, half: number, fill: Box[]): Box[] {
-  const za = foot.z + dir * SET_IN;
-  const zb = foot.z + dir * (SET_IN + 1);
-  const [z0, z1] = [Math.min(za, zb), Math.max(za, zb)];
-  const y = foot.y - 0.6;
-  return [
-    rect(x - half - 0.8, z0, x - half, z1, y, foot.y + 4.6, "wall", 0),
-    rect(x + half, z0, x + half + 0.8, z1, y, foot.y + 4.6, "wall", 0),
-    rect(x - half - 0.8, z0, x + half + 0.8, z1, foot.y + 3.8, foot.y + 4.9, "wall", 1),
-    // The fill sits a little back in the frame.
-    ...fill.map((b) => ({ ...b, z0: Math.min(za + dir * 0.3, zb), z1: Math.max(za + dir * 0.3, zb) })),
-  ];
-}
-
-/** The rock fallen into a tunnel's mouth: blocks filling the frame up to its lintel, and some heaped in front. */
-function rubble(x: number, foot: { z: number; y: number }, dir: 1 | -1, half: number): Box[] {
-  const y = foot.y - 0.6;
-  const fill = [rect(x - half, 0, x - 0.4, 0, y, foot.y + 3.8, "rock", 1), rect(x - 0.4, 0, x + half, 0, y, foot.y + 3.3, "rock", 0), rect(x + 0.6, 0, x + half, 0, foot.y + 3.3, foot.y + 3.8, "rock", 1)];
-  const [h0, h1] = [foot.z + dir * SET_IN, foot.z + dir * (SET_IN + 0.3)];
-  const heap = [-1.6, 1.1].map((dx, i) => rect(x + dx - 0.7, Math.min(h0, h1), x + dx + 0.7, Math.max(h0, h1), y, foot.y + 1.6 + i * 0.4, "rock", i));
-  return [...portal(x, foot, dir, half, fill), ...heap];
-}
-
-/** A doorway closed by a chained gate of steel bars over a dark steel door. */
-function chainedGate(x: number, foot: { z: number; y: number }, dir: 1 | -1, half: number): Box[] {
-  const y = foot.y - 0.6;
-  const door = [rect(x - half, 0, x + half, 0, y, foot.y + 3.8, "steel", 1)];
-  // From the frame's front inward: the chain and padlock, the gate of bars, then the door.
-  const front = foot.z + dir * SET_IN;
-  const span = (a: number, b: number) => [Math.min(front + dir * a, front + dir * b), Math.max(front + dir * a, front + dir * b)] as const;
-  const [c0, c1] = span(0, 0.12);
-  const [f0, f1] = span(0.12, 0.26);
-  return [
-    ...portal(x, foot, dir, half, door),
-    rect(x - half, f0, x + half, f1, foot.y - 0.1, foot.y + 3.4, "fence", 0),
-    rect(x - half, c0, x + half, c1, foot.y + 1.15, foot.y + 1.3, "steel", 2),
-    rect(x - 0.2, c0, x + 0.2, c1, foot.y + 0.85, foot.y + 1.3, "steel", 0),
-  ];
-}
-
-/** The routes, in the order a tool opens them when more than one of its routes is closed. */
-export const ROUTES: Route[] = (() => {
-  const tunnel = TUNNEL;
-  const tx = tunnel.line[0][0];
-  const tSouth = cliffFoot(tx, tunnel.line[0][1], -1);
-  const tNorth = cliffFoot(tx, tunnel.line[1][1], 1);
-  const dam = GALLERY;
-  const [, hz] = AREA.heart;
-  const dx = dam.line[0][0];
-  const dFoot = cliffFoot(dx, -100 + hz, -1);
-  // The wreck's gangway: up the hull's north side to its main deck, forward of the middle,
-  // written in the wreck's frame (from its hull's north face, `n`) so it moves with the wreck.
-  const deck = LEVEL.seabed + SHIP_DECK;
-  const [wx, wz] = POI_AT.wreck;
-  const n = wz + SHIP.z - SHIP.beam / 2;
-  const gx = wx + SHIP.x - 32.4;
-  const gz = n - 1.3;
-  // The deck's rail along the hull's north side: the gangway is chained against it, and lands over it.
-  const rail = n + 0.25;
-  const gangway = paint(lift(LEVEL.seabed, stairs(gx, gz, "w", 2.0, deck + 0.7 - LEVEL.seabed)), "step", "steel", () => 2);
-  return [
-    {
-      id: "tunnel",
-      name: "山の坑道",
-      tool: "charge",
-      note: "発着場の北の野から山地を抜けて港湾地帯の南の野へ。峠の登り降りがない",
-      path: [{ x: tx, z: -266 }, { x: tx, z: -434 }],
-      at: [{ x: tx, y: tSouth.y, z: tSouth.z + 2 }, { x: tx, y: tNorth.y, z: tNorth.z - 2 }],
-      carve: tunnel,
-      closed: [...rubble(tx, tSouth, -1, 3), ...rubble(tx, tNorth, 1, 3)],
-      open: roofOver(tunnel, "rock", 1),
-    },
-    {
-      id: "dam",
-      name: "ダムの点検通路",
-      tool: "cutter",
-      note: "湖底からダムの中を登って堤と発着場へ。放水路や西の坂を回らずに済む",
-      path: [{ x: dx, z: -100 + hz }, { x: dx, z: -178 + hz }],
-      at: [{ x: dx, y: dFoot.y, z: dFoot.z + 2 }],
-      carve: dam,
-      closed: chainedGate(dx, dFoot, -1, 2.5),
-      open: roofOver(dam, "wall", 0),
-    },
-    {
-      id: "gangway",
-      name: "難破船の舷梯",
-      tool: "cutter",
-      note: "難破船の北側から甲板へ直に上がる。船内の階段を通らない",
-      path: [{ x: gx - 21, z: gz }, { x: gx + 1.2, z: n + 3 }],
-      at: [{ x: gx, y: LEVEL.seabed, z: gz - 1.4 }],
-      // Hauled aboard and stood up against the deck's rail, over the place it lands, chained there.
-      closed: [
-        rect(gx - 1.0, rail, gx + 1.0, n + 0.55, deck, deck + 2.8, "steel", 2),
-        rect(gx - 1.15, n + 0.55, gx + 1.15, n + 0.7, deck + 1.0, deck + 1.15, "steel", 2),
-        rect(gx - 0.18, n + 0.7, gx + 0.18, n + 0.9, deck + 0.75, deck + 1.2, "steel", 0),
-      ],
-      // Its flight, and a landing over the deck's rail that steps down onto the deck.
-      open: [...gangway, rect(gx, gz - 1.0, gx + 2.4, n + 0.55, deck + 0.4, deck + 0.7, "steel", 2)],
-    },
-  ];
-})();
-
-export const routeOf = (id: RouteId): Route => ROUTES.find((r) => r.id === id) ?? ROUTES[0];

@@ -2,10 +2,9 @@ import { atRisk } from "../sim/battle";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { DUCK, ENEMIES, FRONT, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, GLOWS, NODES, ROUTES, ZIPS, type Box } from "../sim/map";
+import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, GLOWS, NODES, ZIPS, type Box } from "../sim/map";
 import { zipUp } from "../sim/zips";
 import { frontNodes } from "../sim/front";
-import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { LANDS, offshore, terrainHeight } from "../sim/terrain";
 import { groundColour, groundMat } from "./ground";
@@ -102,17 +101,6 @@ export function boatSpot(quayX: number, t: number) {
   const docked = CHANNEL.z1 - 2;
   return { x: quayX + (CHANNEL.x1 - 6 - quayX) * t, z: docked + (mid - docked) * t };
 }
-
-/** Each route's reach: its boxes, and its trench out to where its walls have risen past the high ground. */
-const ROUTE_REACH = ROUTES.map((r) => {
-  const xs = [...r.closed, ...r.open].flatMap((b) => [b.x0, b.x1]).concat(r.carve ? r.carve.line.map((q) => q[0]) : []);
-  const zs = [...r.closed, ...r.open].flatMap((b) => [b.z0, b.z1]).concat(r.carve ? r.carve.line.map((q) => q[1]) : []);
-  const pad = r.carve ? r.carve.floor + 32 / r.carve.slope : 1;
-  return { x0: Math.min(...xs) - pad, x1: Math.max(...xs) + pad, z0: Math.min(...zs) - pad, z1: Math.max(...zs) + pad };
-});
-
-/** Whether any route reaches into the square [x0, x1] x [z0, z1]. */
-const reached = (c: { x0: number; z0: number; x1: number; z1: number }) => ROUTE_REACH.some((a) => a.x0 < c.x1 + 2 && a.x1 > c.x0 - 2 && a.z0 < c.z1 + 2 && a.z1 > c.z0 - 2);
 
 /** A boulder at the foot of the coast's cliffs, as placed; its mesh is made when its chunk is built. */
 interface Boulder {
@@ -280,8 +268,6 @@ export class World {
   private chunks: Chunk[] = [];
   /** The grid ticks the ground is drawn on, inside the world's bounds and out to the horizon. */
   private ticks: { xs: number[]; zs: number[] } = { xs: [], zs: [] };
-  /** The world (`worldKey()`) the chunks were built for. */
-  private built = "";
   private boat: THREE.Group | null = null;
   private readonly skyDome = this.sky();
   /** The neighbours' islands on the horizon (horizon.ts). */
@@ -325,8 +311,6 @@ export class World {
   private scatter = new GroundScatter();
   /** Camera chunk cell last streamed from: emptying far chunks only when this moves. */
   private streamCell = "";
-  /** Routes' boxes for the world in place, rebuilt only when `worldKey()` changes. */
-  private routesCache: Box[] = [];
   /** Chunks whose ground is up but whose merged statics still wait (nearest finished first). */
   private pendingMerge: Chunk[] = [];
   /** Boulder materials by colour hex, shared so filling a chunk does not allocate one per rock. */
@@ -561,14 +545,7 @@ export class World {
       for (let v = hi; v <= hi + HORIZON; v += 9) out.push(v);
       return out;
     };
-    // A carved route runs along z and is a few metres wide: its column is drawn every metre, so
-    // its floor shows as wide as it is walked.
-    const fine = ROUTES.flatMap((r) => {
-      if (!r.carve) return [];
-      const x = r.carve.line[0][0];
-      return Array.from({ length: 2 * Math.ceil(r.carve.floor + 3) + 1 }, (_, k) => Math.round(x) - Math.ceil(r.carve!.floor + 3) + k);
-    });
-    const xs = [...new Set([...ticks(WORLD.x0, WORLD.x1), ...fine])].sort((a, b) => a - b);
+    const xs = ticks(WORLD.x0, WORLD.x1);
     const zs = ticks(WORLD.z0, WORLD.z1);
     this.ticks = { xs, zs };
     const nx = Math.ceil((WORLD.x1 - WORLD.x0) / CHUNK);
@@ -620,7 +597,6 @@ export class World {
         if (offshore(x, z) < -3) continue; // inside another land: not the coast
         this.chunkOf({ x0: x, x1: x, z0: z, z1: z }).boulders.push({ x, y: terrainHeight(x, z) - sc * 0.3, z, color, sc, sy, rot });
       }
-    this.built = worldKey();
     // Built as the camera comes near them (streamChunks).
     for (const c of this.chunks) this.scene.add(c.group);
     // Out past the bounds: the coarse ring of cliffs.
@@ -644,11 +620,6 @@ export class World {
     const i = Math.max(0, Math.min(nx - 1, Math.floor(((b.x0 + b.x1) / 2 - WORLD.x0) / CHUNK)));
     const j = Math.max(0, Math.min(nz - 1, Math.floor(((b.z0 + b.z1) / 2 - WORLD.z0) / CHUNK)));
     return this.chunks[j * nx + i];
-  }
-
-  /** The routes' boxes standing in the world now in place: closed routes' obstacles, open routes' roofs and gangways. */
-  private routeBoxes(): Box[] {
-    return this.routesCache;
   }
 
   private boulderMat(color: number) {
@@ -681,13 +652,12 @@ export class World {
     const t0 = performance.now();
     this.emptyChunk(c);
     c.built = true;
-    const routes = this.routeBoxes();
-    c.ground = this.groundMesh(c.xs, c.zs, () => true, (x, y, z) => coverAt(x, y + 0.2, z) * contactAt(x, y, z, routes));
+    c.ground = this.groundMesh(c.xs, c.zs, () => true, (x, y, z) => coverAt(x, y + 0.2, z) * contactAt(x, y, z));
     c.group.add(still(c.ground));
     this.filled.n++;
     this.filled.ms += performance.now() - t0;
     // Nothing to merge: done. Otherwise the heavy merge waits for a free slice of the budget.
-    if (!c.boxes.length && !c.boulders.length && !routes.some((b) => this.chunkOf(b) === c)) return;
+    if (!c.boxes.length && !c.boulders.length) return;
     c.pending = true;
     this.pendingMerge.push(c);
   }
@@ -696,7 +666,6 @@ export class World {
   private fillChunkMerge(c: Chunk) {
     if (!c.built || !c.pending) return;
     const t0 = performance.now();
-    const routes = this.routeBoxes();
     const statics = new THREE.Group();
     for (const n of c.boxes) statics.add(buildStatic(BOXES[n], n));
     for (const m of streetMeshes(c)) statics.add(m);
@@ -709,9 +678,6 @@ export class World {
     }
     const root = new THREE.Group();
     root.add(statics);
-    routes.forEach((b, n) => {
-      if (this.chunkOf(b) === c) root.add(buildStatic(b, BOXES.length + n));
-    });
     if (c.merged) {
       c.group.remove(c.merged);
       c.merged.traverse((m) => m instanceof THREE.Mesh && m.geometry.dispose());
@@ -726,7 +692,7 @@ export class World {
     this.filled.ms += performance.now() - t0;
   }
 
-  /** (Re)builds a chunk fully: used by prebuild and route rebuilds, where a hitch is acceptable. */
+  /** (Re)builds a chunk fully: used by prebuild, where a hitch is acceptable. */
   private fillChunk(c: Chunk) {
     this.fillChunkGround(c);
     if (c.pending) this.fillChunkMerge(c);
@@ -745,7 +711,6 @@ export class World {
     const t0 = performance.now();
     const pieces: TrimPiece[] = [];
     for (const n of c.boxes) trimBox(BOXES[n], pieces, TRIM_SITE);
-    for (const b of this.routeBoxes()) if (this.chunkOf(b) === c) trimBox(b, pieces, TRIM_SITE);
     c.trim = mergeTrim(pieces, coverAt);
     if (c.trim) c.group.add(still(c.trim));
     this.trimmed.n++;
@@ -851,7 +816,6 @@ export class World {
    * raid's camera starts, so its first seconds draw what was built before them.
    */
   prebuild(points: readonly { x: number; z: number }[]) {
-    this.syncRoutes();
     const far = this.streamFar();
     for (const c of this.chunks) if (!c.built && points.some((q) => World.away(c, q.x, q.z) < far)) this.fillChunk(c);
     for (const c of this.chunks) if (c.built && !c.trim && !c.trimless && points.some((q) => World.away(c, q.x, q.z) < this.q.trimFar)) c.trimless = !this.fillTrim(c);
@@ -860,26 +824,6 @@ export class World {
   /** How far round the camera chunks are built: one chunk past the fog. */
   private streamFar() {
     return this.q.fogFar + CHUNK;
-  }
-
-  /**
-   * Rebuilds the chunks a route touches when the world in place has other routes open (a new
-   * raid's): their ground is carved or not, their obstacles or roofs stand or not.
-   */
-  private syncRoutes() {
-    const key = worldKey();
-    if (key === this.built && this.routesCache.length) return;
-    this.built = key;
-    const open = key.split(",");
-    this.routesCache = ROUTES.flatMap((r) => (open.includes(r.id) ? r.open : r.closed));
-    this.shadowAt = -Infinity;
-    this.scatter.invalidate();
-    // Route-touched chunks are rebuilt fully; other pending merges must still finish, or they stay
-    // as ground-only with no buildings until the chunk is emptied far away.
-    const orphan = this.pendingMerge.filter((c) => !reached(c));
-    this.pendingMerge.length = 0;
-    for (const c of this.chunks) if (c.built && reached(c)) this.fillChunk(c);
-    for (const c of orphan) if (c.built && c.pending) this.fillChunkMerge(c);
   }
 
   /**
@@ -1374,7 +1318,6 @@ export class World {
     for (const c of this.clouds) c.visible = p.pos.y > 30;
 
     this.cables.forEach((g, i) => (g.visible = zipUp(s, i)));
-    this.syncRoutes();
     this.streamChunks(fx, fz);
     this.scatter.update(fx, fz, this.q.scatterFar);
     // Chunks wholly past the fog are skipped (the camera's view culls the rest), and so are
@@ -1665,7 +1608,7 @@ export class World {
     for (const l of s.loot) {
       let g = this.loot.get(l.id);
       if (!g) {
-        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal, l.valuable, l.tool);
+        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal, l.valuable);
         this.loot.set(l.id, g);
         this.scene.add(still(g));
       }
@@ -1968,7 +1911,7 @@ export class World {
     extra.add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glow(PAL.orb, 0.35)));
     extra.add(new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), glow(PAL.orb)));
     extra.add(haloSprite(PAL.orb, 1, 0.5));
-    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "tool", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse", "cutter"));
+    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse"));
     for (const heal of ["cell", "battery", "syringe", "medkit"] as const) extra.add(buildLootItem("heal", 1, undefined, heal));
     extra.add(buildBin(false).root, buildBin(true).root, buildFlareSmoke(), buildCare(), buildDropship(), buildBoat());
     const guns = new THREE.Group();

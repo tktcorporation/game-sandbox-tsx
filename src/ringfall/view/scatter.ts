@@ -144,12 +144,6 @@ export class GroundScatter {
     this.layMs = performance.now() - t0;
   }
 
-  /** Forgets where it was laid, so the next update lays it again (the world's routes changed). */
-  invalidate() {
-    this.at = "";
-    this.cells.clear();
-  }
-
   /**
    * What cell (i, j) holds, worked out once and kept while the cell stays near: a re-laying after
    * the camera moves a square only works out the cells newly in reach.

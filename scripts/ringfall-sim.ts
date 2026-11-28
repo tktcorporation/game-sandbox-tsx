@@ -25,10 +25,9 @@ import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { NET_EDGE, NODES, FRONT_LINKS, nodeIndex, TIER, type NodeId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type PoiId, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { NET_EDGE, NODES, FRONT_LINKS, nodeIndex, TIER, type NodeId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, STOPS, type PoiId, type RegionId, type Squad } from "../src/ringfall/sim/map";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
 import { inArea } from "../src/ringfall/sim/areas";
-import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
 import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, onMainGround, routeLength } from "../src/ringfall/sim/hunt";
 import { collide, dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
@@ -39,7 +38,7 @@ import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { haulAndSentWorth } from "../src/ringfall/sim/results";
-import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, toolIn, useTarget } from "../src/ringfall/sim/world";
+import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, useTarget } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
@@ -47,7 +46,7 @@ import { build, buildBuying, buildFactory, buy, canBuild, depotAllowance, depotB
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
-import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, VAULT } from "../src/ringfall/sim/config";
 import { blankIsland, islandHolds, applyRaid, holds, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
@@ -3251,216 +3250,18 @@ function checkUnlocks(): string | null {
   return null;
 }
 
-/** The two ends of a route's walk. */
-const ends = (id: RouteId) => {
-  const r = ROUTES.find((o) => o.id === id)!;
-  return [r.path[0], r.path[r.path.length - 1]] as const;
-};
-
 /**
- * Walks the player up the wreck's gangway: east along the hull's north side to the top of the
- * flight, then south onto the deck. Returns the height the walk ends at.
- */
-function walkGangway(open: boolean): number {
-  const s = padRun();
-  s.routes = open ? ["gangway"] : [];
-  const [foot, top] = ends("gangway");
-  const p = s.player;
-  p.pos = { x: foot.x - 1, y: LEVEL.seabed, z: foot.z };
-  p.yaw = Math.PI / 2;
-  s.ally.pos = { x: foot.x - 8, y: LEVEL.seabed, z: foot.z - 4 };
-  const walk = { ...idleInput(), moveZ: 1, noClimb: true };
-  for (let t = 0; t < 10 * 60 && p.pos.x < top.x; t++) step(s, walk, false);
-  p.yaw = Math.PI;
-  for (let t = 0; t < 3 * 60 && p.pos.z < top.z; t++) step(s, walk, false);
-  return p.pos.y;
-}
-
-/**
- * The routes (`ROUTES`): closed, the bot's way and the robots' field between a route's ends go
- * the long way round; open, they go straight through, and the wreck's gangway is climbed to the
- * deck on foot. The authored points stand in both worlds; a trench lowers no ground under any of
- * the map's boxes and keeps clear of the cover spots; and the world with every route closed is
- * put back cell for cell.
- */
-function checkRoutes(): string | null {
-  useRoutes([]);
-  const carved = ROUTES.filter((r) => r.carve);
-  const sample = carved.flatMap((r) => {
-    const [[x, za], [, zb]] = r.carve!.line;
-    return Array.from({ length: 41 }, (_, k) => ({ x: x - 8 + (k % 9) * 2, z: za + ((zb - za) * Math.floor(k / 9)) / 4 }));
-  });
-  const before = sample.map((q) => `${terrainHeight(q.x, q.z)},${steepAt(q.x, q.z)},${floorLevel(q.x, q.z)}`).join();
-  const way = (r: (typeof ROUTES)[number]) => {
-    const [a, b] = ends(r.id);
-    return { nav: navLength(a.x, a.z, b.x, b.z), field: routeLength(fieldTo(b.x, b.z)!, a.x, a.z), straight: Math.hypot(a.x - b.x, a.z - b.z) };
-  };
-  const closed = carved.map(way);
-  const closedLayout = checkLayout();
-  if (closedLayout.length) return `route scenario: with every route closed, ${closedLayout[0]}`;
-  if (walkGangway(false) > LEVEL.seabed + 1) return "route scenario: the wreck's deck was climbed with its gangway hauled up";
-  useRoutes(ROUTES.map((r) => r.id));
-  const opened = carved.map(way);
-  const openLayout = checkLayout();
-  if (openLayout.length) return `route scenario: with every route open, ${openLayout[0]}`;
-  for (const [n, r] of carved.entries()) {
-    const c = closed[n];
-    const o = opened[n];
-    if (!(o.nav < o.straight * 1.15) || !(o.field < o.straight * 1.2)) return `route scenario: ${r.id} open is walked in ${o.nav.toFixed(0)} m by the bot and ${o.field.toFixed(0)} m by robots, for ${o.straight.toFixed(0)} m`;
-    if (!(c.nav > o.nav * 1.5) || !(c.field > o.field * 1.5)) return `route scenario: ${r.id} closed is still walked in ${c.nav.toFixed(0)} m by the bot and ${c.field.toFixed(0)} m by robots (open: ${o.nav.toFixed(0)} m)`;
-  }
-  const deck = walkGangway(true);
-  if (Math.abs(deck - (LEVEL.seabed + 13.5)) > 0.3) return `route scenario: walking up the open gangway ended at height ${deck.toFixed(2)}, not on the deck`;
-  // No box of the map hangs over ground a trench lowered, and no cover spot lies in a trench.
-  for (const r of carved) {
-    const [[x, za], [, zb]] = r.carve!.line;
-    const reach = r.carve!.floor + 30 / r.carve!.slope;
-    const z0 = Math.min(za, zb) - reach;
-    const z1 = Math.max(za, zb) + reach;
-    for (const b of BOXES) {
-      if (b.x1 < x - reach || b.x0 > x + reach || b.z1 < z0 || b.z0 > z1) continue;
-      for (const [qx, qz] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]]) {
-        const now = terrainHeight(qx, qz);
-        if (now < b.y0 - 0.3 && b.y0 - now < 6) {
-          useRoutes([]);
-          if (terrainHeight(qx, qz) >= b.y0 - 0.3) return `route scenario: ${r.id}'s trench leaves a ${b.kind} hanging at ${qx.toFixed(1)},${qz.toFixed(1)}`;
-          useRoutes(ROUTES.map((o) => o.id));
-        }
-      }
-    }
-  }
-  const cut = COVERS.map((c) => terrainHeight(c.x, c.z));
-  useRoutes([]);
-  const bad = COVERS.find((c, n) => Math.abs(cut[n] - terrainHeight(c.x, c.z)) > 0.05);
-  if (bad) return `route scenario: a cover spot at ${bad.x.toFixed(1)},${bad.z.toFixed(1)} lies in a route's trench`;
-  const after = sample.map((q) => `${terrainHeight(q.x, q.z)},${steepAt(q.x, q.z)},${floorLevel(q.x, q.z)}`).join();
-  if (after !== before || worldKey() !== "") return "route scenario: closing every route again did not put the ground back as it was";
-  return null;
-}
-
-/**
- * A raid started with a route open has no obstacle there, for bodies and for sight: the tunnel
- * is seen through and walked through from mouth to mouth. Started with it closed, the obstacle
- * stops a body and the view, and the HUD names the tool before it.
- */
-function checkRouteObstacles(): string | null {
-  const r = ROUTES.find((o) => o.id === "tunnel")!;
-  const [south, north] = ends("tunnel");
-  const eyeAt = (q: { x: number; z: number }) => ({ x: q.x, y: groundAt(q.x, q.z, 0.4, 99) + 1.6, z: q.z });
-  const centre = (b: (typeof r.closed)[number]) => ({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.h) / 2, z: (b.z0 + b.z1) / 2 });
-  const rock = r.closed.find((b) => b.kind === "rock")!;
-  const open = newRun(9, starterKit(), "reservoir", { routes: ["tunnel"] });
-  if (open.routes.join() !== "tunnel" || worldKey() !== "tunnel") return `obstacle scenario: a raid started with the tunnel open runs in world "${worldKey()}"`;
-  const c = centre(rock);
-  if (solidAt(c.x, c.y, c.z)) return "obstacle scenario: the tunnel's rubble is still solid with the tunnel open";
-  if (!los(eyeAt(south), eyeAt(north))) return "obstacle scenario: the open tunnel cannot be seen through from mouth to mouth";
-  const body = { x: c.x, y: terrainHeight(c.x, c.z), z: c.z };
-  collide(body, PLAYER.radius);
-  if (dist2d(body, c) > 0.01) return "obstacle scenario: a body in the open tunnel's mouth is pushed out of something";
-  if (routeBefore({ ...r.at[0] }, open.routes)) return "obstacle scenario: an open route still shows its prompt";
-  const shut = newRun(9);
-  if (shut.routes.length || worldKey() !== "") return "obstacle scenario: a raid started with no routes did not put the closed world back";
-  if (!solidAt(c.x, c.y, c.z) || los(eyeAt(south), eyeAt(north))) return "obstacle scenario: the closed tunnel's rubble does not stop a body or the view";
-  const front = { x: c.x, y: rock.y0 + 0.6, z: c.z };
-  collide(front, PLAYER.radius);
-  if (dist2d(front, c) < 0.3) return "obstacle scenario: a body in the closed tunnel's rubble is not pushed out";
-  for (const o of ROUTES) for (const a of o.at) if (routeBefore({ ...a }, [])?.id !== o.id) return `obstacle scenario: before ${o.id}'s obstacle the HUD does not name it`;
-  // A raid steps in its own world, whatever ran in between.
-  newRun(9, starterKit(), "reservoir", { routes: ["tunnel", "dam"] });
-  step(shut, idleInput(), false);
-  if (worldKey() !== "") return `obstacle scenario: stepping a raid with no routes open left world "${worldKey()}" in place`;
-  return null;
-}
-
-/**
- * Tools: each lies only in the bins of its POI (no vault, no bin outside a POI) about as often as
- * `TOOLS` says, without changing anything else a bin holds or the raid's random numbers. The use
- * key takes one into the bag, throwing cheaper things out to make room; the bot leaves them.
- * Home by a way off or a depot, a tool opens the first of its routes still closed and is spent;
- * lost on a wipe it opens nothing, unless the pouch kept it; one whose routes are all open sells.
- * A v8 save has every route closed.
+ * Tools and the routes they opened are gone (v58): a save that held routes opened or tools in its
+ * stash loads without them, each tool paid back at its price.
  */
 function checkTools(): string | null {
-  const any = newRun(1);
-  for (const k of TOOL_KINDS) {
-    let n = 0;
-    let found = 0;
-    for (let seed = 1; seed <= 400; seed++) {
-      const s = { ...any, seed };
-      for (const b of s.bins) {
-        const has = toolIn(s, b, k);
-        if (has && (b.vault || b.outside || POIS[b.poi].id !== TOOLS[k].from)) return `tool scenario: a ${k} lies in bin ${b.id} of ${POIS[b.poi].id}`;
-        if (!b.vault && !b.outside && POIS[b.poi].id === TOOLS[k].from) {
-          n++;
-          if (has) found++;
-        }
-      }
-    }
-    if (Math.abs(found / n - TOOLS[k].chance) > 0.03) return `tool scenario: ${k} lies in ${((found / n) * 100).toFixed(1)}% of its bins, not ${TOOLS[k].chance * 100}%`;
-  }
-  // A bin with a charge in it spills the same loot and leaves the same random state as with no tools.
-  let seed = 1;
-  let binAt = -1;
-  for (; seed < 999 && binAt < 0; seed++) binAt = any.bins.findIndex((b) => toolIn({ ...any, seed }, b, "charge"));
-  seed--;
-  const open = (chance: number) => {
-    const was = TOOLS.charge.chance;
-    TOOLS.charge.chance = chance;
-    const s = padRun();
-    s.rng = 77;
-    s.seed = seed;
-    const b = s.bins[binAt];
-    s.player.pos = { x: b.x, y: b.y, z: b.z + 1 };
-    s.player.search = { bin: binAt, t: 99 };
-    step(s, idleInput(), false);
-    TOOLS.charge.chance = was;
-    return s;
-  };
-  const withTool = open(TOOLS.charge.chance);
-  const without = open(0);
-  const strip = (s: State) => JSON.stringify(s.loot.filter((l) => l.kind !== "tool").map((l) => [l.id, l.kind, l.valuable, l.heal, l.weapon?.kind, l.key]));
-  if (!withTool.loot.some((l) => l.kind === "tool" && l.tool === "charge")) return `tool scenario: bin ${binAt} of seed ${seed} spilled no charge`;
-  if (strip(withTool) !== strip(without) || withTool.rng !== without.rng || withTool.nextId !== without.nextId) return "tool scenario: a tool in a bin changed the rest of its loot or the raid's random numbers";
-  // The use key takes it, throwing out the cheapest valuables for room; the bot leaves it.
-  const take = (leave: boolean) => {
-    const s = padRun();
-    s.player.haul = ["parts", "fuse", "board", "core", "drive", "parts"];
-    s.loot = [{ id: -1, kind: "tool", tool: "charge", rarity: 3, pos: { ...s.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 }];
-    step(s, { ...idleInput(), interact: true, leaveTools: leave }, false);
-    return s;
-  };
-  const took = take(false);
-  if (took.player.tools.join() !== "charge" || bagLoad(took.player) > BAG.slots || took.player.haul.includes("core") === false) return `tool scenario: taking a charge into a full bag left tools ${took.player.tools.join()} and haul ${took.player.haul.join()}`;
-  if (take(true).player.tools.length) return "tool scenario: the bot's input took a tool";
-  // Home: carried out, sent from a depot, kept by the pouch, or lost.
-  const raid = (tools: ("cutter" | "charge")[], outcome: "extracted" | "dead", sent: ("cutter" | "charge")[] = []) => {
-    const s = newRun(3);
-    s.player.tools = [...tools];
-    s.sentTools = [...sent];
-    s.outcome = outcome;
-    return s;
-  };
-  let p = newProfile();
-  const out = settle(p, raid(["charge"], "extracted"));
-  if (out.opened.join() !== "tunnel" || out.profile.routes.join() !== "tunnel" || out.profile.stash.some((i) => i.t === "tool")) return `tool scenario: a charge carried out opened ${out.opened.join()} and left ${JSON.stringify(out.profile.stash.filter((i) => i.t === "tool"))}`;
-  const sent = settle(p, raid([], "dead", ["cutter"]));
-  if (sent.opened.join() !== "dam") return `tool scenario: a cutter sent from a depot before a wipe opened ${sent.opened.join() || "nothing"}`;
-  const lost = settle(p, raid(["charge"], "dead"));
-  if (lost.opened.length || lost.profile.routes.length) return `tool scenario: a charge lost in a wipe opened ${lost.opened.join()}`;
-  const pouched = settle(p, raid(["cutter"], "dead"));
-  if (pouched.opened.join() !== "dam") return `tool scenario: a cutter the pouch (${META.pouch} slots) kept through a wipe opened ${pouched.opened.join() || "nothing"}`;
-  p = settle(p, raid(["cutter", "cutter"], "extracted")).profile;
-  if (p.routes.join() !== "dam,gangway") return `tool scenario: two cutters opened ${p.routes.join()}, not the dam and the gangway`;
-  const spare = settle(p, raid(["cutter"], "extracted"));
-  const kept = spare.profile.stash.find((i) => i.t === "tool");
-  if (spare.opened.length || !kept || sellPrice(kept) !== TOOLS.cutter.value) return "tool scenario: a cutter with its routes all open was not kept to sell at its value";
-  // Saves: a v8 one has every route closed; a v9 one keeps its routes, unknown ones dropped.
-  const v8 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 8 })));
-  if (!v8 || v8.v !== SAVE_V || v8.routes.length) return `tool scenario: a v8 save loaded with routes ${JSON.stringify(v8?.routes)}`;
-  const v9 = parseProfile(JSON.parse(JSON.stringify({ ...p, routes: ["gangway", "nowhere", "dam"] })));
-  if (v9?.routes.join() !== "dam,gangway") return `tool scenario: a v9 save loaded with routes ${JSON.stringify(v9?.routes)}`;
+  const p = newProfile(7);
+  const old = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 57, routes: ["tunnel", "dam"], stash: [...p.stash, { t: "tool", kind: "cutter" }, { t: "tool", kind: "charge" }] })));
+  if (!old || old.v !== SAVE_V || "routes" in old) return `tool scenario: a v57 save with routes open loaded as ${JSON.stringify(old && [old.v, "routes" in old])}`;
+  if (old.stash.some((i) => (i as { t: string }).t === "tool") || old.cash !== p.cash + 1600) return `tool scenario: a v57 save's two tools loaded as ${old.stash.length - p.stash.length} more items and ${old.cash - p.cash} credits`;
   return null;
 }
+
 /** The raid `s` without the robots out between the POIs (on walks, on the roads, at the outposts, the packs and the parties): its POIs' garrisons only. */
 function withoutWalkers(s: State): State {
   s.enemies = s.enemies.filter((e) => e.poi >= 0);
@@ -3936,7 +3737,7 @@ function checkFront(): string | null {
  * landed and bound for it, which takes it back when nobody holds it. Nodes stay as the battle ended.
  */
 /** The profile's version (`Profile.v`): what a new profile is, and what every older save loads as. Raised here with each migration. */
-const SAVE_V = 57;
+const SAVE_V = 58;
 
 /** A new profile on an island all the enemy's: a new island starts with the four shores (`ROUTE_SHORES`) the player's, which the scenarios about one node's taking leave out. */
 const bareProfile = (seed?: number): Profile => ({ ...newProfile(seed), poiState: blankIsland() });
@@ -4223,7 +4024,7 @@ function checkBattle(): string | null {
 // `RINGFALL_SIM_CHECK=checkFront,checkIsland` runs only the checks named and stops after them: for mending one.
 const onlyChecks = process.env.RINGFALL_SIM_CHECK?.split(",") ?? null;
 const broken: string[] = [];
-for (const check of [checkFront, checkPushPull, checkBattle, checkSupport, checkSortie, checkSortieSettle, checkJump, checkFactions, checkIntercept, checkSplit, checkPatrols, checkMods, checkThreat, () => checkTerrainIndex(20_000), checkParties, checkPacks, checkRoutes, checkRouteObstacles, checkTools, checkTimeToKill, checkStagger, checkWindupMoves, checkDepots, checkDepotBudget, checkPlates, checkUnlocks, checkHideout, checkBoltNoTunnel, checkPickupWavesRouted, checkLaterWaveFights, checkSidestepHit, checkReturnFire, checkWallStops, checkPinch, checkPursuit, checkHealHeard, checkPositionMatters, checkPullWhenAiming, checkVault, checkIsland, checkStrength, checkSaveCompat, checkLoadout, checkSettle, checkWipeClearsAir, checkArcOnTitan, checkGoldReload, checkArcIgnoresFacing, checkDeathEndsRaid, checkBleedoutWipe, checkReinforce, checkReinforceHidden, checkSearchBreaks, checkBagSwap, checkBagSwapCheapest, checkRaiders, checkValuableBin, checkAllyRescue, checkAllyDownWipes, checkHelpAlly, checkAllyHoldsFire, checkFlareExtract, checkShipCall, checkBoatCall, checkSecondPickup, checkEntries, checkCamp, checkKnownEntries, checkConnections, checkAllySelfUp, checkStompHeight, checkFieldsReused, checkFieldsFollowRunner, checkCliffsStop, checkNoPits, checkWalkableIsland, checkReinforceEverywhere, checkRoamersHearOnlyGunfire, checkReinforceWaitsForTitan, checkWeakPointBehindBody, checkHelpBeforeLoot, checkAllyTitanKill, checkLeap, checkLeapLeavesAllyBelow, checkLeapDowned, checkLeapAllyCatchesUp, checkLeapAllyDowned, checkLeapWithItem, checkLeapClocks, checkLeapOffHighGround, checkLeapUnderRoof]) {
+for (const check of [checkFront, checkPushPull, checkBattle, checkSupport, checkSortie, checkSortieSettle, checkJump, checkFactions, checkIntercept, checkSplit, checkPatrols, checkMods, checkThreat, () => checkTerrainIndex(20_000), checkParties, checkPacks, checkTools, checkTimeToKill, checkStagger, checkWindupMoves, checkDepots, checkDepotBudget, checkPlates, checkUnlocks, checkHideout, checkBoltNoTunnel, checkPickupWavesRouted, checkLaterWaveFights, checkSidestepHit, checkReturnFire, checkWallStops, checkPinch, checkPursuit, checkHealHeard, checkPositionMatters, checkPullWhenAiming, checkVault, checkIsland, checkStrength, checkSaveCompat, checkLoadout, checkSettle, checkWipeClearsAir, checkArcOnTitan, checkGoldReload, checkArcIgnoresFacing, checkDeathEndsRaid, checkBleedoutWipe, checkReinforce, checkReinforceHidden, checkSearchBreaks, checkBagSwap, checkBagSwapCheapest, checkRaiders, checkValuableBin, checkAllyRescue, checkAllyDownWipes, checkHelpAlly, checkAllyHoldsFire, checkFlareExtract, checkShipCall, checkBoatCall, checkSecondPickup, checkEntries, checkCamp, checkKnownEntries, checkConnections, checkAllySelfUp, checkStompHeight, checkFieldsReused, checkFieldsFollowRunner, checkCliffsStop, checkNoPits, checkWalkableIsland, checkReinforceEverywhere, checkRoamersHearOnlyGunfire, checkReinforceWaitsForTitan, checkWeakPointBehindBody, checkHelpBeforeLoot, checkAllyTitanKill, checkLeap, checkLeapLeavesAllyBelow, checkLeapDowned, checkLeapAllyCatchesUp, checkLeapAllyDowned, checkLeapWithItem, checkLeapClocks, checkLeapOffHighGround, checkLeapUnderRoof]) {
   let err: string | null | undefined;
   if (onlyChecks && !onlyChecks.includes(check.name)) continue;
   try {

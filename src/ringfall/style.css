@@ -3009,7 +3009,7 @@ body:not(.playing) #banner {
     font-size: 16px;
   }
 }
-/* The routes under the hideout's modules: a closed one in the warning colour, an open one quiet. */
+/* A sub-heading inside a panel's list. */
 .hub-list .hub-sub {
   margin: 14px 0 2px;
   font-size: 14px;

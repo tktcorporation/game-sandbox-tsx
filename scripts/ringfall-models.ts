@@ -24,7 +24,7 @@ const stubCtx = { createRadialGradient: () => ({ addColorStop() {} }), fillRect(
 
 const THREE = await import("three");
 const M = await import("../src/ringfall/view/models");
-const { AWARE, ENEMIES, HEALS, SIGHT, TOOLS, VALUABLES, WEAPONS: WEAPON_SPECS } = await import("../src/ringfall/sim/config");
+const { AWARE, ENEMIES, HEALS, SIGHT, VALUABLES, WEAPONS: WEAPON_SPECS } = await import("../src/ringfall/sim/config");
 type EnemyKind = keyof typeof ENEMIES;
 type Object3D = import("three").Object3D;
 
@@ -77,7 +77,6 @@ const entries: Entry[] = [
   ...(["armor", "key", "mod", "flare", "shard"] as const).map((k): Entry => ({ id: `loot:${k}`, group: "loot", root: M.buildLootItem(k, 0) })),
   ...keys(HEALS).map((h): Entry => ({ id: `loot:${h}`, group: "loot", root: M.buildLootItem("heal", 0, undefined, h) })),
   ...keys(VALUABLES).map((v): Entry => ({ id: `loot:${v}`, group: "loot", root: M.buildLootItem("valuable", 3, undefined, undefined, v) })),
-  ...keys(TOOLS).map((t): Entry => ({ id: `loot:${t}`, group: "loot", root: M.buildLootItem("tool", 0, undefined, undefined, undefined, t) })),
   { id: "bin", group: "world", root: M.buildBin().root },
   { id: "vault", group: "world", root: M.buildBin(true).root },
   { id: "depot", group: "world", root: M.buildDepot().root },
@@ -606,7 +605,6 @@ const gunPairs = pairs(entries.filter((e) => e.group === "gun" && !e.id.includes
 const LOOT_SETS: Record<string, readonly string[]> = {
   heal: keys(HEALS).map((h) => `loot:${String(h)}`),
   valuable: keys(VALUABLES).map((v) => `loot:${String(v)}`),
-  tool: keys(TOOLS).map((t) => `loot:${String(t)}`),
   gear: ["loot:armor", "loot:key", "loot:mod", "loot:flare"],
 };
 /** Where loot is mostly told apart from (the middle of models.md's "a few metres to 20 m"): outlines are compared on this distance's pixels. */
