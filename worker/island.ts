@@ -33,7 +33,13 @@ export function migrateIslandState(s: IslandState): IslandState {
   // island kept for them (the squads, the fights in numbers, the lease, its clock) is dropped.
   // The contested shores' mirror (a neighbour holding a node of this island) went with them: no node
   // of an island is another player's now, so one stored so goes back to the robots; look-marks went too.
-  if (Array.isArray(s.holds)) s.holds = s.holds.map((h) => (rivalOf(h) !== null ? "foe" : h));
+  // Its owner's copy may still call it theirs: as a holding a sortie took, it stays the robots' until a report shows it lost or names it taken back.
+  if (Array.isArray(s.holds))
+    s.holds = s.holds.map((h, i) => {
+      if (rivalOf(h) === null) return h;
+      s.raided = [...(s.raided ?? []).filter((k) => k !== i), i];
+      return "foe";
+    });
   for (const k of ["expeditions", "defenders", "guards", "meter", "made", "lease", "clock", "taken", "pings"]) if (k in s) delete (s as unknown as Record<string, unknown>)[k];
   if (Array.isArray(s.log) && s.log.some((e) => !LOG_KINDS.includes(e.t))) s.log = s.log.filter((e) => LOG_KINDS.includes(e.t));
   return s;
