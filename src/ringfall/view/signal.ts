@@ -10,7 +10,8 @@ import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import { type Profile } from "../meta/profile";
 import { NODES, nodeIndex } from "../sim/map";
-import { lostTodayLine, shieldLine, TERM, trophyHead } from "./copy";
+import { lostTodayLine, PHRASE, shieldLine, TERM, trophyHead } from "./copy";
+import type { SortieTarget } from "../meta/sortie";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, SIDE } from "./icons";
 import { guardOn, OUTER_GUARD, shieldRemainingMs } from "../meta/outer-guard";
 
@@ -55,6 +56,8 @@ export class SignalPanel {
     private get: () => Profile,
     private put: (p: Profile) => void,
     private news: (entries: IslandLogEntry[]) => void,
+    /** The holdings the departure's 攻める list offers (`Hub.sortieTargets()`): an island looked at shows its own with a way to attack each. */
+    private targets: () => readonly SortieTarget[] = () => [],
   ) {
     const hub = document.getElementById("hub")!;
     hub.addEventListener("input", (e) => {
@@ -200,7 +203,8 @@ export class SignalPanel {
         : guard.lost > 0
           ? `<p class="exp-shield">${esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))}</p>`
           : "";
-    const head = `${trop}${shield}<div class="mod-head"><strong>${flagIcon()}${TERM.otherPlayers}</strong></div>`;
+    // The panel's side is already titled 別プレイヤー: the card leads with the trophies and the day's guard.
+    const head = `${trop}${shield}`;
     // Without the server only the game's own islands answer.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
     // Island codes: folded away from daily entry (the islands' cards are the primary).
@@ -239,10 +243,11 @@ export class SignalPanel {
     const t = this.target;
     let pick = "";
     if (t) {
-      const open = t.nodes.filter((n) => n.open && nodeIndex(n.id) >= 0);
+      // The island's holdings that may be attacked now, each a way to the gate set on it (as やり返す goes).
+      const open = this.targets().filter((x) => x.code === t.code);
       const nodes = open.length
-        ? `<div class="exp-nodes">${open.map((n) => `<span class="exp-node">${coreIcon(n.hold === "own" ? SIDE.rival : SIDE.enemy)}${esc(nodeName(n.id))}</span>`).join("")}</div>`
-        : `<p class="lock-note">${lockIcon()}公開の拠点なし</p>`;
+        ? `<div class="exp-nodes">${open.map((x) => `<button type="button" class="exp-node" data-act="revenge" data-arg="${esc(`${x.owner}|${x.id}`)}">${flagIcon(SIDE.rival)}${esc(x.hubName)}<b>${TERM.attack}</b></button>`).join("")}</div>`
+        : `<p class="lock-note">${lockIcon()}${PHRASE.noAttackTarget}</p>`;
       pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}</div>`;
     }
     const note = this.note ? `<p class="exp-note${this.note.good ? " good" : ""}">${esc(this.note.text)}</p>` : "";

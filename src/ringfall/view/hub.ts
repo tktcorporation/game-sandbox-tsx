@@ -493,6 +493,7 @@ export class Hub {
       () => this.profile,
       (p) => this.set(p),
       (n) => this.takeNews(n),
+      () => this.sortieTargets(),
     );
     $("hub").addEventListener("click", (e) => {
       const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-hub-tab]");
@@ -1425,7 +1426,7 @@ export class Hub {
     const plan: [string, string][] = [
       // The front node to raid (first sessions name 核 · 制圧 on it), then the holding to attack.
       [
-        PLAN_GOAL,
+        TERM.forage,
         pick
           ? teachFrontCapture(p)
             ? `${esc(pick.name)} · ${TERM.captureCore}`

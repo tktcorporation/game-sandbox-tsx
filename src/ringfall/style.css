@@ -5343,6 +5343,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
   flex-wrap: wrap;
   gap: 6px;
 }
+#hub .exp-nodes .exp-node b {
+  margin-left: 6px;
+  color: var(--rival);
+}
 #hub .exp-nodes .exp-node {
   display: inline-flex;
   align-items: center;
