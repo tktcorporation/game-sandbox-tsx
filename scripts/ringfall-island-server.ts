@@ -255,7 +255,9 @@ const station = NODE_IDS.indexOf("station");
     `legacy DO: migrateIslandState left ${JSON.stringify(stored.holds)}`,
   );
   check(Array.isArray(stored.shielded?.nodes), "legacy DO: migrateIslandState left no shielded");
-  console.log(`legacy: ${JSON.stringify(stored.holds)}`);
+  // The node that was another player's stays the robots' through a report that still calls it the owner's.
+  check(stored.raided?.join() === "2", `legacy DO: a node that was another player's is not kept as lost (${JSON.stringify(stored.raided)})`);
+  console.log(`legacy: ${JSON.stringify(stored.holds)}, kept as lost ${JSON.stringify(stored.raided)}`);
 }
 
 if (errors.length) {
