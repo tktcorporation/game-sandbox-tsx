@@ -2,52 +2,25 @@
  * The islands the game runs itself (docs/ringfall/multiplayer.md, AI の島): while the server offers
  * fewer neighbours than the sea has slots (few players, or no server at all), each empty slot holds
  * an island of the game's own, which lives as a player's would. Each day of the player's it takes or
- * loses a node of its own island, plays a raid now and then by the clock, and builds its factory up;
- * once the player holds the node facing it, the sea route is open both ways: the player may send it
- * an expedition, and it now and then sends one at that node, which lands in the next raid as another
- * player's does (`aiLent()`), and stays as its hold if it takes the node. It is marked AI wherever
+ * loses a node of its own island, plays a raid now and then by the clock, and builds its factory up.
+ * Its holdings are sortie targets as a player's are (meta/sortie.ts), and it attacks the player's
+ * holdings by the clock while the player is away (meta/away-attacks.ts). It is marked AI wherever
  * it is shown. Pure: everything follows from a salt (the browser's player, so two players meet
  * different islands), the profile and the clock, with nothing kept but what the profile already
- * keeps (the expeditions sent, the nodes held); the browser's requests are answered from here
- * (island-net.ts), so the factory's panel works the same for them.
+ * keeps (the nodes held); the browser's requests are answered from here (island-net.ts).
  */
-import { FACTORY, FACTORY_TOP, type EnemyKind, type ValuableKind } from "../sim/config";
-import { aiOwner, isAiOwner, rivalHold, rivalOf, type PoiHold } from "../sim/holds";
-import { DEPOTS, FRONT_LINKS, NODES, TIER, nodeIndex, type NodeId, type PoiId } from "../sim/map";
+import { FACTORY_TOP, type ValuableKind } from "../sim/config";
+import { aiOwner, isAiOwner, type PoiHold } from "../sim/holds";
+import { DEPOTS, FRONT_LINKS, NODES, nodeIndex, type NodeId, type PoiId } from "../sim/map";
 import { CODE_ALPHABET, CODE_LENGTH } from "./island-code";
-import { lentRivals, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Outgoing } from "./expeditions";
+import type { IslandView } from "./island-sync";
 import { LOCAL_AID, type Parcel } from "./parcels";
-import type { RivalExpedition } from "../sim/battle";
-import { aiLabel, CONTESTED_SHORES, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
+import { aiLabel, NEIGHBOUR_MAX, NEIGHBOUR_SLOTS, type Neighbour } from "./neighbours";
 import { TROPHY, clampTrophies } from "./trophies";
-import type { Island } from "./island";
-import { canLoseOuter, OUTER_GUARD, type OuterGuard } from "./outer-guard";
+import { OUTER_GUARD } from "./outer-guard";
 
 /** The numbers of the game's islands. */
 export const AI = {
-  /** Seconds into the raid's battle the day's expedition comes down by its node: time to read the warning and get there. */
-  landAt: 240,
-  /** The first day the facing island may send its scout (2026-11-26: day 1 — shores start held). */
-  scoutDay: 1,
-  scout: ["grunt", "grunt"] as EnemyKind[],
-  /**
-   * The first day a facing island may send a regular expedition (2026-11-26: day 1).
-   * Was 4 when shores had to be captured first; with starting shores the delay only postponed first contact.
-   */
-  start: 1,
-  /**
-   * Chance a day that an open-route island sends an expedition (2026-11-26 early-MP: was 0.22).
-   * Slightly higher so day-1 contact is more often felt after the scout.
-   */
-  attack: 0.3,
-  answer: 0.5,
-  /** The minutes an expedition of the player's is on its way, then fights at its node. */
-  coming: 20,
-  fighting: 40,
-  /** The hours a node it took stays the player's before the island takes it back, at least and at most. */
-  hold: [24, 72] as const,
-  /** Its chance of taking the node: a base, more for each robot it has, less at a node the island holds. */
-  win: { base: 0.3, unit: 0.08, defended: 0.15 },
   /** The nodes it holds on its island's first day, and how many more a day (one rate a slot), and the most. */
   held: { first: 2, rate: [0.42, 0.5, 0.36, 0.56] as const, spare: 2 },
   /** The days to each level of its factory. */
@@ -134,9 +107,6 @@ export const aiNodes = (a: AiIsland, salt: number, day: number): NodeId[] => tak
 /** Its factory's level on day `day`. */
 export const aiFactory = (day: number) => Math.max(0, Math.min(FACTORY_TOP, Math.floor((Math.max(1, day) - 1) / AI.factoryDays)));
 
-/** The robots its expedition takes on day `day`: its factory's squad. */
-export const aiKinds = (day: number): EnemyKind[] => [...FACTORY.levels[aiFactory(day)].kinds];
-
 /** Its last raid by `now`: when (its raids come every few hours by the clock), the cores it took (the nodes it gained since yesterday) and whether it got home. */
 export function aiLast(a: AiIsland, salt: number, day: number, now: number): NonNullable<Neighbour["last"]> {
   const every = AI.every[a.slot % AI.every.length] * 3_600_000;
@@ -205,33 +175,20 @@ export function aiChanges(a: AiIsland, salt: number, day: number): { took: NodeI
 }
 
 /**
- * Its island as anyone sees it (as `GET /api/islands/:code` would answer): its nodes, and those that
- * take an expedition (its own, and the enemy's next to them), with the player's expeditions on it
- * as they stand at `now` (by `mine`, the player's code or empty).
+ * Its island as anyone sees it (as `GET /api/islands/:code` would answer): its nodes, those it holds
+ * and the enemy's next to them marked `open`, and the 島の守り at its holdings.
  */
 export function aiView(
   a: AiIsland,
   salt: number,
   day: number,
-  sent: readonly Outgoing[],
-  mine: string,
-  now: number,
   /** Parcel ids already removed from this island's defence stock (legacy saves). */
   seized: readonly number[] = [],
 ): IslandView {
-  const own = new Set<string>(aiNodes(a, salt, day));
-  // A node one of the player's expeditions is on or holds takes no other (`node-busy` on the server).
-  const busy = new Set<string>(sent.filter((o) => o.code === a.code && aiBusy(a, salt, o, now)).map((o) => o.node));
-  const near = new Set<string>(FRONT_LINKS.flatMap((l) => (l[0] === "camp" ? [] : own.has(l[0]) && !own.has(l[1]) ? [l[1]] : own.has(l[1]) && !own.has(l[0]) ? [l[0]] : [])));
-  const nodes = NODES.map((n) => ({ id: n.id as string, hold: (own.has(n.id) ? "own" : "foe") as PoiHold, open: (own.has(n.id) || near.has(n.id)) && !busy.has(n.id) }));
-  const expeditions = sent
-    .filter((o) => o.code === a.code && o.id > 0)
-    .flatMap((o) => {
-      const state = aiOutcome(a, salt, o, now);
-      return state === "gone" || state === "sending" || state === "recalling" ? [] : [{ id: o.id, by: { code: mine, name: "" }, target: o.node as string, units: o.units, state: state as "coming" | "attacking" | "holding", arriveAt: o.sentAt + AI.coming * 60_000 }];
-    });
   const held = aiNodes(a, salt, day);
-  const parcels = aiDefenceParcels(a, salt, day, held, seized);
+  const own = new Set<string>(held);
+  const near = new Set<string>(FRONT_LINKS.flatMap((l) => (l[0] === "camp" ? [] : own.has(l[0]) && !own.has(l[1]) ? [l[1]] : own.has(l[1]) && !own.has(l[0]) ? [l[0]] : [])));
+  const nodes = NODES.map((n) => ({ id: n.id as string, hold: (own.has(n.id) ? "own" : "foe") as PoiHold, open: own.has(n.id) || near.has(n.id) }));
   return {
     code: a.code,
     owner: aiLabel(a.name),
@@ -242,54 +199,9 @@ export function aiView(
     outerLost: 0,
     outerLossCap: OUTER_GUARD.lossCap,
     nodes,
-    expeditions,
     pings: [],
     // No sortie of another player reaches the game's own islands: nothing taken to reconcile.
     raided: [],
-    parcels,
+    parcels: aiDefenceParcels(a, salt, day, held, seized),
   };
 }
-
-/**
- * How the player's expedition `o` on island `a` stands at `now`: on its way, then fighting at its
- * node, then holding it (for a time a hash of it sets, then the island takes it back) or gone, as a
- * hash of it falls against its chance. One being sent, called home or gone stays so.
- */
-export function aiOutcome(a: AiIsland, salt: number, o: Outgoing, now: number): Outgoing["state"] {
-  if (o.state === "sending" || o.state === "recalling" || o.state === "gone") return o.state;
-  if (o.x2) return "gone";
-  const t = (now - o.sentAt) / 60_000;
-  if (t < AI.coming) return "coming";
-  if (t < AI.coming + AI.fighting) return "attacking";
-  const defended = NODES[nodeIndex(o.node)] && hash(salt, a.slot, nodeIndex(o.node)) % 2 === 0;
-  const chance = AI.win.base + AI.win.unit * o.units - (defended ? AI.win.defended : 0) - 0.04 * (TIER[o.node] ?? 1);
-  if (unit(salt, a.slot, o.id, nodeIndex(o.node), Math.floor(o.sentAt / 60_000)) >= chance) return "gone";
-  const [lo, hi] = AI.hold;
-  const hours = lo + (hash(salt, a.slot, o.id, 77) % (hi - lo + 1));
-  return t < AI.coming + AI.fighting + hours * 60 ? "holding" : "gone";
-}
-
-/** Whether the player's expedition `o` on island `a` still takes up its node at `now`: being sent, on its way, fighting or holding. */
-export const aiBusy = (a: AiIsland, salt: number, o: Outgoing, now: number): boolean => {
-  if (o.x2) return false;
-  const state = aiOutcome(a, salt, o, now);
-  return state !== "gone" && state !== "recalling";
-};
-
-/** The player's expeditions with those on the game's islands brought up to `now`; the list itself when none changes. */
-export function aiRefresh(list: Outgoing[], salt: number, taken: readonly number[], now: number): Outgoing[] {
-  let out = list;
-  list.forEach((o, i) => {
-    const a = aiByCode(salt, o.code, taken);
-    if (!a) return;
-    const state = aiOutcome(a, salt, o, now);
-    if (state === o.state) return;
-    if (out === list) out = [...list];
-    out[i] = { ...o, state };
-  });
-  return out;
-}
-
-/** The number the island gives the player's next expedition to it: one past the highest it has given. */
-export const aiNextId = (list: readonly Outgoing[], code: string): number => Math.max(0, ...list.filter((o) => o.code === code).map((o) => o.id)) + 1;
-

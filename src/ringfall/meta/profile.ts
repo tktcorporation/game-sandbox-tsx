@@ -8,7 +8,7 @@ import { islandDay, sinceFor } from "./days";
 import { emptyStores, parseStores, type Stores } from "./income";
 import { applyRaid, blankIsland, contestedOwned, raidChange, departDepots, holdsOf, unlocked, type DayChange, type FrontChange, newIsland, parseIsland, raidDay, shopRarity, type Island } from "./island";
 import { rivalOf } from "../sim/holds";
-import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
+import { addRetaken, parseRetaken, retakenNodes } from "./island-sync";
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
 import {
@@ -41,7 +41,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 54;
+  v: 55;
   cash: number;
   stash: Item[];
   raids: number;
@@ -86,8 +86,6 @@ export interface Profile {
   factory: number;
   /** What the last raid took out of the stash, so the shelves pick it again while the stash still holds it (`recallLoadout()`). */
   lastKit: KitPicks | null;
-  /** The expeditions this island's factory sent to other players' islands, as they last stood (meta/expeditions.ts). */
-  expeditions: Outgoing[];
   /** The last entry of this island's log on the server taken in: the next sync reads the ones after it. */
   logSeq: number;
   /**
@@ -95,8 +93,6 @@ export interface Profile {
    * every report names them (`retaken`), and they leave this list only when one is answered 200.
    */
   retaken: NodeId[];
-  /** Other players' expeditions on this island that hold nothing yet, as the server last showed them (予告): the camp's maps mark their nodes, and the next raid takes them in. */
-  incoming: Incoming[];
   /**
    * Parcels at this island's depots (ux-design C2): from the server when one answers, else those
    * left in raids while offline / on AI islands. v29 and older saves hold none.
@@ -209,7 +205,7 @@ export function newProfile(seed = 1): Profile {
   // Day-1 multiplayer surface: sea-route shores + AI footholds so 「攻める」 is not empty.
   const poiState = newIsland();
   return {
-    v: 54,
+    v: 55,
     cash: META.start.cash,
     stash,
     raids: 0,
@@ -231,10 +227,8 @@ export function newProfile(seed = 1): Profile {
     freedAt: {},
     factory: 0,
     lastKit: null,
-    expeditions: [],
     logSeq: 0,
     retaken: [],
-    incoming: [],
     parcels: [],
     incursionTaken: [],
     trophies: TROPHY.start,
@@ -584,8 +578,7 @@ export interface Settlement {
   raid: FrontChange;
   after: FrontChange;
   /**
-   * 拠点の収入 collected as the raid came home (the caller adds it, meta/income.ts), plus any still held
-   * away on other islands (`awayIncome()` folded in — 方向 A: 拠点の収入に一本化).
+   * 拠点の収入 collected as the raid came home (the caller adds it, meta/income.ts).
    */
   income: number;
   /** Credits for the nodes the raid took after its first, got off alive (`MOMENTUM.spoils`); left out, none. */
@@ -892,14 +885,10 @@ export function settle(p: Profile, s: State, rivalTrop?: (owner: string) => numb
   if (nightParcels !== (night.parcels ?? parcels)) Object.assign(night, { parcels: nightParcels });
   if (outerGuard !== (p.outerGuard ?? emptyOuterGuard())) Object.assign(night, { outerGuard });
   // 拠点の収入 is made by the clock and collected at the camp (meta/income.ts), not paid per raid.
-  const homePay = 0;
+  const income = 0;
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
-  // 方向 A: 遠征で持つ拠点の収入も拠点の収入に合算（リザルトの別行は出さない）。
-  const away = awayIncome(night);
-  const income = homePay + away;
-  const dropGone = (list: typeof night.expeditions) => list.filter((e) => e.state !== "gone");
-  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils, expeditions: dropGone(night.expeditions) } : { ...night, cash: night.cash + income + spoils };
+  const next = { ...night, cash: night.cash + spoils };
   // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "foe" }])) as Island };
   // Manual 目標 lasts one sortie: clear on return so camp no longer shows 目標にしている.
@@ -1121,12 +1110,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v51 and older count the island's day by raids (`day`); v52 keeps when it started (`since`) and counts calendar days.
  * v52 and older are paid 拠点の収入 at each settle; v53 makes it by the clock at each holding (`stores`).
  * v53 and older keep no record of the sorties on the holdings; v54 adds `attacks` (攻められた記録).
+ * v54 and older may hold `expeditions` / `incoming` (遠征, removed), which v55 drops.
  * Before v33 no "own" | "foe": legacy "freed" | "held" are normalized via parseIsland.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1211,7 +1201,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const raided = typeof o.v === "number" && o.v >= 49 ? parseRaided(o.raided) : [];
   const seedN = Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff;
   return {
-    v: 54,
+    v: 55,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1230,12 +1220,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     poiState,
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
-    // PR6 / Codex: 出ている遠征 UI を消したあと、セーブに残った遠征はすべて引き上げ（工場スロットを空け、flushRecalls が DELETE）。
-    // `sending` や id 未採番は島に届いていないので落とす（短いレイドの未完了含む）。
-    expeditions: recallAll((v27 ? parseOutgoing(o.expeditions) : []).filter((e) => e.state !== "sending" && e.id > 0)),
     logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
     retaken: v27 ? parseRetaken(o.retaken) : [],
-    incoming: typeof o.v === "number" && o.v >= 29 ? parseIncoming(o.incoming) : [],
     parcels: typeof o.v === "number" && o.v >= 30 ? parseParcels(o.parcels) : [],
     incursionTaken: [],
     trophies,

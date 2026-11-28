@@ -3,7 +3,7 @@
  * player's holdings, as the island's log told them (`IslandLogEntry` with stars), kept on the profile
  * for the signal station to show. Pure.
  */
-import type { IslandLogEntry } from "./expeditions";
+import type { IslandLogEntry } from "./island-sync";
 import { ISLAND_TABLE } from "./island-table";
 import { parseReplay, type Replay } from "../sim/replay-data";
 

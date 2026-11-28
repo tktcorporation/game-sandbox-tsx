@@ -1,7 +1,7 @@
 /*
  * The neighbours (docs/ringfall/multiplayer.md, お隣の島): other players' islands the server offers
  * this one, nearest in nodes held, the same all week. The camp's maps draw each one out at sea at a
- * slot of its own, and the factory's expeditions start from them, so sending one needs no code typed.
+ * slot of its own, and their holdings are what the departure's 攻める list offers (meta/sortie.ts).
  * Pure: the answer read here, the requests in island-net.ts.
  */
 import { isAiOwner } from "../sim/holds";
@@ -36,8 +36,7 @@ export const NEIGHBOUR_MAX = 4;
 
 /**
  * Where on the camp's maps each neighbour's island lies, in world metres, out on the open sea, and
- * the node on the coast facing it: holding that node opens the sea route there, so an expedition
- * goes only to the neighbours the player's ground reaches. In the order a raid usually takes them:
+ * the node on the coast facing it. In the order a raid usually takes them:
  * the observatory by the camp faces the south, the waterworks the south-east, the robot works the
  * north-east beyond the city, the tracking radar the north-west beyond the plateau.
  */
@@ -60,18 +59,6 @@ export const isContestedShore = (id: NodeId | string): boolean => (CONTESTED_SHO
 
 /** The four hubs that open a sea route to a neighbour slot (unchanged from direction A). */
 export const ROUTE_SHORES: readonly NodeId[] = NEIGHBOUR_SLOTS.map((s) => s.shore);
-
-/**
- * Whether the sea route to neighbour slot `k` is open: the player holds the node facing it.
- * New profiles start holding all four `ROUTE_SHORES` (2026-11-26), so every slot is open from day 1.
- */
-export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);
-
-/**
- * Whether neighbours show on maps (any coastal route open).
- * New profiles: true from day 1. Lost shores can close a slot until retaken.
- */
-export const pvpSeaOpen = (holds: (id: NodeId) => boolean): boolean => NEIGHBOUR_SLOTS.some((_, k) => routeOpen(k, holds));
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const count = (v: unknown, hi: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= hi;

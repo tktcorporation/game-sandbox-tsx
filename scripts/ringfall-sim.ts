@@ -45,7 +45,6 @@ import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
 import { build, buildFactory, buildState, buy, canBuild, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, bestFitValuables, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { rivalHold } from "../src/ringfall/sim/holds";
-import { squadsAway } from "../src/ringfall/meta/expeditions";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, MOMENTUM, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
@@ -70,7 +69,6 @@ import { pacing, type Pool } from "./ringfall-pacing";
 import { movementLines } from "./ringfall-movement";
 import { duelLines } from "./ringfall-duel";
 import { checkSupport } from "./ringfall-support";
-import { checkRivals } from "./ringfall-rivals";
 import { checkSortie } from "./ringfall-sortie";
 import { checkSortieSettle } from "./ringfall-sortie-settle";
 import { checkScatterApart, MOBILES, OUTPOST_SITES, SCATTER_AREAS, scatterPrints } from "../src/ringfall/sim/map";
@@ -2090,14 +2088,14 @@ function checkIsland(): string | null {
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
   if (
     !v12 ||
-    v12.v !== 54 ||
+    v12.v !== 55 ||
     POIS.some((o) => (startOwn.has(o.id) ? v12.poiState[o.id].state !== "own" : v12.poiState[o.id].state !== "foe"))
   )
     return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
   // Legacy v21 strings: "freed" → own, "held" → foe, "thin" → own; pad forced foe.
   const v21 = { ...p, v: 21, network: 4, pressure: 1.2, outposts: { pumps: "rogue", substation: "freed" }, scores: [{ day: 1, score: [1, 2, 0], won: false }], poiState: { ...blankIsland(), supply: { state: "freed", lastVisit: 1, since: 0 }, quarry: { state: "thin", lastVisit: 1, since: 2 }, relay: { state: "held", lastVisit: 0, since: 0 }, pad: { state: "freed", lastVisit: 2, since: 0 } } };
   const back = parseProfile(JSON.parse(JSON.stringify(v21)));
-  if (!back || back.v !== 54 || playerNodes(back).join() !== "supply,quarry" || back.poiState.pad.state !== "foe" || "network" in back || "pressure" in back || "outposts" in back || "scores" in back) return `island scenario: a v21 save loaded as ${JSON.stringify(back && { v: back.v, day: back.day, poiState: back.poiState, extra: ["network", "pressure", "outposts", "scores"].filter((k) => k in back) })}`;
+  if (!back || back.v !== 55 || playerNodes(back).join() !== "supply,quarry" || back.poiState.pad.state !== "foe" || "network" in back || "pressure" in back || "outposts" in back || "scores" in back) return `island scenario: a v21 save loaded as ${JSON.stringify(back && { v: back.v, day: back.day, poiState: back.poiState, extra: ["network", "pressure", "outposts", "scores"].filter((k) => k in back) })}`;
   // v32 with legacy "held"/"freed" (and a rival) normalizes to v33 "foe"/"own"/RivalHold and re-saves as the new words.
   const v32raw = {
     ...newProfile(),
@@ -4251,7 +4249,7 @@ function checkBattle(): string | null {
   return null;
 }
 
-for (const err of [checkFront(), checkPushPull(), checkBattle(), checkSupport(), checkRivals(), checkSortie(), checkSortieSettle(), checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkUnlocks(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkStrength(), checkSaveCompat(), checkLoadout(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkFront(), checkPushPull(), checkBattle(), checkSupport(), checkSortie(), checkSortieSettle(), checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkUnlocks(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkStrength(), checkSaveCompat(), checkLoadout(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

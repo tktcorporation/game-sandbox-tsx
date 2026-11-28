@@ -19,7 +19,7 @@ import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
 import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
-import { expeditionShots } from "./ringfall-shots-expeditions.mjs";
+import { signalShots } from "./ringfall-shots-signal.mjs";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
 import { audited, clearAudit, judge } from "./ringfall-ui-audit.mjs";
 
@@ -2001,7 +2001,7 @@ if (part("battle")) for (const phone of [false, true]) {
   if (fit.length) errors.push(`battle factory panel (${phone ? "phone" : "1280x720"}): ${fit.join(", ")}`);
   await pg.screenshot({ path: tag(1, "panel-factory") });
   // The factory's panel is the factory's alone: the other islands are the signal station's.
-  if (await pg.evaluate(() => !!document.querySelector("#hub-exped"))) errors.push("battle: the factory's panel still holds the expeditions");
+  if (await pg.evaluate(() => !!document.querySelector("#hub-exped"))) errors.push("battle: the factory's panel holds the signal station's section");
   await closePanel(pg, phone);
   // The signal station: with no island server (the gate sends no request) it says so in one line and offers no code to type;
   // the game's own islands still fill the neighbours' slots.
@@ -2092,8 +2092,6 @@ const pushDay = {
 };
 if (part("push")) for (const phone of [false, true]) {
   const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  // The game's first scout has come in this browser (the expeditions' shots show it).
-  await ctx.addInitScript(() => localStorage.setItem("ringfall.ai.scouted.v1", "1"));
   const pg = await withProfile(ctx, pushDay);
   if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   const tag = (n, name) => `${out}/${phone ? `m${80 + n}` : `${120 + n}`}-${name}.png`;
@@ -2313,7 +2311,7 @@ lap("movement");
 await bagShots({ browser, port, out, errors });
 lap("bag");
 await upgradeShots({ browser, port, out, errors });
-await expeditionShots({ browser, port, out, errors });
+await signalShots({ browser, port, out, errors });
 lap("upgrades");
 }
 await browser.close();

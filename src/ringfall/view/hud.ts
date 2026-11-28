@@ -149,7 +149,7 @@ export class Hud {
   private shieldCells: HTMLElement[] = [];
   private lastCells = -1;
   /**
-   * Lines kept at the head of 島の知らせ on results (outgoing expeditions).
+   * Lines kept at the head of 島の知らせ on results (the holdings this raid took from other players).
    * Late server news via setNews() must not drop these (Option A unified list).
    */
   private newsKeep: string[] = [];
@@ -308,11 +308,6 @@ export class Hud {
   /** Async look-marks from the island (M6); expired ones are dropped by the caller. */
   setRemotePings(list: readonly { x: number; z: number }[]) {
     this.map.remotePings = list;
-  }
-
-  /** Async attack/defence traces on bins/roads (M5), set once as the raid starts. */
-  setTraces(list: readonly { x: number; z: number; t: "bin" | "road"; mode: "raid" | "hold" }[]) {
-    this.map.traces = list;
   }
 
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
@@ -611,15 +606,6 @@ export class Hud {
         // The enemy sets off to take back a node: its landing's mark and the node's blue core.
         this.toast(`${reinforceIcon()}${coreIcon(SIDE.own)}${NODES[e.node].name}`, 0, 4000);
         break;
-      case "landing": {
-        // Another island's expedition coming down: whose, and the node it is sent at.
-        const q = s.battle?.squads.find((x) => x.side === 3 && Math.abs(x.x - e.x) < 0.5 && Math.abs(x.z - e.z) < 0.5);
-        if (!q) break;
-        const who = this.rivalNames.get(q.owner ?? "") ?? "他のプレイヤー";
-        const to = NODES[q.via.length ? q.via[q.via.length - 1] : q.to]?.name ?? "";
-        this.banner(`${who}の遠征隊`, `${coreIcon(SIDE.rival)}${esc(to)}へ${e.boat ? "上陸" : "降下"}`);
-        break;
-      }
       case "nodeTaken": {
         const name = NODES[e.node].name;
         const owner = rivalOf(s.nodes[e.node] ?? "foe");
@@ -1458,7 +1444,6 @@ export class Hud {
     // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
-    // 来る遠征の予告 UI は削除済み: Profile.incoming を地図に載せない
     const end = islandScene(settled.profile);
     // The player's nodes after each beat, from the day's end back.
     const after = (ids: Set<string>, c: { gained: readonly string[]; lost: readonly string[] }, back: boolean) => {
@@ -1588,7 +1573,7 @@ export class Hud {
 
   /**
    * The island's news from the server, come in while the results are up: put in their place there,
-   * keeping overnight / outgoing expedition lines already on the unified list.
+   * keeping the lines already on the unified list.
    */
   setNews(news: readonly string[]) {
     const el = document.getElementById("island-news");
@@ -1627,7 +1612,7 @@ export class Hud {
    * Results after a raid. `before` is the profile just before settle — used only to show how the
    * haul fed the base (wanted / buildable). `next` is the one-line hand into the next sortie.
    */
-  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "", expNews: readonly string[] = []) {
+  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "") {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     const statsBox = document.getElementById("stats-box");
     if (statsBox) (statsBox as HTMLElement).hidden = false;
@@ -1691,7 +1676,7 @@ export class Hud {
       nextEl.textContent = tip;
       nextEl.classList.remove("defence-beat");
     }
-    // Outgoing expeditions + お隣を攻めた勝ち負け + 同期の知らせ.
+    // 別プレイヤーを攻めた勝ち負け + 同期の知らせ.
     // incursion / 取り合う拠点の制圧行も newsKeep に入れ、後から setNews されても消えないようにする。
     const nameOf = (owner: string) => {
       const n = neighboursNowOnMap().find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
@@ -1704,7 +1689,7 @@ export class Hud {
     const takeLines = settled?.takenRival?.length
       ? settled.takenRival.map((t) => newsIncursion(nameOf(t.owner), NODES[nodeIndex(t.id)]?.name ?? t.id, true, tropPer))
       : [];
-    this.newsKeep = [...expNews, ...takeLines];
+    this.newsKeep = takeLines;
     const allNews = [...this.newsKeep, ...news];
     const trop = settled?.trophies;
     const tropMoved =
@@ -1732,7 +1717,6 @@ export class Hud {
     const dayHead = settled
       ? `<div id="island-news">${newsBlock(allNews, true)}</div>${tropLine}`
       : "";
-    // 方向 A: 遠征の拠点の収入は拠点の収入に一本化（Settlement.income に合算済み）。
     const islandExtra =
       settled?.income || settled?.spoils
         ? `<p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}</p>`

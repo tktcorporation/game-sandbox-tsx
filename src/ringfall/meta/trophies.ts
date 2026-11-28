@@ -116,7 +116,7 @@ export const SEIZE = {
   bonus: 2,
 } as const;
 
-/** AI / remote expedition star counts (design-direction: 制圧=★★、失敗=0★). */
+/** The stars a holding taken away from the screen counts as (design-direction: 制圧=★★、失敗=0★). */
 export const AI_RAID_STARS = { win: 2, lose: 0 } as const;
 
 /** Clamp to the live range. */

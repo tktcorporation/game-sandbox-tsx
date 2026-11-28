@@ -39,8 +39,6 @@ const SAVE = {
     // 浄水場 held by real neighbour ツバキ (slot 1 faces waterworks)
     waterworks: { state: "rival:TTHKQB" },
   },
-  incoming: [],
-  expeditions: [],
   logSeq: 0,
   retaken: [],
   trophies: 1000,

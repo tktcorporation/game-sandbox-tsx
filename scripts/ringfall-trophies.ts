@@ -3,7 +3,7 @@
  *   npx tsx scripts/ringfall-trophies.ts
  */
 import assert from "node:assert/strict";
-import { applySync } from "../src/ringfall/meta/expeditions";
+import { applySync } from "../src/ringfall/meta/island-sync";
 import { ROUTE_SHORES } from "../src/ringfall/meta/neighbours";
 import { newProfile, parseProfile, seizeRivalLoot } from "../src/ringfall/meta/profile";
 import {

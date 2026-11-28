@@ -21,8 +21,6 @@ export type TermId =
   | "relayBox"
   | "warehouse"
   | "islandGuard"
-  | "incomingExpedition"
-  | "expedition"
   | "core"
   | "front"
   | "sortie"
@@ -46,7 +44,6 @@ export type TermId =
   | "today"
   | "shielding"
   | "lostToday"
-  | "sendExpedition"
   | "backToCamp"
   | "hideout"
   | "islandNews"
@@ -83,8 +80,6 @@ export const TERM = {
   relayBox: "中継ボックス",
   warehouse: "倉庫",
   islandGuard: "島の守り",
-  incomingExpedition: "来る遠征",
-  expedition: "遠征",
   core: "核",
   front: "前線",
   sortie: "出撃",
@@ -134,12 +129,6 @@ export const TERM = {
    * 【元】（なし） 【案】今日取られた 【理由】喪失上限が見える。内部名は出さない
    */
   lostToday: "今日取られた",
-  /**
-   * Legacy expedition verb (signal-station button removed under E4).
-   * 【元】送る 【案】遠征に出す — adopted, then button abolished.
-   * 倉庫へ送る is TERM.sendToWarehouse; BANNED 「送る」 is exact-match only.
-   */
-  sendExpedition: "遠征に出す",
   backToCamp: "野営地に戻る",
   /** Modules collectively (医務室・作業台…). Not the station name. */
   hideout: "隠れ家",
@@ -252,33 +241,13 @@ export const goalIsAt = (where: string, place: string, metres: number) => `${whe
  */
 export const goalCompass = (where: string, metres: number) => `${where} ${metres}m`;
 
-/** Toast after confirming 遠征に出す (past of TERM.sendExpedition). */
-export function expeditionSentTo(place: string): string {
-  return `${place}へ遠征に出した`;
-}
-
 /**
- * 島の知らせ（来た遠征）の一語印。自分の遠征の印（EXP_OUT_WORD）と「全滅」を共有しない。
- * wiped = 相手の隊を撃退した／retaken = 核 · 制圧で戻した。
+ * 島の知らせの一語印。taken = 別プレイヤーに取られた／wiped = 相手の攻めを守りきった／retaken = 核 · 制圧で戻した。
  */
 export const LOG_WORD = {
-  noticed: TERM.expedition,
-  landed: "上陸",
   taken: "奪取",
   wiped: "撃退",
   retaken: "制圧",
-  released: "手放し",
-  recalled: "撤収",
-} as const;
-
-/**
- * 島の知らせ（自分の遠征の結果）の一語印。
- * wiped = 自分の隊が攻めきれなかった（相手を撃退した「撃退」と別語）。
- */
-export const EXP_OUT_WORD = {
-  held: "取った",
-  wiped: "攻めきれず",
-  lost: "失った",
 } as const;
 
 /** 今日の作戦・出撃の行名（同じ一手は同じ行名）。 */
@@ -388,21 +357,20 @@ export function newsRetaken(at: string): string {
 }
 
 /**
+ * 島の知らせ: 別プレイヤーの攻めに陣地を取られた行。失うのは陣地とその収入だけ（島の守りは倉庫へ戻る）。
+ */
+export function newsTaken(at: string, who: string): string {
+  return `${who}に${at}を取られた`;
+}
+
+/**
  * 島の知らせ: 相手の攻めを守りきった行。
- * 【元】{拠点}で{誰}の遠征隊を撃退した
+ * 【元】{拠点}で{誰}を撃退した
  * 【案】{誰}が{拠点}を攻めた · 守りきった
  * 【理由】相手の普段のレイドで攻められる。育てた守りが効いたことを言う（方向 A）
  */
 export function newsWipedEnemy(at: string, who: string): string {
   return `${who}が${at}を${TERM.attack} · 守りきった`;
-}
-
-/** 自分の遠征の結果を一文に（信号所の title・控え）。 */
-export function expOutLine(n: { t: keyof typeof EXP_OUT_WORD; name: string; node: string }): string {
-  const at = n.node;
-  if (n.t === "held") return `${n.name}の島の${at}を遠征隊が取った`;
-  if (n.t === "wiped") return `${n.name}の島の${at}で遠征隊が攻めきれなかった`;
-  return `${n.name}の島の${at}を失った`;
 }
 
 export function nextFront(name: string): string {
@@ -563,14 +531,14 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
-  { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
-  { bad: "仕返し", keep: "revenge", note: "やり返す（TKT-204 案 F）。旧・遠征送りは廃止" },
+  { bad: "遠征", keep: "attack", note: "遠征は無くなった。別プレイヤーの陣地は攻めで取る" },
+  { bad: "仕返し", keep: "revenge", note: "やり返す（TKT-204 案 F）" },
   { bad: "取り返す", keep: "attack", note: "攻めるに統合（E4）" },
   { bad: "お隣", keep: "otherPlayers", note: "別プレイヤー（隣り合っている必要はない）" },
   /**
    * Exact match only in lint (送る ⊂ 倉庫へ送る). 中継ボックスの「倉庫へ送る」は別 TERM.
    */
-  { bad: "送る", keep: "sendExpedition", note: "旧・遠征に出す。倉庫へ送るは別語。ボタンは廃止" },
+  { bad: "送る", keep: "sendToWarehouse", note: "倉庫へ送るは別語" },
 ];
 
 /**

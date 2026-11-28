@@ -1,6 +1,6 @@
 /*
  * The island code (docs/ringfall/multiplayer.md): a short public name for a player's island, which
- * others type to send an expedition there. Six characters of Crockford's base32 (no I, L, O or U,
+ * others type to look at it. Six characters of Crockford's base32 (no I, L, O or U,
  * so it reads aloud without confusion). The server draws it when a player claims their island
  * (`POST /api/islands`, worker/api.ts): a code a client could choose or compute could be claimed by
  * someone else first. It names the island only: the player's id stays the secret that proves who

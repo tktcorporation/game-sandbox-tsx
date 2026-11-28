@@ -1233,3 +1233,7 @@ AI の島を 30 日に入れた変更（`scripts/ringfall-campaign.ts` と `meta
 陣取り戦で自分の陣地へ来る敵の部隊を、隣の AI プレイヤーの名前で見せる変更（決定 B、`BattleStart.raiders` / `BattleSquad.by` / `Enemy.by`。名前だけで、どの規則も読まない）では、`raiders` を渡さないレイドは何も変わらない。この 2 コアの機械で続けて測った `npm run bench:ringfall -- 1` は、変更前 CPU 91.3 秒・変更後 88.2 秒（揺れの内）、ハッシュはどちらも `064a41f82b4b`。名前を渡しても戦いが同じに進むことは `scripts/ringfall-raiders.ts` が確かめる（同じ種で、節点・持ち主の移り・時刻が渡さない戦いと一致）。
 
 攻めの記録（`sim/replay.ts`、攻めの間だけ 3 秒ごとの位置と核・撃破・倒れた・終わりの印を持つ。どの規則も読まず、乱数も引かない）を足した変更では、攻めでないレイドは `s.replay` が null で何も変わらない。この 2 コアの機械で続けて測った `npm run bench:ringfall -- 1` は、変更前 CPU 111.9 秒・変更後 101.3 秒と 117.4 秒（揺れの内）、ハッシュはどれも `912421043d86`。攻め 1 回分の記録は 101 点・約 0.9 KB（`scripts/ringfall-sortie.ts` の `record`）。
+
+陣取り戦から別プレイヤーの遠征隊の入口を外した変更（`BattleStart.rivals` / `away`、`rivalsLand()`、`rivalRoute()` を削除。どのレイドも渡していなかった）では、レイドは何も変わらない。この 2 コアの機械で続けて測った `npm run bench:ringfall -- 1` は、変更前 CPU 80.6 秒・変更後 82.1 秒（揺れの内）、ハッシュはどちらも `912421043d86`。`npm run sim:ringfall` は main でも `checkIsland()` で止まるため、30 周の表は取り直していない。
+
+サーバーの遠征を消した変更では、sim は `reckon.ts` から、もう誰も呼ばない `reckonApart()`（サーバーが留守の島を数で解くための入口）を外しただけで、レイドは何も変わらない。`npm run bench:ringfall -- 1` のハッシュは `912421043d86` のまま（CPU は 98.5 秒。ビルドと確認のスクリプトを同時に回していたので、重さの比較には使えない）。

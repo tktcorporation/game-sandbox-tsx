@@ -1,6 +1,5 @@
 import { CONQUEST, COUNTER, ENEMIES, FACTORY, FACTORY_TOP, MOMENTUM, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { reckonCaptures, reckonFights, sideOf, standing, type CorePresence, type Guard, type NodeMeter, type ReckonSquad, type Side, type Task, type Unit } from "./reckon";
-import { parseHold, rivalHold, rivalOf } from "./holds";
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { fieldUses, forgetFields, onMainGround, walkLine } from "./hunt";
@@ -17,8 +16,7 @@ export { sideOf, type NodeMeter, type Side, type Unit } from "./reckon";
 /*
  * 陣取り戦 (docs/ringfall/island-v2.md, `CONQUEST`): a raid of the island is one battle over every
  * node at once. The player's and the enemy's squads walk the links between the nodes and take
- * them, the rogues' fight all, and another player's expeditions (side 3, docs/ringfall/multiplayer.md)
- * land to take the node they were sent to and hold it. A squad near the player or the teammate is robots in the
+ * them, and the rogues' fight all. A squad near the player or the teammate is robots in the
  * world (`State.friends` for the player's, `State.enemies` for the others), and the robots fight
  * as any robots do; a squad away from both is numbers (`BattleSquad`), and its fights and
  * captures are reckoned every `CONQUEST.tick` seconds (sim/reckon.ts, plain data a server can run too). When the raid ends before the battle
@@ -98,34 +96,13 @@ export interface Battle {
   counters: { node: number; at: number }[];
   /** The battle's clock when the raid ended before the battle did, and each node's standing then; null while the raid is on. */
   left: { at: number; nodes: NodeHold[] } | null;
-  /** Other players' expeditions still to come, soonest first. */
-  rivals: RivalExpedition[];
-  /** The factory's squads out on expeditions to other players' islands: each keeps one fewer squad out here (`homeMax()`). */
-  away: number;
   /** The AI players whose names the enemy's squads at the player's nodes go by (`BattleStart.raiders`); empty, none. */
   raiders: string[];
 }
 
-/**
- * Another player's expedition on its way to this island (docs/ringfall/multiplayer.md): whose, the
- * node it is sent to take, its squad, and the battle's clock at which its dropship or boat sets
- * off. One sent to a node its owner holds already, at 0, stands there from the start, holding it.
- */
-export interface RivalExpedition {
-  owner: string;
-  target: NodeId;
-  kinds: readonly EnemyKind[];
-  at: number;
-  /** Lands by dropship at its node itself rather than at the pad or the north shore (the game's own islands, meta/ai-islands.ts). */
-  near?: true;
-}
-
-/** What a raid of the island brings to its battle: the factory's level, and the other players' expeditions coming. */
+/** What a raid of the island brings to its battle: the factory's level, and the names its attackers go by. */
 export interface BattleStart {
   factory: number;
-  rivals?: readonly RivalExpedition[];
-  /** The factory's squads out on expeditions (meta/expeditions.ts `squadsAway()`); left out, none. */
-  away?: number;
   /** The AI players next door (their codes, meta/ai-islands.ts): the enemy's squads that come at the player's nodes are shown as theirs. */
   raiders?: readonly string[];
 }
@@ -336,44 +313,13 @@ export function initBattle(s: State, start: BattleStart): Battle {
     rally: -1,
     counters: [],
     left: null,
-    rivals: [],
-    away: Math.max(0, Math.round(start.away ?? 0)),
     raiders: [...(start.raiders ?? [])],
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "own") return;
     for (let k = 0; k < FACTORY.levels[factory].turrets + heldUnlocks(s.nodes, "turret").reduce((n, id) => n + (UNLOCKS[id].turret ?? 0), 0); k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
-  addRivals(s, b, start.rivals ?? []);
   return b;
-}
-
-/**
- * Other players' expeditions join battle `b`: each still to set off waits its turn (soonest first);
- * one sent at 0 to a node its owner holds stands there, holding it. As the battle starts, and for
- * expeditions the island's server hands over a moment after the raid began (`takeRivals()`).
- */
-function addRivals(s: Pick<State, "nodes">, b: Battle, rivals: readonly RivalExpedition[]) {
-  for (const x of [...rivals].sort((p, q) => p.at - q.at)) {
-    const i = nodeIndex(x.target);
-    // An owner whose standing a save could not read back (`parseHold()`) never lands: the node it took would be lost on reload.
-    if (i < 0 || !x.kinds.length || !parseHold(rivalHold(x.owner))) continue;
-    if (x.at <= 0 && rivalOf(s.nodes[i]) === x.owner) Object.assign(addSquad(b, 3, x.kinds, i, i, "hold"), { owner: x.owner });
-    else b.rivals.push({ ...x, kinds: [...x.kinds] });
-  }
-  b.rivals.sort((p, q) => p.at - q.at);
-}
-
-/**
- * The raid under way takes in other players' expeditions its start did not have (the island's
- * server answered after the raid began): as `BattleStart.rivals` would have brought them. False for
- * a raid with no battle, or one whose battle is over.
- */
-export function takeRivals(s: State, rivals: readonly RivalExpedition[]): boolean {
-  const b = s.battle;
-  if (!b || b.done) return false;
-  addRivals(s, b, rivals);
-  return true;
 }
 
 function addSquad(b: Battle, side: Side, kinds: readonly EnemyKind[], from: number, to: number, task: BattleSquad["task"]): BattleSquad {
@@ -434,7 +380,6 @@ function reckon(s: State, b: Battle) {
   lod(s, b);
   produce(s, b, dt);
   counterAttack(s, b);
-  rivalsLand(s, b);
   march(s, b, dt);
   nameRaiders(s, b);
   fightAndTake(s, b, dt);
@@ -844,9 +789,6 @@ export const factoryRarity = (nodes: State["nodes"]): Rarity => Math.max(PLATE.r
 /** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
 export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.levels[f].max + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
 
-/** The squads the factory keeps out on this island: `factoryMax()` less one for each out on an expedition (遠征の費用), never below 0. */
-const homeMax = (s: Pick<State, "nodes">, b: Battle) => (b.away > 0 ? Math.max(0, factoryMax(s, b.factory) - b.away) : factoryMax(s, b.factory));
-
 /**
  * The factory's next squad sets off on `plan`: out of the camp's gate when it sets off from the
  * camp or the node by it (walking through that node to one beyond), else out of the depot of the
@@ -873,7 +815,7 @@ function produce(s: State, b: Battle, dt: number) {
   // A raid with momentum brings the factory's squads out sooner (`MOMENTUM`).
   const every = FACTORY.levels[f].every * MOMENTUM.factory ** momentum(s);
   b.made[0] = Math.min(every, b.made[0] + dt);
-  if (b.made[0] >= every && walking(b, 0) < homeMax(s, b)) {
+  if (b.made[0] >= every && walking(b, 0) < factoryMax(s, b.factory)) {
     const plan = playerPlan(s, b);
     if (plan) sendOut(s, b, plan);
   }
@@ -927,56 +869,6 @@ function counterAttack(s: State, b: Battle) {
     tell(s, { t: "landing", boat, x: q.x, z: q.z });
     tell(s, { t: "counter", node: c.node });
   }
-}
-
-/**
- * Other players' expeditions come due: each sets off on a dropship to the pad or a boat to the
- * north shore (the enemy's own ways in, `landingPlan()`), whichever lands it the shorter walk from
- * its target, and walks there across whoever's nodes lie between; one marked `near` comes down by
- * dropship at its node itself. Its squad takes that node and holds it.
- */
-function rivalsLand(s: State, b: Battle) {
-  while (b.rivals.length && b.rivals[0].at <= b.now) {
-    const x = b.rivals.shift()!;
-    const plan = x.near ? { from: nodeIndex(x.target), to: nodeIndex(x.target), via: [] } : rivalRoute(s, nodeIndex(x.target));
-    if (!plan) continue;
-    const q = addSquad(b, 3, x.kinds, plan.from, plan.to, "attack");
-    q.owner = x.owner;
-    q.via = plan.via;
-    const boat = plan.from === SHORE;
-    q.ashore = boat ? CONQUEST.land.boat : CONQUEST.land.ship;
-    b.landings.push({ boat, x: q.x, z: q.z, down: b.now + q.ashore });
-    if (b.landings.length > 6) b.landings.shift();
-    tell(s, { t: "landing", boat, x: q.x, z: q.z });
-  }
-}
-
-/**
- * The way of another player's squad to node `target`: from the landing (the pad, or the north
- * shore while it is open) with the shortest walk along the links to it, across any node. Null for
- * a node no landing reaches.
- */
-export function rivalRoute(s: Pick<State, "nodes">, target: number): { from: number; to: number; via: number[] } | null {
-  let best: { from: number; to: number; via: number[]; len: number } | null = null;
-  for (const land of shoreOpen(s) ? [PAD, SHORE] : [PAD]) {
-    // Breadth first along the links, each node by the fewest links from the landing.
-    const prev = new Map<number, number>();
-    const queue = [...LAND_NEXT[land]];
-    for (const i of queue) prev.set(i, land);
-    for (let k = 0; k < queue.length && !prev.has(target); k++)
-      for (const j of NEIGHBOURS[queue[k]])
-        if (!prev.has(j)) {
-          prev.set(j, queue[k]);
-          queue.push(j);
-        }
-    if (!prev.has(target)) continue;
-    const route = [target];
-    while (prev.get(route[0]) !== land) route.unshift(prev.get(route[0])!);
-    let len = dist2d(nodePoint(land), nodePoint(route[0]));
-    for (let k = 1; k < route.length; k++) len += dist2d(nodePoint(route[k - 1]), nodePoint(route[k]));
-    if (!best || len < best.len) best = { from: land, to: route[0], via: route.slice(1), len };
-  }
-  return best && { from: best.from, to: best.to, via: best.via };
 }
 
 /** Where battle squad `q` is bound in the end: the last node of its way, or the node it walks to. */

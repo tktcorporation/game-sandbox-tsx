@@ -1,13 +1,11 @@
 /*
- * 信号所（Signal Station）パネル: お隣の島リスト、トロフィー、島の知らせ、自島コードの確認。
- *
- * 能動的な遠征送信・出ている遠征一覧は置かない。本パネルはお隣の偵察、トロフィー、島の番号の確認を担う（`#hub-exped`）。
+ * 信号所（Signal Station）パネルの上の部分（`#hub-exped`）: トロフィー、別プレイヤーの島の一覧、自分の島の番号。
+ * 開くたびに自分の島をサーバーと同期し、届いた知らせを hub へ渡す。
  */
 import { islandDay } from "../meta/days";
-import { aiOvernight, aiSalt, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, syncOwn, takeReport, takeSync } from "../island-net";
-import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
-import { playerNodes } from "../meta/island";
-import { expeditionsOut, numbered, dropStale, recallAll, refreshOutgoing, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { aiOvernight, isAi, neighboursFor, readNeighbours, readView, syncOwn, takeReport, takeSync } from "../island-net";
+import { ago, type Neighbour } from "../meta/neighbours";
+import type { IslandLogEntry, IslandView } from "../meta/island-sync";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import { type Profile } from "../meta/profile";
@@ -36,11 +34,11 @@ function overnight(n: Neighbour, day: number): string {
 /** Where the section stands with the server: asking, no server, a failure, or connected. */
 type Conn = { t: "wait" } | { t: "none" } | { t: "error"; error: string } | { t: "ok"; code: string; view: IslandView | null };
 
-export class ExpeditionPanel {
+export class SignalPanel {
   private conn: Conn = { t: "wait" };
   /** The code typed for another island, as typed. */
   private typed = "";
-  /** The island looked up by its code (看板; no send under E4). */
+  /** The island looked up by its code. */
   private target: IslandView | null = null;
   /** The last request's outcome, in a line. */
   private note: { text: string; good: boolean } | null = null;
@@ -71,7 +69,7 @@ export class ExpeditionPanel {
     });
   }
 
-  /** The signal station's expeditions section opened: this island read anew, and the expeditions out with it. */
+  /** The signal station opened: this island read anew. */
   open() {
     this.note = null;
     this.copied = false;
@@ -80,12 +78,6 @@ export class ExpeditionPanel {
 
   private async connect() {
     const ask = ++this.ask;
-    // A send whose answer never came (a tab closed while it was out) gives its squad back.
-    const p0 = refreshAi(this.get());
-    // Codex / PR6: 出ている遠征 UI 削除後もセーブやセッションに残る遠征は引き上げ → flushRecalls が DELETE。
-    const retired = recallAll(dropStale(p0.expeditions, Date.now()).filter((e) => e.state !== "sending" && e.id > 0));
-    const fresh = { ...p0, expeditions: retired };
-    if (JSON.stringify(fresh) !== JSON.stringify(this.get())) this.put(fresh);
     // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
     this.neighbours = neighboursFor(this.get());
     if (this.conn.t !== "ok") this.conn = { t: "wait" };
@@ -101,8 +93,7 @@ export class ExpeditionPanel {
     }
     if (!r.ok) {
       this.conn = r.error === "no-island-server" || r.error === "no-database" ? { t: "none" } : { t: "error", error: r.error };
-      // The game's own islands answer without the server: their recalls go through at once.
-      await flushRecalls(this.get, this.put);
+      // The game's own islands answer without the server.
       if (this.answering && isAi(this.answering)) {
         this.answering = null;
         void this.look();
@@ -123,30 +114,11 @@ export class ExpeditionPanel {
       this.neighbours = neighboursFor(this.get());
       this.paint();
     }
-    await flushRecalls(this.get, this.put);
-    await this.refresh(r.body.code, ask);
-    if (ask === this.ask) this.paint();
   }
 
   /** The panel closed: answers to its open still in flight are dropped (a raid may start meanwhile; the next open reads the island again). */
   cancel() {
     this.ask++;
-  }
-
-  /** The expeditions out, each as its island shows it now. */
-  private async refresh(mine: string, ask: number) {
-    const asked = numbered(this.get().expeditions);
-    const codes = [...new Set(expeditionsOut(this.get()).map((e) => e.code))];
-    if (!codes.length) return;
-    const views: Record<string, IslandView | null> = {};
-    for (const c of codes) {
-      const v = await readView(c);
-      views[c] = v.ok ? v.body : null;
-    }
-    if (ask !== this.ask) return;
-    const p = this.get();
-    const expeditions = refreshOutgoing(p.expeditions, mine, views, asked);
-    if (expeditions.some((e, i) => e !== p.expeditions[i])) this.put({ ...p, expeditions });
   }
 
   /** Handles one of the section's buttons (`exp-…`). */
@@ -158,7 +130,8 @@ export class ExpeditionPanel {
     else if (act === "exp-island") {
       this.typed = arg;
       void this.look();
-    }   }
+    }
+  }
 
   private async copy() {
     if (this.conn.t !== "ok") return;
@@ -200,7 +173,7 @@ export class ExpeditionPanel {
     this.paint();
   }
 
-  /** Redraws the section where the factory's panel holds it, keeping the code being typed and its focus. */
+  /** Redraws the section where the signal station's panel holds it, keeping the code being typed and its focus. */
   private paint() {
     const el = document.getElementById("hub-exped");
     if (!el) return;
@@ -214,8 +187,7 @@ export class ExpeditionPanel {
   html(): string {
     const p = this.get();
     const c = this.conn;
-    // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
-    // Trophy is the signal station's primary ranking readout (map table removed): large number first.
+    // Trophy is the signal station's primary ranking readout: large number first.
     const tropN = p.trophies ?? 0;
     const trop = `<div class="exp-trophy"><small>${trophyHead(tropN)}</small><b>${tropN}</b></div>`;
     // 作り順③: island shield / loss cap under the trophy (protected state + remaining time).
@@ -228,11 +200,10 @@ export class ExpeditionPanel {
         : guard.lost > 0
           ? `<p class="exp-shield">${esc(lostTodayLine(guard.lost, OUTER_GUARD.lossCap))}</p>`
           : "";
-    // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
     const head = `${trop}${shield}<div class="mod-head"><strong>${flagIcon()}${TERM.otherPlayers}</strong></div>`;
-    // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
+    // Without the server only the game's own islands answer.
     const browse = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.neighboursBoard(p) : "";
-    // Island codes: folded away from daily entry (お隣 cards are the primary).
+    // Island codes: folded away from daily entry (the islands' cards are the primary).
     const dis = this.busy ? " disabled" : "";
     const openCodes = this.answering || this.typed ? " open" : "";
     const own =
@@ -248,23 +219,20 @@ export class ExpeditionPanel {
     return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${browse}<div class="exp-foot">${own}</div></div></div>`;
   }
 
-  /** Neighbours as a board, plus a looked-up island's nodes (read-only; no send button). */
+  /** Neighbours as a board, plus a looked-up island's nodes (read-only). */
   private neighboursBoard(p: Profile): string {
     const dis = this.busy ? " disabled" : "";
-    // The neighbours: whose island, how much they hold; a tap opens a read-only look below.
-    const mine = new Set<string>(playerNodes(p));
+    // The other players' islands: whose, how much they hold; a tap opens a read-only look below.
     const near = this.neighbours.length
       ? `<div class="exp-near">${this.neighbours
           .map((n) => {
-            const k = n.slot;
-            const open = routeOpen(k, (id) => mine.has(id));
             const held = `<span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span>`;
             const trop = n.trophies != null ? `<small class="exp-n-trop">${TERM.trophy} ${n.trophies.toLocaleString("ja-JP")}</small>` : "";
-            const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}${lastMarks(n, Date.now())}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
-            const reach = open && (this.conn.t === "ok" || n.ai);
+            const foot = `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}${lastMarks(n, Date.now())}</small>`;
+            const reach = this.conn.t === "ok" || n.ai;
             // TKT-204 案 G: AI is 「名前 · AI」 same as map / news (span kept for style).
             const who = n.ai ? `${esc(n.name)}<span class="ai-tag">AI</span>` : esc(n.name);
-            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${who}</b>${trop}${held}${foot}${overnight(n, islandDay(p))}</button>`;
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${who}</b>${trop}${held}${foot}${overnight(n, islandDay(p))}</button>`;
           })
           .join("")}</div>`
       : "";

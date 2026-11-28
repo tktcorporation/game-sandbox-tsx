@@ -5,8 +5,7 @@ import type { PoiHold } from "./holds";
 /*
  * The battle's reckoning in numbers (陣取り戦, sim/battle.ts): the fights and the captures of the
  * squads nobody watches, every `CONQUEST.tick` seconds. Plain data in and out, with no `State` and
- * no world, so that a server can reckon an island nobody plays with the code a raid uses
- * (docs/ringfall/multiplayer.md). The raid gives it the world's share as data: which nodes someone
+ * no world. The raid gives it the world's share as data: which nodes someone
  * watches, the garrisons' robots, and the robots standing by each core.
  */
 
@@ -314,14 +313,4 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
     } else if (!att.size) meter[i] = null;
   });
   return { holds, squads, meter, threat, effects };
-}
-
-/**
- * One reckoning of an island nobody plays, in numbers alone: the fights, then the captures, with
- * no world by any core. What a server runs between raids; a raid runs the two halves with the world's share between them.
- */
-export function reckonApart(f: FightField & Pick<CaptureField, "meter" | "threat">, dt: number): FightResult & CaptureResult {
-  const fought = reckonFights(f, dt);
-  const taken = reckonCaptures({ holds: f.holds, squads: fought.squads, guards: standing(fought), present: f.holds.map(() => null), meter: f.meter, threat: f.threat }, dt);
-  return { ...fought, ...taken };
 }
