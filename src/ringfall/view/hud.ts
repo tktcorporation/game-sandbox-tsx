@@ -666,7 +666,7 @@ export class Hud {
       else {
         this.map.draw({ ...s });
         // The key names another player only while one holds a node or has a squad on the island.
-        const rivals = s.nodes.some((h) => rivalOf(h) !== null) || !!s.battle?.squads.some((q) => q.side === 3);
+        const rivals = s.nodes.some((h) => rivalOf(h) !== null);
         document.querySelectorAll<HTMLElement>("#map .map-rival").forEach((el) => {
           if (el.hidden === rivals) el.hidden = !rivals;
         });

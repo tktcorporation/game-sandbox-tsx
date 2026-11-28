@@ -35,9 +35,8 @@ export const robotSide = (e: Pick<Enemy, "friend" | "rogue" | "rival">): Side =>
  */
 export interface BattleSquad {
   id: number;
+  /** The player's (0), the enemy's (1) or the rogues' (2): no squad of the battle is another player's. */
   side: Side;
-  /** Another player's squad (side 3): that player's id. */
-  owner?: string;
   units: Unit[];
   from: number;
   to: number;
@@ -587,7 +586,7 @@ function settleAt(s: State, q: BattleSquad) {
 }
 
 /** The name of a battle squad's squad in the world. */
-const squadName = (q: BattleSquad) => (q.task === "post" ? "自軍の砲台" : q.side === 0 ? "自軍の部隊" : q.side === 1 ? "敵の攻撃部隊" : q.side === 3 ? "他のプレイヤーの部隊" : "野良機の部隊");
+const squadName = (q: BattleSquad) => (q.task === "post" ? "自軍の砲台" : q.side === 0 ? "自軍の部隊" : q.side === 1 ? "敵の攻撃部隊" : "野良機の部隊");
 
 /**
  * Battle squad `q` comes into the world where its numbers say it is, its members spread round
@@ -598,8 +597,7 @@ function toWorld(s: State, q: BattleSquad, appear: boolean) {
   const here = arrived(q) || q.task === "post" ? [nodePoint(q.to)] : [{ x: q.x, z: q.z }, ...p.pts.filter((_, k) => p.cum[k] > q.d + 1)];
   const index = s.squads.length;
   const friend = q.side === 0;
-  const rival = q.side === 3 ? (q.owner ?? "") : undefined;
-  s.squads.push({ name: squadName(q), poi: -1, patrol: here, leg: 0, engaged: false, roam: !friend, sinceSeen: 0, last: { x: q.x, z: q.z }, rogue: q.side === 2 || undefined, friend: friend || undefined, battle: q.id, ...(rival !== undefined && { rival }) });
+  s.squads.push({ name: squadName(q), poi: -1, patrol: here, leg: 0, engaged: false, roam: !friend, sinceSeen: 0, last: { x: q.x, z: q.z }, rogue: q.side === 2 || undefined, friend: friend || undefined, battle: q.id });
   const next = here[Math.min(1, here.length - 1)];
   const face = Math.atan2(next.x - q.x, -(next.z - q.z)) || 0;
   // Walking, the members come in one behind another along the way; standing, round where the squad stands.
@@ -608,8 +606,7 @@ function toWorld(s: State, q: BattleSquad, appear: boolean) {
     const back = walk && m > 0 ? along(walk, q.d - m * CONQUEST.column) : null;
     const x = back ? back.x : q.x + (m % 2 ? 1.6 : -1.6) * Math.min(m, 1);
     const z = back ? back.z : q.z + m * 1.4;
-    // Another player's robots wear no plate, as the player's own: their factory arms them.
-    const e = spawnEnemy(s, u.kind, x, z, -1, index, { face, hashed: true, rogue: q.side === 2, appear, plate: friend || rival !== undefined ? 0 : undefined, rival });
+    const e = spawnEnemy(s, u.kind, x, z, -1, index, { face, hashed: true, rogue: q.side === 2, appear, plate: friend ? 0 : undefined });
     e.hp = u.hp;
     e.shield = u.shield;
     e.battle = q.id;
@@ -944,13 +941,10 @@ function march(s: State, b: Battle, dt: number) {
 }
 
 /** Battle squad `q` as the reckoning sees it (sim/reckon.ts). */
-const reckonSquad = (q: BattleSquad): ReckonSquad => ({ id: q.id, side: q.side, owner: q.owner, units: q.units, to: q.to, task: q.task, x: q.x, z: q.z, arrived: arrived(q), live: q.squad >= 0, ashore: q.ashore, passing: passing(q) || undefined });
+const reckonSquad = (q: BattleSquad): ReckonSquad => ({ id: q.id, side: q.side, units: q.units, to: q.to, task: q.task, x: q.x, z: q.z, arrived: arrived(q), live: q.squad >= 0, ashore: q.ashore });
 
-/** Another player's squad come to a node on its way to the one it was sent to (only side 3: the enemy's squads stop to fight where they come). */
-const passing = (q: BattleSquad) => q.side === 3 && q.via.length > 0;
-
-/** Squad `q` comes to take node `i`: sent to attack it, and not only passing it on its way to another. */
-export const attacking = (q: BattleSquad, i: number) => q.to === i && q.task === "attack" && !passing(q);
+/** Squad `q` comes to take node `i`. */
+export const attacking = (q: BattleSquad, i: number) => q.to === i && q.task === "attack";
 
 /** A garrison's robot as the reckoning sees it. */
 const guardOf = (e: Enemy): Guard => ({ side: robotSide(e), kind: e.kind, hp: e.hp, shield: e.shield, plate: e.plate });
@@ -1010,11 +1004,8 @@ function presence(s: State, b: Battle, i: number): CorePresence | null {
   const zone = CONQUEST.zone;
   const within = (e: Enemy) => Math.abs(e.pos.x - c.x) < zone && Math.abs(e.pos.z - c.z) < zone && dist2d(e.pos, c) < zone && e.mode !== "spawning";
   const robots: CorePresence["robots"] = [];
-  // Another player's robots attack only the node their squad is bound for: not one they pass through,
-  // nor the last stop on their way, which they have left behind once their way runs on to the target.
-  const through = new Set(b.squads.filter((q) => q.side === 3 && (q.to !== i || passing(q))).map((q) => q.id));
   for (const e of s.friends) if (within(e)) robots.push({ side: 0, battle: true });
-  for (const e of s.enemies) if (within(e) && e.kind !== "titan") robots.push({ side: robotSide(e), owner: e.rival, battle: !!e.battle && !through.has(e.battle) });
+  for (const e of s.enemies) if (within(e) && e.kind !== "titan") robots.push({ side: robotSide(e), owner: e.rival, battle: !!e.battle });
   let people = 0;
   if (s.player.downed <= 0 && dist2d(s.player.pos, c) < zone && s.phase === "play") people++;
   if (allyUp(s) && dist2d(s.ally.pos, c) < zone && s.phase === "play") people++;
@@ -1151,7 +1142,6 @@ export function battleFocus(s: State): { node: number; kind: "defend" | "attack"
   NODES.forEach((n, i) => {
     if (s.nodes[i] !== "own") return;
     const m = b.meter[i];
-    // Another player's squad passing through on its way to another node comes at nothing here.
     const coming = b.squads.some((q) => q.side !== 0 && attacking(q, i) && (arrived(q) || dist2d(q, n.core) < 120));
     if ((m && m.side !== 0) || coming) {
       const d = dist2d(n.core, p);

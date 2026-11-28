@@ -33,15 +33,13 @@ export interface NodeMeter {
 }
 
 /**
- * A battle squad as the reckoning sees it: its side (and for another player's, that player's id),
- * members, the node it is bound for, what it is about, where it is, whether it stands at its node,
+ * A battle squad as the reckoning sees it: its side, members, the node it is bound for, what it is about, where it is, whether it stands at its node,
  * whether it is robots in the world (`live`: the world fights for it), and the seconds before it
  * steps ashore.
  */
 export interface ReckonSquad {
   id: number;
   side: Side;
-  owner?: string;
   units: Unit[];
   to: number;
   task: Task;
@@ -50,8 +48,6 @@ export interface ReckonSquad {
   arrived: boolean;
   live: boolean;
   ashore: number;
-  /** Another player's squad come to a node on its way to the one it was sent to: it takes no part in that node's fight or capture. */
-  passing?: boolean;
 }
 
 /** A garrison's robot (a POI's squads: they hold the node for the enemy wherever they are): its side, kind, health, shield and plate. */
@@ -223,7 +219,7 @@ export function reckonFights(f: FightField, dt: number): FightResult {
   // At the nodes nobody watches: the squads there and the garrison.
   f.holds.forEach((h, i) => {
     if (f.watched[i]) return;
-    const here = apart.filter((q) => q.to === i && q.arrived && !q.passing && !done.has(q));
+    const here = apart.filter((q) => q.to === i && q.arrived && !done.has(q));
     const owner = sideOf(h);
     if (!here.some((q) => q.side !== owner)) return;
     // The whole garrison comes to its core to hold it.
@@ -256,20 +252,16 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
   holds.forEach((h, i) => {
     const owner = sideOf(h);
     const att = new Set<Side>();
-    // Another player's squads taking it: the first of them names whose it becomes.
+    // Another player's robots in the world taking it: the first of them names whose it becomes.
     let rival: string | undefined;
     let def = 0;
     // Rogues there take nothing, but keep the others from taking it.
     let rogue = false;
     for (const q of squads) {
-      if (q.to !== i || q.live || !q.arrived || q.passing) continue;
+      if (q.to !== i || q.live || !q.arrived) continue;
       if (q.side === owner) def++;
       else if (q.side === 2) rogue = true;
-      // Another player's squad takes a node only for its owner: one with none takes nothing.
-      else if ((q.task === "attack" || q.task === "rally") && (q.side !== 3 || q.owner !== undefined)) {
-        att.add(q.side);
-        if (q.side === 3) rival ??= q.owner;
-      }
+      else if (q.task === "attack" || q.task === "rally") att.add(q.side);
     }
     const at = f.present[i];
     if (at) {
@@ -303,8 +295,7 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
         meter[i] = null;
         holds[i] = side === 0 ? "own" : side === 3 ? `rival:${who!}` : "foe";
         for (const q of squads) {
-          // A squad only passing through goes on to the node it was sent to, whoever took this one.
-          if (q.to !== i || q.task === "post" || q.passing) continue;
+          if (q.to !== i || q.task === "post") continue;
           if (q.side === side) q.task = "hold";
           else if (q.side === owner) q.task = "attack";
         }
