@@ -9,7 +9,7 @@ import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, ty
 import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, nodeIndex, POIS, poiIndex, poiRegion, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
-import { capturedIds, contestedFailed, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
+import { capturedIds, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { isAiOwner } from "./sim/holds";
 import { atRisk, battleMarks, departNow, landNow, lostToRaiders, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
@@ -354,7 +354,6 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     // A sortie's depot is the neighbour's: nothing left there becomes this island's stock.
     parcels: who.code && !settled.sortie ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
-    contestedFailed: contestedFailed(settled),
   };
   void syncOwn(p, true, raid).then((r) => {
     if (!r.ok) return;

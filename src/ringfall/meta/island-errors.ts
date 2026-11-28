@@ -26,7 +26,6 @@ export const API_ERRORS = [
   "own-island",
   "no-own-island",
   // Sorties on a holding, and the contested shores.
-  "route-shut",
   "node-not-open",
   "protected",
   "day-limit",
@@ -55,7 +54,6 @@ export const ERROR_TEXT: Record<ApiError | NetError, string> = {
   "not-owner": "この端末の島ではありません",
   "own-island": "自分の島には送れません",
   "no-own-island": "自分の島の番号がまだありません",
-  "route-shut": "その別プレイヤーへの航路が閉じています",
   "node-not-open": "その拠点はもう相手の陣地ではありません",
   protected: "始めたばかりの島です。保護が明けるまで待つ",
   "day-limit": "その島は今日の分を取られました。明日もう一度",

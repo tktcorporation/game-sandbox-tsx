@@ -47,13 +47,3 @@ export function parseParcels(raw: unknown): Parcel[] {
   }
   return out;
 }
-
-/** Look-marks left on an island (ux-design M6, async 目印); short live sync is not the goal. */
-export function parsePings(raw: unknown): { id: number; x: number; z: number; by: string; until: number }[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((r) => {
-    if (!isObj(r) || !Number.isInteger(r.id) || !Number.isFinite(r.x) || !Number.isFinite(r.z)) return [];
-    if (typeof r.by !== "string" || typeof r.until !== "number") return [];
-    return [{ id: r.id as number, x: r.x as number, z: r.z as number, by: r.by, until: r.until }];
-  });
-}

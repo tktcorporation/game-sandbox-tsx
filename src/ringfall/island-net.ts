@@ -266,7 +266,6 @@ export interface RaidReport {
    * Contested hubs whose 核 · 制圧 was started against a real neighbour but not finished
    * (TKT-201): defender gets 「… · 守りきった」.
    */
-  contestedFailed?: { shore: string; owner: string }[];
 }
 
 /** What a sync of this player's own island read: the view, and what to take into the profile. */
@@ -314,7 +313,6 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         day: islandDay(p),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
-        ...(raid?.contestedFailed?.length ? { contestedFailed: raid.contestedFailed } : {}),
       }),
     });
     if (!r.ok) return r;

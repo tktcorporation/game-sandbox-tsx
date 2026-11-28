@@ -76,16 +76,18 @@ function island(freed: string[], rival: string[] = []): Profile {
   const named = retakenNodes(before, after, ["station"]);
   console.log(`retaken: named ${named.join()}`);
   check(named.join() === "relay,station", `retaken: the report names ${named.join()} as taken back, not the relay (another player's at the start) and the station (its core captured)`);
-  // The server: island A's quarry another player's; a report from a profile that still calls it the owner's.
+  // The server: island A's quarry taken by another player's sortie; a report from a profile that still calls it the owner's.
   const t0 = 1_700_000_000_000;
   const own = islandOp(null, { t: "claim", player: { id: ID_A, name: "わたし" }, code: A }, t0).state as IslandState;
-  own.holds[NODES.findIndex((n) => n.id === "quarry")] = rivalHold(B);
+  const q = NODES.findIndex((n) => n.id === "quarry");
+  own.holds[q] = "foe";
+  own.raided = [q];
   const stale = island(["supply", "quarry"]);
-  const say = (retaken: string[]) => islandOp(own, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(stale), retaken, factory: 0, day: 2 }, t0 + 1000);
+  const say = (retaken: string[]) => islandOp(structuredClone(own), { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(stale), retaken, factory: 0, day: 2 }, t0 + 1000);
   const kept = reportedHolds(say(retakenNodes(stale, stale, [])).body)?.find((n) => n.id === "quarry")?.hold;
   const back = reportedHolds(say(["quarry"]).body)?.find((n) => n.id === "quarry")?.hold;
   console.log(`retaken: a stale profile's report leaves the quarry ${kept}; one naming it ${back}`);
-  check(kept === rivalHold(B) && back === "own", "retaken: the server's answer to a report does not follow what it names as taken back");
+  check(kept === "foe" && back === "own", "retaken: the server's answer to a report does not follow what it names as taken back");
 }
 
 // --- retaken at the settle: by the island the raid started with

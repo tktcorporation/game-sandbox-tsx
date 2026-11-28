@@ -352,7 +352,7 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(backList.includes("AB0000"), `neighbours: reciprocal missing owner (got ${backList.join(",")})`);
 }
 
-// --- contested write to opponent island (TKT-201): foe→own on A mirrors rival:A onto B's facing shore
+// --- a report changes the reporter's island alone: a node taken on A is nobody's on a neighbour's island
 {
   const DAY = 24 * 3600 * 1000;
   const T = 1_900_000_000_000;
@@ -411,16 +411,12 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
     }),
     T + 1000,
   );
-  check(rep.status === 200, `contested write: report ${rep.status}`);
+  check(rep.status === 200, `report: ${rep.status}`);
   const bIsle = mem.get(codeB)!;
   const station = NODE_IDS.indexOf("station");
-  check(bIsle.holds[station] === `rival:${codeA}`, `contested write: B station is ${bIsle.holds[station]}, want rival:${codeA}`);
-  check(NEIGHBOUR_SLOTS[0]!.shore === "station", "contested write: slot 0 is not station");
-  check(
-    bIsle.log.some((e) => e.t === "taken" && e.node === "station" && e.by.code === codeA && e.by.name === "ツバキ"),
-    `contested write: B log missing ツバキ (${JSON.stringify(bIsle.log.slice(-2))})`,
-  );
-  console.log(`contested write: A took station → B holds rival:${codeA} (log names ツバキ)`);
+  check(mem.get(codeA)!.holds[station] === "own", "report: A's station is not A's");
+  check(bIsle.holds[station] === "foe" && bIsle.log.length === 0, `report: A's report changed B's island (station ${bIsle.holds[station]}, log ${bIsle.log.length})`);
+  console.log(`report: A took its station; B's station ${bIsle.holds[station]}, B's log ${bIsle.log.length}`);
 }
 
 if (errors.length) {
