@@ -27,6 +27,7 @@ import { WORLD } from "../src/ringfall/sim/config";
 import { BOXES, FRAMES, ROUTES, type Box } from "../src/ringfall/sim/map";
 import { terrainHeight } from "../src/ringfall/sim/terrain";
 import { drawField, fieldLine, fieldNumbers, measureField } from "./ringfall-field";
+import { measureVariety, varietyLine, varietyNumbers } from "./ringfall-variety";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
 
 const args = process.argv.slice(2);
@@ -187,6 +188,22 @@ if (rebase || !fieldSaved) {
   worldLines.push(moved.length ? `  field since the baseline: ${moved.map((k) => `${k} ${fieldSaved.numbers[k]} -> ${fieldNow[k]}`).join(", ")}` : "  field since the baseline: unchanged");
 }
 console.log(`field measured (${secs()})`);
+
+// --- what the place is built of (`ringfall-variety.ts`, docs/ringfall/field-design.md), compared
+// the same way.
+const variety = varietyNumbers(measureVariety(centre, R));
+const varietyBase = `${baseDir}/variety.json`;
+const varietyMeta = { version: 2, r: R };
+const varietySaved = existsSync(varietyBase) ? (JSON.parse(readFileSync(varietyBase, "utf8")) as typeof varietyMeta & { numbers: typeof variety }) : null;
+worldLines.push(`variety: ${varietyLine(measureVariety(centre, R))}`);
+if (rebase || !varietySaved) {
+  writeFileSync(varietyBase, JSON.stringify({ ...varietyMeta, numbers: variety }));
+} else if (varietySaved.version !== varietyMeta.version || varietySaved.r !== varietyMeta.r) {
+  worldLines.push("  variety: NOT COMPARED, measured another way or at another --r than the baseline; take one with --base");
+} else {
+  const moved = (Object.keys(variety) as (keyof typeof variety)[]).filter((k) => variety[k] !== varietySaved.numbers[k]);
+  worldLines.push(moved.length ? `  variety since the baseline: ${moved.map((k) => `${k} ${varietySaved.numbers[k]} -> ${variety[k]}`).join(", ")}` : "  variety since the baseline: unchanged");
+}
 
 // --- a top-down crop of the place.
 const top = spawnSync("npx", ["tsx", "scripts/ringfall-topdown.ts", `${out}/topdown.png`, String(centre.x), String(centre.z), String(R * 2)], { stdio: "inherit" });
