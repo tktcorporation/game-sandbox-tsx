@@ -331,6 +331,9 @@ npm run sim:ringfall     # gate 2: bots of three skills play whole raids headles
                          # first, beside the campaign's months (a process per skill, started first)
                          # (RINGFALL_SIM_JOBS=n or `--jobs n` to set, 1 = in turn; default from
                          # scripts/ringfall-parallelism.ts, not logical SMT threads)
+                         # every failing check is printed, not the first alone;
+                         # RINGFALL_SIM_CHECK=checkFront,checkIsland runs only the checks named
+                         # (about 12 s) and stops after them
 npm run bench:ringfall   # the sim's weight on ten fixed raids: CPU seconds and a hash of the outcome,
                          # run before and after a change to the sim (see the sim gate's speed below);
                          # raids run in parallel by default on physical cores (RINGFALL_SIM_JOBS=n
