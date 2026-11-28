@@ -158,12 +158,11 @@ await pg.waitForFunction(() => !document.getElementById("depart")?.hidden, null,
 await pg.waitForTimeout(300);
 await snap(pg, "02-depart");
 
-// Prefer an 攻める row when present (案 B scout list)
-const attackBtn = await pg.$("#depart-attack-list button[data-attack]:not(.shut)");
-if (attackBtn) {
-  await attackBtn.click();
+// 攻める: the departure's other way, its list of holdings with the first chosen.
+if (await pg.evaluate(() => !document.getElementById("depart")?.hidden)) {
+  await pg.click("#depart-mode [data-mode=attack]");
   await pg.waitForTimeout(200);
-  await snap(pg, "02b-depart-attack");
+  if (await pg.$("#depart-attack-list button[data-attack].on")) await snap(pg, "02b-depart-attack");
 }
 
 // Signal station neighbours + やり返す on 取られた

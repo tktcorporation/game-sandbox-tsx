@@ -666,7 +666,7 @@ export class Hud {
       else {
         this.map.draw({ ...s });
         // The key names another player only while one holds a node or has a squad on the island.
-        const rivals = s.nodes.some((h) => rivalOf(h) !== null) || !!s.battle?.squads.some((q) => q.side === 3);
+        const rivals = s.nodes.some((h) => rivalOf(h) !== null);
         document.querySelectorAll<HTMLElement>("#map .map-rival").forEach((el) => {
           if (el.hidden === rivals) el.hidden = !rivals;
         });
@@ -1613,13 +1613,34 @@ export class Hud {
    * haul fed the base (wanted / buildable). `next` is the one-line hand into the next sortie.
    */
   results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "") {
-    $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
+    // A sortie (攻め) leaves the island as it was: its results lead with the holding attacked, the stars and the trophies, not the island's map.
+    const sortie = s.sortie && settled ? s.sortie : null;
+    const sortieStars = sortie ? (settled!.trophies?.stars ?? 0) : 0;
+    $("results").classList.toggle("sortie", !!sortie);
+    $("result-title").textContent = sortie
+      ? sortieStars >= 2
+        ? PHRASE.sortieTaken
+        : s.outcome === "extracted"
+          ? PHRASE.sortieHeld
+          : "全滅"
+      : s.home
+        ? "帰った"
+        : s.outcome === "extracted"
+          ? "生還"
+          : "行方不明";
     const statsBox = document.getElementById("stats-box");
     if (statsBox) (statsBox as HTMLElement).hidden = false;
-    $("day-result").innerHTML = this.dayResult(s, settled);
-    // Tap the day's map to skip the beat wait (Round 10); 野営地に戻る still leaves as before.
-    $("day-result").onclick = () => this.skipDayBeat();
-    this.drawDay(settled);
+    if (sortie) {
+      this.clearDayTimers();
+      this.daySkip = null;
+      $("day-result").innerHTML = this.sortieResult(s, settled!, sortieStars);
+      $("day-result").onclick = null;
+    } else {
+      $("day-result").innerHTML = this.dayResult(s, settled);
+      // Tap the day's map to skip the beat wait (Round 10); 野営地に戻る still leaves as before.
+      $("day-result").onclick = () => this.skipDayBeat();
+      this.drawDay(settled);
+    }
     const st = s.stats;
     const acc = st.shots ? Math.round((st.hits / st.shots) * 100) : 0;
     const crit = st.hits ? Math.round((st.crits / st.hits) * 100) : 0;
@@ -1656,6 +1677,8 @@ export class Hud {
       ...carried.filter(([label, n]) => n > kept(label, n)).map(([label, n]) => `<span class="lost">${label}${n - kept(label, n) > 1 ? ` × ${n - kept(label, n)}` : ""}</span>`),
     ];
     // The haul's worth under the day's result; what a wipe lost is struck through, what went home from a depot is kept.
+    // A sortie with nothing brought back shows no worth; what a wipe kept in the pouch or lost (tools among them) still shows.
+    $("haul-line").hidden = !!sortie && value === 0 && !(lost && split.length);
     $("haul-line").innerHTML =
       `<span${lost ? ' class="lost"' : ""}>回収の価値<b>${lost ? value - sentValue : value}</b></span>` +
       (lost && sentValue ? `<span>倉庫へ送った<b>${sentValue}</b></span>` : "") +
@@ -1711,7 +1734,8 @@ export class Hud {
       settled?.winBonus && settled.winBonus > 0
         ? `<p class="trop-line">${esc(winBonusMark(settled.winBonus))}</p>`
         : "";
-    const tropLine = `${starLine}${tropBreakdown}${leagueLine}${bonusLine}`;
+    // A sortie's stars and trophies stand in its head (`sortieResult()`), so only the league and the bonus follow here.
+    const tropLine = sortie ? `${leagueLine}${bonusLine}` : `${starLine}${tropBreakdown}${leagueLine}${bonusLine}`;
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s);
     const dayHead = settled
@@ -1743,6 +1767,23 @@ export class Hud {
             : "")
         : "") +
       this.analysis(s, settled, known, analysed);
+  }
+
+  /** The head of a sortie's results: whose holding, the stars won, and the trophies before and after. */
+  private sortieResult(s: State, settled: Settlement, stars: number): string {
+    const owner = s.sortie!.owner;
+    const n = neighboursNowOnMap().find((x) => x.code === owner || (owner.startsWith("ai-") && x.code === owner.slice(3)));
+    const who = n ? (n.ai ? aiLabel(n.name) : n.name) : owner;
+    const hub = NODES[s.sortie!.node]?.name ?? "";
+    const k = Math.max(0, Math.min(3, Math.round(stars)));
+    const marks = [0, 1, 2].map((i) => `<b class="${i < k ? "on" : ""}">${i < k ? "★" : "☆"}</b>`).join("");
+    const t = settled.trophies;
+    const delta = t ? t.after - t.before : 0;
+    const signed = delta > 0 ? `+${delta}` : delta < 0 ? `−${-delta}` : "±0";
+    const trop = t
+      ? `<p class="sortie-trop"><small>${TERM.trophy}</small><span>${t.before.toLocaleString("ja-JP")}</span><i>→</i><b>${t.after.toLocaleString("ja-JP")}</b><em class="${delta > 0 ? "up" : delta < 0 ? "down" : ""}">${signed}</em></p>`
+      : "";
+    return `<div class="sortie-head"><p class="sortie-who">${flagIcon(SIDE.rival)}<b>${esc(who)}</b><b>の${esc(hub)}</b></p><p class="sortie-stars" aria-label="${k} / 3">${marks}</p>${trop}</div>`;
   }
 
   /**

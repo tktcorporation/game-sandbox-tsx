@@ -67,7 +67,7 @@
 | 要求 | 誰が | 中身 | 答え |
 | --- | --- | --- | --- |
 | `POST /api/islands` | 島を持つ人 | `{ player: { id, name } }` | 201 と島の番号 |
-| `PUT /api/islands/:code` | 持ち主 | レイドの後の報告：`{ player, holds, retaken, factory, day, parcels?, takenParcels? }` | 200 と島の陣地の持ち主。違う ID は 403、取られていない番号は 404 |
+| `PUT /api/islands/:code` | 持ち主 | レイドの後の報告：`{ player, holds, retaken, factory, day, parcels?, takenParcels? }`。変わるのは報告した島だけ | 200 と島の陣地の持ち主。違う ID は 403、取られていない番号は 404 |
 | `GET /api/islands/:code` | 誰でも | | 200。持ち主の表示名、拠点の持ち主と攻められるか（`open`）、守りの残り、島の守り。プレイヤーの ID は含めない |
 | `GET /api/islands/:code/log?after=<n>`（`Authorization: Bearer <id>`） | 持ち主 | | 200 と、番号 `n` より後の記録（取られた・守りきった・取り返した）。ヘッダーが無ければ 401、持ち主でなければ 403 |
 | `POST /api/islands/:code/raids` | 攻めた人 | `{ from: { id, name, code }, target, captured, stars?, won?, replay? }` | 200 と `taken`。攻めた人は自分の島を ID で示す。相手に見える名前は、攻めた人の島が持つ名前 |
@@ -77,12 +77,9 @@
 
 遠征があった頃に保存された島は、読み込むときに遠征とその戦いの状態を捨て、遠征隊が持っていた拠点をロボットに戻す（`migrateIslandState()`）。`npx tsx scripts/ringfall-island-server.ts` が API と一緒に確かめる。
 
-### 残っている名残
+### 消したもの
 
-次のものはサーバーに残っているが、ブラウザはもう使っていないか、使い道が薄い。整理の候補。
-
-- 海岸の拠点を別プレイヤーと共有する写し（`contestedMirror` / `contestedDefend`、`contested_holds`）
-- 島の地図に残す印（`POST …/pings`）と、他の島に島の守りを置く口（`POST …/aid`）
+海岸の拠点を別プレイヤーと共有する写し（`contestedMirror` / `contestedDefend`）、島の地図に残す印（`…/pings`）、他の島に島の守りを置く口（`…/aid`）は 2026-11-28 に削除した。島の拠点が別プレイヤーの物になることは無い（取られた陣地はロボットに戻る）。保存済みの島に残っていた別プレイヤーの拠点は、読み込むときにロボットに戻す。D1 の `contested_holds` の表は残してあるが、読み書きしない。
 
 ## 不正への構え
 

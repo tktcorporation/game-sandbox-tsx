@@ -80,51 +80,48 @@ function op(s: IslandState, body: Parameters<typeof islandOp>[1], at: number) {
   console.log("pure: lossCap + island shield until UTC day end");
 }
 
-// --- Server: first contested mirror take raises island shield; second hub refused ---
+// --- Server: the first holding a sortie takes raises the island's shield; a second is held the same day ---
 {
   const shores = CONTESTED_SHORES.filter((id) => NODE_IDS.includes(id));
-  assert.ok(shores.length >= 2, "need ≥2 contested shores");
+  assert.ok(shores.length >= 2, "need ≥2 holdings");
   const a = shores[0]!;
   const b = shores[1]!;
   const holds: Record<string, string> = { supply: "own" };
   for (const id of shores) holds[id] = "own";
   const s = island(holds, T0);
+  const raid = (target: string, at: number) => op(s, { t: "raid", from: { code: B.code, name: B.name }, target, captured: true, stars: 3 }, at);
 
-  const first = op(s, { t: "contestedMirror", shore: a, owner: B.code, name: B.name, at: T1 }, T1);
+  const first = raid(a, T1);
   assert.equal(first.status, 200, `first take failed: ${JSON.stringify(first.body)}`);
-  assert.equal(s.holds[NODE_IDS.indexOf(a)], `rival:${B.code}`);
+  assert.equal((first.body as { taken?: boolean }).taken, true);
+  assert.equal(s.holds[NODE_IDS.indexOf(a)], "foe", "a holding taken did not go back to the robots");
   assert.ok(isIslandShielded(s, T1), "island shield not raised after first loss");
-  assert.ok(isShielded(s, NODE_IDS.indexOf(a), T1), "taken hub not per-hub shielded");
-  assert.ok(isShielded(s, NODE_IDS.indexOf(b), T1), "remaining own hub not island-shielded");
+  assert.ok(isShielded(s, NODE_IDS.indexOf(b), T1), "remaining holding not island-shielded");
   assert.equal(outerTakenOn(s, T1), 1);
   assert.equal(s.shielded?.island, true);
 
-  const second = op(s, { t: "contestedMirror", shore: b, owner: B.code, name: B.name, at: T1 + 1000 }, T1 + 1000);
-  assert.equal(second.status, 409, "second outer hub should be refused same day");
-  const err = (second.body as { error?: string }).error;
-  assert.ok(err === "shielded" || err === "day-limit", `unexpected error ${err}`);
-  assert.equal(s.holds[NODE_IDS.indexOf(b)], "own", "second hub ownership flipped despite guard");
+  const second = raid(b, T1 + 1000);
+  assert.equal((second.body as { taken?: boolean }).taken, false, "a second holding was taken the same day");
+  assert.equal(s.holds[NODE_IDS.indexOf(b)], "own", "second holding changed hands despite the guard");
+  assert.equal(s.log.at(-1)?.t, "wiped");
 
-  // Next UTC day: second hub can be taken.
-  const nextDay = T1 + DAY;
-  const later = op(s, { t: "contestedMirror", shore: b, owner: B.code, name: B.name, at: nextDay }, nextDay);
-  assert.equal(later.status, 200, `next-day take failed: ${JSON.stringify(later.body)}`);
-  assert.equal(s.holds[NODE_IDS.indexOf(b)], `rival:${B.code}`);
-  console.log(`server: took ${a}, blocked ${b} same day, took ${b} next day`);
+  // Next UTC day: the second holding can be taken.
+  const later = raid(b, T1 + DAY);
+  assert.equal((later.body as { taken?: boolean }).taken, true, `next-day take failed: ${JSON.stringify(later.body)}`);
+  assert.equal(s.holds[NODE_IDS.indexOf(b)], "foe");
+  console.log(`server: took ${a}, held ${b} the same day, took ${b} the next day`);
 }
 
-// --- Loss cap alone: even without island flag, outerTaken.n >= lossCap blocks ---
+// --- Loss cap alone: even without the island's flag, outerTaken.n >= lossCap holds ---
 {
   const shore = CONTESTED_SHORES.find((id) => NODE_IDS.includes(id))!;
   const s = island({ [shore]: "own", supply: "own" }, T0);
   s.outerTaken = { day: utcDay(T1), n: OUTER_GUARD.lossCap };
-  // Force no island flag so we exercise the cap path.
   s.shielded = { day: utcDay(T1), nodes: [], island: false };
-  const blocked = op(s, { t: "contestedMirror", shore, owner: B.code, name: B.name, at: T1 }, T1);
-  assert.equal(blocked.status, 409);
-  assert.equal((blocked.body as { error?: string }).error, "day-limit");
+  const held = op(s, { t: "raid", from: { code: B.code, name: B.name }, target: shore, captured: true, stars: 3 }, T1);
+  assert.equal((held.body as { taken?: boolean }).taken, false);
   assert.equal(s.holds[NODE_IDS.indexOf(shore)], "own");
-  console.log("server: lossCap alone refuses contestedMirror");
+  console.log("server: the loss cap alone holds a holding");
 }
 
 // --- applySync keeps local AI protection when server view is empty ---

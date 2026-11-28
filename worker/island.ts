@@ -1,4 +1,4 @@
-import { parseHold, rivalHold, rivalOf, type PoiHold } from "../src/ringfall/sim/holds";
+import { parseHold, rivalOf, type PoiHold } from "../src/ringfall/sim/holds";
 import { ISLAND_TABLE } from "../src/ringfall/meta/island-table";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { CONTESTED_SHORES as CLIENT_CONTESTED, isContestedShore as clientContested } from "../src/ringfall/meta/neighbours";
@@ -31,9 +31,16 @@ export function migrateIslandState(s: IslandState): IslandState {
   if (!s.shielded) s.shielded = { day: 0, nodes: [] };
   // Expeditions (遠征) removed 2026-11-28: a node one held goes back to the robots, and what the
   // island kept for them (the squads, the fights in numbers, the lease, its clock) is dropped.
-  const old = s as IslandState & { expeditions?: { target: number; holding: boolean; by: Attacker }[] };
-  for (const e of old.expeditions ?? []) if (e.holding && rivalOf(s.holds[e.target]) === e.by?.code) s.holds[e.target] = "foe";
-  for (const k of ["expeditions", "defenders", "guards", "meter", "made", "lease", "clock", "taken"]) if (k in s) delete (s as unknown as Record<string, unknown>)[k];
+  // The contested shores' mirror (a neighbour holding a node of this island) went with them: no node
+  // of an island is another player's now, so one stored so goes back to the robots; look-marks went too.
+  // Its owner's copy may still call it theirs: as a holding a sortie took, it stays the robots' until a report shows it lost or names it taken back.
+  if (Array.isArray(s.holds))
+    s.holds = s.holds.map((h, i) => {
+      if (rivalOf(h) === null) return h;
+      s.raided = [...(s.raided ?? []).filter((k) => k !== i), i];
+      return "foe";
+    });
+  for (const k of ["expeditions", "defenders", "guards", "meter", "made", "lease", "clock", "taken", "pings"]) if (k in s) delete (s as unknown as Record<string, unknown>)[k];
   if (Array.isArray(s.log) && s.log.some((e) => !LOG_KINDS.includes(e.t))) s.log = s.log.filter((e) => LOG_KINDS.includes(e.t));
   return s;
 }
@@ -47,14 +54,7 @@ export const isContestedShore = (id: string): boolean => clientContested(id);
 export const ISLAND_RULES = {
   /** Days an island's holdings are shielded from sorties after it was claimed (新しいプレイヤーの保護). */
   protectDays: 2,
-  /**
-   * Seconds an async look-mark the owner leaves stays on the island (ux-design M6).
-   * Long on purpose: CoC-style async presence, not a live ping sync.
-   */
-  pingTtl: 24 * 3600,
-  /** Look-marks kept at once; the oldest drop first. */
-  pingMax: 8,
-  /** Aid parcels at depots (ux-design C2, 援軍の寄付); oldest drop first. */
+  /** 島の守り at depots, as the owner's raids left them; the oldest drop first. */
   parcelMax: 12,
   /** Entries the log keeps, the oldest dropped first. */
   logMax: 200,
@@ -74,9 +74,6 @@ export interface Owner {
   name: string;
   code: string;
 }
-
-/** How long an attack may be answered (仕返し) by any way, the sea route shut or not. */
-export const ANSWER_MS = 7 * 24 * 3600 * 1000;
 
 /** An attacker as others see them: their island's code and name, never their id. */
 export interface Attacker {
@@ -124,8 +121,6 @@ export interface IslandState {
    * `island` (作り順③): after a loss, remaining own outer hubs are shielded for the rest of that UTC day.
    */
   shielded?: { day: number; nodes: number[]; island?: boolean };
-  /** Async look-marks the owner left (ux-design M6); pruned past `until`. Optional on older islands. */
-  pings?: IslandPing[];
   /** Aid parcels at depots (ux-design C2, CoC-style donation). Optional on older islands. */
   parcels?: IslandParcel[];
   /**
@@ -135,15 +130,6 @@ export interface IslandState {
    * Optional on older islands.
    */
   raided?: number[];
-}
-
-/** A look-ping on the island map: where, whose name, and when it expires. */
-export interface IslandPing {
-  id: number;
-  x: number;
-  z: number;
-  by: string;
-  until: number;
 }
 
 /** A parcel at a depot POI: one valuable, who left it, and when. */
@@ -162,12 +148,6 @@ export type IslandOp =
   | { t: "view" }
   | { t: "log"; player: string; after: number }
   | { t: "whois"; player: string }
-  /** Mirror contested ownership onto this island's shore (方向 A): set hold to rival:owner or own. `name` is the owner's player-facing name for the log. */
-  | { t: "contestedMirror"; shore: string; owner: string; name?: string; at: number }
-  /** Failed contested attack on this island's shore (TKT-201): log 守りきった for the defender. */
-  | { t: "contestedDefend"; shore: string; from: Attacker; at: number }
-  | { t: "ping"; player: string; name: string; x: number; z: number }
-  | { t: "aid"; from: Attacker; poi: string; kind: string }
   /**
    * Another player's sortie on a holding of this island (docs/ringfall/glossary.md 攻め): reported by
    * the attacker when it ends. Captured, the holding goes back to the robots with its 島の守り;
@@ -252,16 +232,8 @@ function appendLog(s: IslandState, at: number, t: LogEntry["t"], node: number, b
 const attackable = (s: IslandState, i: number, now: number) =>
   s.holds[i] === "own" && now - s.since >= ISLAND_RULES.protectDays * DAY_MS && !isShielded(s, i, now) && !isIslandShielded(s, now) && !outerLossCapReached(s, now);
 
-/** Drop expired look-pings; keeps the list small. */
-function prunePings(s: IslandState, now: number) {
-  if (!s.pings?.length) return;
-  s.pings = s.pings.filter((p) => p.until > now);
-  if (s.pings.length > ISLAND_RULES.pingMax) s.pings = s.pings.slice(s.pings.length - ISLAND_RULES.pingMax);
-}
-
 /** The island's state as anyone may see it: no player's id. */
 export function publicView(s: IslandState, now: number) {
-  prunePings(s, now);
   const newPlayerUntil = s.since + ISLAND_RULES.protectDays * DAY_MS;
   const raidShieldUntil = isIslandShielded(s, now) ? utcDayEnd(now) : 0;
   return {
@@ -281,7 +253,6 @@ export function publicView(s: IslandState, now: number) {
     nodes: NODE_IDS.map((id, i) => ({ id, hold: s.holds[i], open: attackable(s, i, now), ...(isShielded(s, i, now) ? { shielded: true } : {}) })),
     // Holdings sorties took that the owner's reports have not shown lost yet, outliving the bounded log.
     raided: (s.raided ?? []).map((i) => NODE_IDS[i]),
-    pings: (s.pings ?? []).map((p) => ({ id: p.id, x: p.x, z: p.z, by: p.by, until: p.until })),
     parcels: (s.parcels ?? []).map((p) => ({ id: p.id, poi: p.poi, kind: p.kind, from: { ...p.from }, at: p.at })),
   };
 }
@@ -302,61 +273,22 @@ function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState 
 }
 
 /**
- * The owner's report after a raid. Nodes the server gave to other players stay theirs, except one
- * the report names among `retaken` (taken back in the raid) and reports as the owner's: that one is
- * the owner's, its holders go, and the log says so. A node the report calls the owner's without
- * naming it among `retaken` stays the other player's: the owner's copy of the island may predate
- * the capture. The owner cannot give a node to another player. The fights start
- * again from the island as reported: a raid stands every garrison whole.
+ * The owner's report after a raid: the island is as the owner says, but for a holding another
+ * player's sortie took, which stays the robots' until the report shows it lost or names it among
+ * `retaken` (taken back in the raid). The owner's copy of the island may predate the loss.
  */
-/**
- * Owner's report. Returns contested shores that became the owner's this report (for neighbour mirror
- * sync: foe→own and rival→own alike, TKT-201) and any refused for same-day shield.
- * `contestedRetaken` is kept as the rival→own subset for older API callers.
- */
-function report(
-  s: IslandState,
-  op: Extract<IslandOp, { t: "report" }>,
-  now: number,
-): {
-  contestedTaken: { shore: string; from: string | null }[];
-  contestedRetaken: { shore: string; from: string }[];
-  shielded: string[];
-} {
+function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: number) {
   s.owner.name = op.player.name;
   s.factory = op.factory;
   s.day = op.day;
-  const contestedTaken: { shore: string; from: string | null }[] = [];
-  const contestedRetaken: { shore: string; from: string }[] = [];
-  const shielded: string[] = [];
   op.holds.forEach((h, i) => {
-    const cur = s.holds[i];
-    if (rivalOf(cur) !== null) {
-      if (h !== "own" || !op.retaken.includes(NODE_IDS[i])) return;
-      if (isShielded(s, i, now)) {
-        shielded.push(NODE_IDS[i]);
-        return;
-      }
-      const from = rivalOf(cur)!;
-      s.holds[i] = "own";
-      appendLog(s, now, "retaken", i, { code: from, name: "" });
-      if (isContestedShore(NODE_IDS[i])) {
-        contestedTaken.push({ shore: NODE_IDS[i], from });
-        contestedRetaken.push({ shore: NODE_IDS[i], from });
-      }
-    } else if (h === "foe" || h === "own") {
-      // A holding a sortie took stays lost until the owner's copy shows it, or their raid takes it back.
-      if (s.raided?.includes(i)) {
-        if (h === "own" && !op.retaken.includes(NODE_IDS[i])) return;
-        s.raided = s.raided.filter((k) => k !== i);
-      }
-      const was = cur;
-      s.holds[i] = h;
-      // Contested shore claimed from the enemy (方向 A / TKT-201): mirror onto this week's neighbour.
-      if (h === "own" && was !== "own" && isContestedShore(NODE_IDS[i]) && op.retaken.includes(NODE_IDS[i])) {
-        contestedTaken.push({ shore: NODE_IDS[i], from: null });
-      }
+    // No node of an island is another player's: a report naming one so is left as it was.
+    if (h !== "foe" && h !== "own") return;
+    if (s.raided?.includes(i)) {
+      if (h === "own" && !op.retaken.includes(NODE_IDS[i])) return;
+      s.raided = s.raided.filter((k) => k !== i);
     }
+    s.holds[i] = h;
   });
   // Parcels left or taken in the raid (ux-design C2): take before add so a round-trip is one report.
   if (op.takenParcels?.length) {
@@ -371,50 +303,11 @@ function report(
   // A node the owner reports lost (an AI player's attack while away) holds no 島の守り: the owner's copy sent them back to the stash.
   if (s.parcels?.length) s.parcels = s.parcels.filter((p) => { const k = NODE_IDS.indexOf(p.poi); return k < 0 || s.holds[k] === "own"; });
   if (s.parcels && s.parcels.length > ISLAND_RULES.parcelMax) s.parcels = s.parcels.slice(s.parcels.length - ISLAND_RULES.parcelMax);
-  return { contestedTaken, contestedRetaken, shielded };
-}
-
-/**
- * Mirror a contested hub onto this island: if `owner` is this island's code, shore becomes own;
- * otherwise rival:owner. Applies same-day shield. Refuses when already shielded today.
- */
-/**
- * Defender notice for a failed contested attack (TKT-201): appends `wiped` so the owner's sync
- * shows 「{誰}が{拠点}を攻めた · 守りきった」 and awards the attacker's M (`defenceWin`). Holds unchanged.
- */
-function contestedDefend(s: IslandState, shore: string, from: Attacker, at: number): { status: number; body: unknown } {
-  const i = NODE_IDS.indexOf(shore);
-  if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
-  if (!from?.code || typeof from.name !== "string") return { status: 400, body: fail("bad-request") };
-  appendLog(s, at, "wiped", i, { code: from.code, name: from.name.trim().slice(0, 24) });
-  return { status: 200, body: { ok: true } };
-}
-
-function contestedMirror(s: IslandState, shore: string, owner: string, at: number, name = ""): { status: number; body: unknown } {
-  const i = NODE_IDS.indexOf(shore);
-  if (i < 0 || !isContestedShore(shore)) return { status: 400, body: fail("bad-request") };
-  const next: PoiHold = owner === s.owner.code ? "own" : rivalHold(owner);
-  const who = { code: owner, name: name.trim().slice(0, 24) };
-  if (s.holds[i] === next) {
-    shieldNode(s, i, at);
-    return { status: 200, body: { ok: true, hold: s.holds[i], idempotent: true } };
-  }
-  if (isShielded(s, i, at)) return { status: 409, body: fail("shielded") };
-  const takingFromOwner = s.holds[i] === "own" && owner !== s.owner.code;
-  // 作り順③: loss cap + island shield block further outer losses the same UTC day.
-  if (takingFromOwner && outerLossCapReached(s, at)) return { status: 409, body: fail("day-limit") };
-  s.holds[i] = next;
-  if (takingFromOwner) recordOuterTaken(s, at);
-  shieldNode(s, i, at);
-  s.log.push({ seq: ++s.seq, at, t: owner === s.owner.code ? "retaken" : "taken", node: shore, by: who });
-  if (s.log.length > ISLAND_RULES.logMax) s.log.splice(0, s.log.length - ISLAND_RULES.logMax);
-  return { status: 200, body: { ok: true, hold: s.holds[i] } };
 }
 
 /** Applies `op` to the island at `now`. The state passed in is changed in place. */
 export function islandOp(state: IslandState | null, op: IslandOp, now: number): OpResult {
   const s = state ? migrateIslandState(state) : null;
-  if (s) prunePings(s, now);
   const done = (status: number, body: unknown, wrote = false): OpResult => ({ status, body, state: s, changed: wrote });
   // The server draws the code (worker/api.ts): one already claimed answers 409 and it draws again.
   if (op.t === "claim") return s ? done(409, fail("code-taken")) : { status: 201, body: { ok: true, code: op.code }, state: claim(op, now), changed: true };
@@ -422,52 +315,19 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (op.t === "report") {
     if (s.owner.id !== op.player.id) return done(403, fail("not-owner"));
     op.holds = op.holds.map(normalizeHold);
-    const r = report(s, op, now);
-    return done(
-      200,
-      { ok: true, holds: s.holds, contestedTaken: r.contestedTaken, contestedRetaken: r.contestedRetaken, shielded: r.shielded },
-      true,
-    );
-  }
-  if (op.t === "contestedMirror") {
-    const r = contestedMirror(s, op.shore, op.owner, op.at, op.name);
-    return done(r.status, r.body, r.status === 200);
-  }
-  if (op.t === "contestedDefend") {
-    const r = contestedDefend(s, op.shore, op.from, op.at);
-    return done(r.status, r.body, r.status === 200);
+    report(s, op, now);
+    return done(200, { ok: true, holds: s.holds }, true);
   }
   if (op.t === "view") return done(200, publicView(s, now));
-  // Who the sender is, their factory, the nodes they hold (a neighbour's sea route opens from one of
-  // them), and the islands that have attacked theirs in the last week, which they may answer by any way.
+  // Who the sender is: the name their island keeps, which is the one others see.
   if (op.t === "whois") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
-    const since = now - ANSWER_MS;
-    const attackers = [...new Set(s.log.filter((e) => e.at >= since && e.t === "taken").map((e) => e.by.code))];
-    return done(200, { ok: true, factory: s.factory, name: s.owner.name, held: NODE_IDS.filter((_, i) => s.holds[i] === "own"), attackers });
+    return done(200, { ok: true, name: s.owner.name });
   }
   if (op.t === "log") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const entries = s.log.filter((e) => e.seq > op.after);
     return done(200, { ok: true, entries, next: s.seq });
-  }
-  // An async look-mark on the island map (ux-design M6): the owner only; left after a raid, not live.
-  if (op.t === "ping") {
-    if (s.owner.id !== op.player) return done(403, fail("not-owner"));
-    if (!Number.isFinite(op.x) || !Number.isFinite(op.z)) return done(400, fail("bad-request"));
-    s.pings ??= [];
-    s.pings.push({ id: s.nextId++, x: op.x, z: op.z, by: op.name, until: now + ISLAND_RULES.pingTtl * 1000 });
-    prunePings(s, now);
-    return done(200, { ok: true, pings: s.pings }, true);
-  }
-  // Aid donation to this island (ux-design C2): a neighbour leaves a parcel at a depot.
-  if (op.t === "aid") {
-    if (op.from.code === s.owner.code) return done(403, fail("own-island"));
-    if (!DEPOT_POIS.includes(op.poi) || typeof op.kind !== "string" || !op.kind) return done(400, fail("bad-request"));
-    s.parcels ??= [];
-    s.parcels.push({ id: s.nextId++, poi: op.poi, kind: op.kind, from: { ...op.from }, at: now });
-    if (s.parcels.length > ISLAND_RULES.parcelMax) s.parcels = s.parcels.slice(s.parcels.length - ISLAND_RULES.parcelMax);
-    return done(200, { ok: true }, true);
   }
   if (op.t === "raid") {
     if (op.from.code === s.owner.code) return done(403, fail("own-island"));
@@ -498,23 +358,6 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     return done(200, { ok: true, taken: true }, true);
   }
   return done(400, fail("bad-request"));
-}
-
-/** Failed contested attacks in a report (TKT-201), or null when unreadable. Left out, none. */
-export function parseContestedFailed(raw: unknown): { shore: string; owner: string }[] | null {
-  if (raw === undefined) return [];
-  if (!Array.isArray(raw) || raw.length > CONTESTED_SHORES.length) return null;
-  const out: { shore: string; owner: string }[] = [];
-  const seen = new Set<string>();
-  for (const r of raw) {
-    if (!r || typeof r !== "object") return null;
-    const o = r as Record<string, unknown>;
-    if (typeof o.shore !== "string" || !isContestedShore(o.shore) || typeof o.owner !== "string" || !o.owner) return null;
-    if (seen.has(o.shore)) continue;
-    seen.add(o.shore);
-    out.push({ shore: o.shore, owner: o.owner.slice(0, 16) });
-  }
-  return out;
 }
 
 /** The nodes a report names as taken back in the raid, or null: node ids, each once, at most one per node. Left out, none. */

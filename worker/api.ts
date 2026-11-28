@@ -2,11 +2,9 @@ import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { TROPHY } from "../src/ringfall/meta/trophies";
 import { parseReplay } from "../src/ringfall/sim/replay-data";
-import { NODE_IDS, parseContestedFailed, parseHolds, parseParcels, parseRetaken, parseTakenParcels, type IslandOp } from "./island";
+import { NODE_IDS, parseHolds, parseParcels, parseRetaken, parseTakenParcels, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
-import { CONTESTED_OUTER_TABLE } from "../src/ringfall/meta/contested-outer-table";
-import { isContestedShore, NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 import { planMutualPicks, type PairCandidate, type PairPick } from "./neighbour-pair";
 
 /*
@@ -224,169 +222,8 @@ async function ownCode(env: ApiEnv, code: string, player: string, now: number) {
   }
 }
 
-/**
- * Whether the island `code` is one of `player`'s neighbours this week whose sea route is shut: its
- * slot's coastal node (`NEIGHBOUR_SLOTS[].shore`) not among the nodes the sender holds. An island
- * that is no neighbour of theirs (named by its code: a friend's, an attacker's answered) is open,
- * as is any when the database cannot be read.
- */
-async function isNeighbourRouteShut(env: ApiEnv, player: string, code: string, held: readonly string[], now: number): Promise<boolean> {
-  try {
-    const pick = (await env.DB?.prepare("SELECT slot FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 AND code = ?3").bind(player, Math.floor(now / NEIGHBOURS.weekMs), code).all<{ slot: number }>())?.results[0];
-    const shore = pick ? NEIGHBOUR_SLOTS[pick.slot]?.shore : undefined;
-    return !!shore && !held.includes(shore);
-  } catch {
-    return false;
-  }
-}
-
 /** How many neighbours an island is offered, and how long a set of them lasts before it is drawn again. */
 export const NEIGHBOURS = { count: 4, pool: 24, weekMs: 7 * 24 * 3600 * 1000, activeMs: 14 * 24 * 3600 * 1000 } as const;
-
-/**
- * After a contested coastal hub flips on `aCode`, mirror ownership onto the neighbour `bCode`'s
- * shore that faces `aCode` this week, and record the shared owner in contested_holds.
- * Mutual weekly pairing (TKT-201) keeps each listed on the other; prefer B's pick of A, else A's
- * slot of B (same sea slot → same shore id faces the pair).
- */
-async function syncContestedPair(
-  env: ApiEnv,
-  ns: IslandNamespace,
-  aCode: string,
-  bCode: string,
-  aShore: string,
-  ownerCode: string,
-  now: number,
-  ownerName = "",
-) {
-  const db = env.DB;
-  if (db) {
-    try {
-      await db
-        .prepare(
-          "INSERT INTO contested_holds (a_code, b_code, shore, owner_code, taken_at) VALUES (?1, ?2, ?3, ?4, ?5) " +
-            "ON CONFLICT(a_code, b_code, shore) DO UPDATE SET owner_code = excluded.owner_code, taken_at = excluded.taken_at",
-        )
-        .bind(aCode, bCode, aShore, ownerCode, now)
-        .run();
-    } catch {
-      /* table may be mid-migration; report already landed */
-    }
-  }
-  const week = Math.floor(now / NEIGHBOURS.weekMs);
-  const theirPick = (
-    await db
-      ?.prepare(
-        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
-          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
-      )
-      .bind(bCode, week, aCode)
-      .all<{ slot: number }>()
-  )?.results[0];
-  let theirShore = theirPick !== undefined && NEIGHBOUR_SLOTS[theirPick.slot] ? NEIGHBOUR_SLOTS[theirPick.slot].shore : undefined;
-  if (!theirShore) {
-    // Same-slot fall back when reciprocal row is mid-write: A's slot facing B.
-    const ours = (
-      await db
-        ?.prepare(
-          "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
-            "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
-        )
-        .bind(aCode, week, bCode)
-        .all<{ slot: number }>()
-    )?.results[0];
-    theirShore = ours !== undefined && NEIGHBOUR_SLOTS[ours.slot] ? NEIGHBOUR_SLOTS[ours.slot].shore : undefined;
-  }
-  if (!theirShore && !isContestedShore(aShore)) return;
-  // Write the hub that was taken (same id on both islands). Slot shores keep mutual pairing;
-  // other outer hubs (作り順②) mirror by id onto the neighbour found via the nearest sea slot.
-  const writeShore = isContestedShore(aShore) ? aShore : theirShore;
-  if (!writeShore) return;
-  await ask(ns, bCode, { t: "contestedMirror", shore: writeShore, owner: ownerCode, name: ownerName, at: now }, now);
-}
-
-/** Sea-route slot for `shore`, or the nearest slot shore by hub distance when `shore` is another outer hub. */
-function slotForShore(shore: string): number {
-  const exact = NEIGHBOUR_SLOTS.findIndex((s) => s.shore === shore);
-  if (exact >= 0) return exact;
-  if (!isContestedShore(shore)) return -1;
-  const hub = CONTESTED_OUTER_TABLE.find((n) => n.id === shore);
-  if (!hub) return -1;
-  let best = -1;
-  let bestD = Infinity;
-  for (let k = 0; k < NEIGHBOUR_SLOTS.length; k++) {
-    const face = CONTESTED_OUTER_TABLE.find((n) => n.id === NEIGHBOUR_SLOTS[k]!.shore);
-    if (!face) continue;
-    const d = (face.x - hub.x) ** 2 + (face.z - hub.z) ** 2;
-    if (d < bestD) {
-      bestD = d;
-      best = k;
-    }
-  }
-  return best;
-}
-
-/**
- * This week's neighbour whose sea slot faces `shore` on the owner's island, or null.
- * Non-slot outer hubs (作り順②) use the nearest sea-route slot's neighbour.
- */
-async function neighbourFacingShore(env: ApiEnv, playerId: string, shore: string, now: number): Promise<string | null> {
-  const slot = slotForShore(shore);
-  if (slot < 0 || !env.DB) return null;
-  const week = Math.floor(now / NEIGHBOURS.weekMs);
-  const row = (
-    await env.DB.prepare("SELECT code FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 AND slot = ?3")
-      .bind(playerId, week, slot)
-      .all<{ code: string }>()
-  ).results[0];
-  return row?.code ?? null;
-}
-
-/**
- * Shore on `defenderCode`'s island that faces `attackerCode` this week (mutual pairing → same slot).
- */
-async function shoreFacingAttacker(env: ApiEnv, defenderCode: string, attackerCode: string, fallbackShore: string, now: number): Promise<string | undefined> {
-  const db = env.DB;
-  const week = Math.floor(now / NEIGHBOURS.weekMs);
-  const theirPick = (
-    await db
-      ?.prepare(
-        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
-          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
-      )
-      .bind(defenderCode, week, attackerCode)
-      .all<{ slot: number }>()
-  )?.results[0];
-  if (theirPick !== undefined && NEIGHBOUR_SLOTS[theirPick.slot]) return NEIGHBOUR_SLOTS[theirPick.slot].shore;
-  const ours = (
-    await db
-      ?.prepare(
-        "SELECT np.slot AS slot FROM neighbour_picks np JOIN islands i ON i.player_id = np.player_id " +
-          "WHERE i.code = ?1 AND np.week = ?2 AND np.code = ?3",
-      )
-      .bind(attackerCode, week, defenderCode)
-      .all<{ slot: number }>()
-  )?.results[0];
-  if (ours !== undefined && NEIGHBOUR_SLOTS[ours.slot]) return NEIGHBOUR_SLOTS[ours.slot].shore;
-  return NEIGHBOUR_SLOTS.some((s) => s.shore === fallbackShore) ? fallbackShore : undefined;
-}
-
-/** Tell the defender a contested attack failed (守りきった). */
-async function notifyContestedDefend(
-  env: ApiEnv,
-  ns: IslandNamespace,
-  attackerCode: string,
-  attackerName: string,
-  fail: { shore: string; owner: string },
-  now: number,
-) {
-  // Same hub id on both islands for outer contested (作り順②); slot shores keep the facing lookup.
-  const theirShore = isContestedShore(fail.shore)
-    ? fail.shore
-    : await shoreFacingAttacker(env, fail.owner, attackerCode, fail.shore, now);
-  if (!theirShore) return;
-  await ask(ns, fail.owner, { t: "contestedDefend", shore: theirShore, from: { code: attackerCode, name: attackerName }, at: now }, now);
-}
 
 /** A neighbour as the owner's camp shows it: whose island, its code, how far its owner has come, and what they did last. */
 export interface Neighbour {
@@ -496,9 +333,8 @@ async function neighbours(env: ApiEnv, player: string, now: number): Promise<Res
 
 /**
  * /api/islands (a claim) and /api/islands/:code and below (docs/ringfall/multiplayer.md): the owner's
- * report (PUT), the island as anyone sees it (GET), the owner's log (GET …/log), the owner's
- * look-mark (POST …/pings), a parcel left at a depot (POST …/aid) and how another player's sortie on
- * a holding ended (POST …/raids).
+ * report (PUT), the island as anyone sees it (GET), the owner's log (GET …/log) and how another
+ * player's sortie on a holding ended (POST …/raids).
  */
 async function handleIslands(request: Request, env: ApiEnv, now: number, url: URL, draw: () => string): Promise<Response> {
   if (url.pathname === "/api/islands") {
@@ -508,24 +344,17 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   const parts = url.pathname.split("/").slice(3);
   const code = parseIslandCode(parts[0]);
   const sub = parts.slice(1).join("/");
-  if (!code || (sub !== "" && sub !== "log" && sub !== "pings" && sub !== "aid" && sub !== "raids")) return fail(404, "not-found");
+  if (!code || (sub !== "" && sub !== "log" && sub !== "raids")) return fail(404, "not-found");
   const method = request.method;
   const allow = sub === "" ? "GET, PUT" : sub === "log" ? "GET" : "POST";
   if (!allow.split(", ").includes(method)) return notAllowed(allow);
   const ns = env.ISLAND;
   if (!ns) return unbound("no-island-server");
   if (sub === "" && method === "GET") return ask(ns, code, { t: "view" }, now);
-  if (sub === "log" || sub === "pings") {
+  if (sub === "log") {
     // The owner's secret id goes in a header, never in the URL, where logs and histories keep it.
     const player = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
     if (!UUID.test(player)) return fail(401, "unauthorized");
-    if (sub === "pings") {
-      const body = await readJson(request);
-      if (body instanceof Response) return body;
-      const raw = body.raw;
-      if (!isObj(raw) || typeof raw.name !== "string" || !Number.isFinite(raw.x) || !Number.isFinite(raw.z)) return fail(400, "bad-request");
-      return ask(ns, code, { t: "ping", player, name: raw.name.slice(0, 32), x: Number(raw.x), z: Number(raw.z) }, now);
-    }
     const after = Number(url.searchParams.get("after") ?? 0);
     if (!int(after, 0, Number.MAX_SAFE_INTEGER)) return fail(400, "bad-request");
     return ask(ns, code, { t: "log", player, after }, now);
@@ -540,37 +369,12 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const retaken = parseRetaken(raw.retaken);
     const parcels = parseParcels(raw.parcels);
     const takenParcels = parseTakenParcels(raw.takenParcels);
-    const contestedFailed = parseContestedFailed(raw.contestedFailed);
-    if (!player || !holds || !retaken || !parcels || !takenParcels || !contestedFailed || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    if (!player || !holds || !retaken || !parcels || !takenParcels || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
     const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, parcels, takenParcels }, now);
-    if (r.status === 200) {
-      await ownCode(env, code, player.id, now);
-      // Contested pair sync (方向 A / TKT-201): any contested shore that became own flips the
-      // neighbour's facing shore (foe→own uses this week's pick; rival→own uses the previous holder).
-      try {
-        const body = (await r.clone().json()) as {
-          contestedTaken?: { shore: string; from: string | null }[];
-          contestedRetaken?: { shore: string; from: string }[];
-        };
-        // Prefer contestedTaken (foe + rival); fall back to contestedRetaken for older island DO builds.
-        const taken =
-          body.contestedTaken ??
-          (body.contestedRetaken ?? []).map((c) => ({ shore: c.shore, from: c.from as string | null }));
-        for (const c of taken) {
-          const neighbour = c.from ?? (await neighbourFacingShore(env, player.id, c.shore, now));
-          if (!neighbour) continue;
-          await syncContestedPair(env, ns, code, neighbour, c.shore, code, now, player.name);
-        }
-        for (const f of contestedFailed) {
-          await notifyContestedDefend(env, ns, code, player.name, f, now);
-        }
-      } catch {
-        /* mirror best-effort; report already succeeded */
-      }
-    }
+    if (r.status === 200) await ownCode(env, code, player.id, now);
     return r;
   }
-  // Aid or a sortie's end: the sender proves their own island with their id.
+  // A sortie's end: the sender proves their own island with their id.
   const from = parsePlayer(raw.from);
   const fromCode = isObj(raw.from) ? parseIslandCode(raw.from.code) : null;
   if (!from || !fromCode) return fail(400, "bad-request");
@@ -579,13 +383,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (who.status === 404) return fail(403, "no-own-island");
   if (who.status !== 200) return who.status === 403 ? fail(403, "not-owner") : who;
   // The name others see is the one the sender's island keeps, not one the request names.
-  const { name, held, attackers } = (await who.json()) as { name: string; held?: string[]; attackers?: string[] };
-  // Aid donation (ux-design C2): a valuable left at a depot on the target island for offline defence.
-  if (sub === "aid") {
-    if (typeof raw.kind !== "string" || !raw.kind || typeof raw.poi !== "string") return fail(400, "bad-request");
-    if (!attackers?.includes(code) && (await isNeighbourRouteShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
-    return ask(ns, code, { t: "aid", from: { code: fromCode, name }, poi: raw.poi, kind: raw.kind }, now);
-  }
+  const { name } = (await who.json()) as { name: string };
   // A sortie's end on one of this island's holdings (glossary.md 攻め): the attacker reports whether it took the core.
   if (sub === "raids") {
     if (typeof raw.target !== "string" || typeof raw.captured !== "boolean") return fail(400, "bad-request");

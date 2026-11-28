@@ -125,19 +125,34 @@ function storedHoldings(): Holdings {
 export const attackable = (h: Holdings, now: number): Holdings =>
   Object.fromEntries(Object.entries(h).map(([code, x]) => [code, (x.until ?? 0) > now ? { ...x, held: [] } : x]));
 
+/** What island `v` offers a sortie: the nodes it holds, the 島の守り at each, and until when nothing there can be taken. */
+function holdingsOf(v: IslandView): Holdings[string] {
+  // A holding under its own day's shield is no target either.
+  const held = v.nodes.filter((x) => x.hold === "own" && !x.shielded).map((x) => x.id);
+  const guard: Record<string, number> = {};
+  for (const q of v.parcels ?? []) guard[q.poi] = (guard[q.poi] ?? 0) + 1;
+  // Shielded for the day or still under a new island's protection: nothing to attack until then.
+  const until = Math.max(v.shieldUntil, v.protectedUntil);
+  return { held, guard, ...(until > 0 ? { until } : {}) };
+}
+
+/** Keeps what island `v` (a real player's, just looked at) offers a sortie, so the 攻める list and the signal station show it at once. */
+export function rememberHoldings(v: IslandView) {
+  const all = { ...storedHoldings(), [v.code]: holdingsOf(v) };
+  lastHoldings = all;
+  try {
+    localStorage.setItem(HOLDINGS_KEY, JSON.stringify(all));
+  } catch {
+    // Kept for this session only.
+  }
+}
+
 /** Reads each real neighbour's island for the nodes it holds (a sortie's targets). */
 async function readHoldings(list: readonly Neighbour[]) {
   const out: Holdings = {};
   for (const n of list.filter((x) => !x.ai)) {
     const v = await readView(n.code, 4000);
-    if (!v.ok) continue;
-    // A holding under its own day's shield is no target either.
-    const held = v.body.nodes.filter((x) => x.hold === "own" && !x.shielded).map((x) => x.id);
-    const guard: Record<string, number> = {};
-    for (const q of v.body.parcels ?? []) guard[q.poi] = (guard[q.poi] ?? 0) + 1;
-    // Shielded for the day or still under a new island's protection: nothing to attack until then.
-    const until = Math.max(v.body.shieldUntil, v.body.protectedUntil);
-    out[n.code] = { held, guard, ...(until > 0 ? { until } : {}) };
+    if (v.ok) out[n.code] = holdingsOf(v.body);
   }
   lastHoldings = out;
   try {
@@ -266,7 +281,6 @@ export interface RaidReport {
    * Contested hubs whose 核 · 制圧 was started against a real neighbour but not finished
    * (TKT-201): defender gets 「… · 守りきった」.
    */
-  contestedFailed?: { shore: string; owner: string }[];
 }
 
 /** What a sync of this player's own island read: the view, and what to take into the profile. */
@@ -314,7 +328,6 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
         day: islandDay(p),
         ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
         ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
-        ...(raid?.contestedFailed?.length ? { contestedFailed: raid.contestedFailed } : {}),
       }),
     });
     if (!r.ok) return r;

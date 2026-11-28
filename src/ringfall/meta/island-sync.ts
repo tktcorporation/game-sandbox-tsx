@@ -11,7 +11,7 @@ import { isIslandCode } from "./island-code";
 import { unfreeable, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
 import { holdsOf } from "./island";
-import { parseParcels, parsePings, type Parcel } from "./parcels";
+import { parseParcels, type Parcel } from "./parcels";
 import { clampTrophies, defenceWin, raidOdds, rivalTrophies, starGain, trophyDelta } from "./trophies";
 import { emptyOuterGuard, guardOn, mergeOuterGuard, OUTER_GUARD, recordOuterLoss, utcDay, type OuterGuard } from "./outer-guard";
 import { isContestedShore } from "./neighbours";
@@ -32,8 +32,6 @@ export interface IslandView {
   /** Loss cap for outer hubs (作り順③). Older servers omit → OUTER_GUARD.lossCap. */
   outerLossCap: number;
   nodes: { id: string; hold: PoiHold; open: boolean; shielded?: boolean }[];
-  /** Live look-pings (ux-design M6). */
-  pings: { id: number; x: number; z: number; by: string; until: number }[];
   /** Parcels at depots (ux-design C2). */
   parcels: Parcel[];
   /** Holdings sorties took that the owner's reports have not shown lost yet (outlives the bounded log). */
@@ -80,7 +78,6 @@ export function parseView(raw: unknown): IslandView | null {
     outerLost: num(raw.outerLost),
     outerLossCap: num(raw.outerLossCap) || OUTER_GUARD.lossCap,
     nodes,
-    pings: parsePings(raw.pings),
     raided: Array.isArray(raw.raided) ? raw.raided.filter((x): x is string => typeof x === "string") : [],
     parcels: parseParcels(raw.parcels),
   };

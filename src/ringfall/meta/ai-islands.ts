@@ -199,7 +199,6 @@ export function aiView(
     outerLost: 0,
     outerLossCap: OUTER_GUARD.lossCap,
     nodes,
-    pings: [],
     // No sortie of another player reaches the game's own islands: nothing taken to reconcile.
     raided: [],
     parcels: aiDefenceParcels(a, salt, day, held, seized),

@@ -473,6 +473,8 @@ export class Hub {
   focusPoi: PoiId | null = null;
   /** The neighbour's holding the departure's 攻める list has chosen (a sortie), or null for a raid of the island. */
   sortieFocus: { owner: string; id: NodeId } | null = null;
+  /** Whether the departure is set to 攻める (a sortie) and not to the island's raid: its side lists the holdings, and the confirm needs one chosen. */
+  attackMode = false;
   /** The signal station's top section, which draws itself (`#hub-exped`). */
   private exped: SignalPanel;
   /** The island's news from the server (its log), as lines for the signal station, and whether it has shown them. */
@@ -491,6 +493,7 @@ export class Hub {
       () => this.profile,
       (p) => this.set(p),
       (n) => this.takeNews(n),
+      () => this.sortieTargets(),
     );
     $("hub").addEventListener("click", (e) => {
       const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-hub-tab]");
@@ -846,9 +849,9 @@ export class Hub {
   rideRefused(): string {
     this.fixStart();
     if (needsOrganize(this.profile)) return TERM.organize;
+    // 攻める with no holding to attack: nothing to depart to.
+    if (this.attackMode) return this.sortiePick() ? "" : PHRASE.noAttackTarget;
     if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
-    // A sortie takes the kit as from a way in: a depot chosen before has no say in it.
-    if (this.sortiePick()) return "";
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
   }
@@ -944,6 +947,7 @@ export class Hub {
     this.peeked = null;
     // A start on the island's map is a raid of the island: the sortie chosen before goes.
     this.sortieFocus = null;
+    this.attackMode = false;
     if (kind === "depot") {
       if (!departDepots(p).includes(id as PoiId)) return false;
       this.from = id as PoiId;
@@ -968,6 +972,7 @@ export class Hub {
     const [owner, id] = arg.split("|") as [string, NodeId];
     if (!owner || !id || !this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
     this.sortieFocus = { owner, id };
+    this.attackMode = true;
     this.focusPoi = id;
     return true;
   }
@@ -988,13 +993,27 @@ export class Hub {
     return this.sortieTargets().find((t) => t.owner === f.owner && t.id === f.id) ?? null;
   }
 
-  /** Chooses holding `id` of `owner` on the 攻める list for the next departure (choosing it again takes it back). False when it is not on the list. */
+  /** Chooses holding `id` of `owner` on the 攻める list for the next departure. False when it is not on the list. */
   selectSortie(owner: string, id: NodeId): boolean {
     if (!this.sortieTargets().some((t) => t.owner === owner && t.id === id)) return false;
-    const same = this.sortieFocus?.owner === owner && this.sortieFocus.id === id;
-    this.sortieFocus = same ? null : { owner, id };
+    this.sortieFocus = { owner, id };
+    this.attackMode = true;
     this.peeked = null;
     return true;
+  }
+
+  /**
+   * Sets the departure to 攻める (`on`: the holding chosen before, or the first on the list) or back
+   * to the island's raid (the holding chosen goes, the start on the map stands).
+   */
+  setAttackMode(on: boolean) {
+    this.attackMode = on;
+    this.peeked = null;
+    if (!on) this.sortieFocus = null;
+    else if (!this.sortiePick()) {
+      const first = this.sortieTargets()[0];
+      this.sortieFocus = first ? { owner: first.owner, id: first.id } : null;
+    }
   }
 
   /**
@@ -1011,6 +1030,7 @@ export class Hub {
       this.set(taken.profile);
       this.load = emptyLoadout();
       this.sortieFocus = null;
+      this.attackMode = false;
       return { kit: taken.kit, region: poiRegion(sortie.id).id, seed: this.profile.seed, entry: this.profile.entry, sortie: sortieStart(sortie) };
     }
     const from = this.from;
@@ -1406,7 +1426,7 @@ export class Hub {
     const plan: [string, string][] = [
       // The front node to raid (first sessions name 核 · 制圧 on it), then the holding to attack.
       [
-        PLAN_GOAL,
+        TERM.forage,
         pick
           ? teachFrontCapture(p)
             ? `${esc(pick.name)} · ${TERM.captureCore}`

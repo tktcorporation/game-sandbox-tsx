@@ -332,24 +332,6 @@ export function garrisonLeaves(s: State, i: number) {
 /** The node ids the raid took, as the island counts them (a record from before the front took none). */
 export const capturedIds = (s: { stats: { captured?: NodeId[] } }): NodeId[] => (s.stats.captured ?? []).filter((id, k, all) => nodeIndex(id) >= 0 && all.indexOf(id) === k);
 
-/**
- * Contested coastal hubs whose capture was started against a real neighbour but not finished
- * (TKT-201): each shore and that neighbour's island code, for the defender's 守りきった notice.
- */
-export function contestedFailed(s: {
-  stats: { captured?: NodeId[]; contestedTried?: { id: NodeId; owner: string }[] };
-}): { shore: NodeId; owner: string }[] {
-  const got = new Set(capturedIds(s));
-  const seen = new Set<string>();
-  const out: { shore: NodeId; owner: string }[] = [];
-  for (const t of s.stats.contestedTried ?? []) {
-    if (got.has(t.id) || seen.has(t.id) || !isContestedShore(t.id)) continue;
-    seen.add(t.id);
-    out.push({ shore: t.id, owner: t.owner });
-  }
-  return out;
-}
-
 /** A node has just turned the player's: the enemy's counter-attack on it is due `COUNTER.delay` seconds on (sim/battle.ts). */
 export function dueCounter(b: Battle, i: number) {
   if (!b.counters.some((c) => c.node === i)) b.counters.push({ node: i, at: b.now + COUNTER.delay });

@@ -2866,6 +2866,69 @@ body.touch .map-buttons button {
   color: var(--muted);
   font-size: 14px;
 }
+/* A sortie's results lead with the holding attacked, the stars and the trophies. */
+#day-result .sortie-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--plate);
+  box-shadow: inset 4px 0 0 var(--rival);
+}
+#day-result .sortie-who {
+  align-items: center;
+  gap: 4px;
+  font-size: 20px;
+  font-weight: 800;
+}
+#day-result .sortie-who .ico {
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+}
+#day-result .sortie-stars {
+  gap: 6px;
+  font-size: 54px;
+  line-height: 1;
+}
+#day-result .sortie-stars b {
+  color: var(--muted);
+}
+#day-result .sortie-stars b.on {
+  color: var(--hot);
+}
+#day-result .sortie-trop {
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--num);
+  font-size: 20px;
+}
+#day-result .sortie-trop small {
+  font-family: var(--jp);
+  font-size: 14px;
+  color: var(--muted);
+}
+#day-result .sortie-trop i {
+  font-style: normal;
+  color: var(--muted);
+}
+#day-result .sortie-trop b {
+  font-size: 30px;
+}
+#results #day-result .sortie-trop em {
+  font-style: normal;
+  font-weight: 800;
+  font-size: 20px;
+}
+#results #day-result .sortie-trop em.up {
+  color: var(--good);
+}
+#results #day-result .sortie-trop em.down {
+  color: var(--foe);
+}
+#results #haul-line[hidden] {
+  display: none;
+}
 /* The results' beat: the depot's mark for the battle after the player left. */
 #day-beat {
   display: inline-flex;
@@ -3636,23 +3699,69 @@ body.touch #camp-prompt {
   font-size: 16px;
   color: var(--mate-light);
 }
-/* TKT-204 案 B: CoC-style 攻める list with scout lines. */
+/* The two ways out of the gate: 漁る (the island's raid) and 攻める (a sortie). */
+#depart-mode {
+  display: flex;
+  gap: 6px;
+}
+.screen #depart-mode button {
+  flex: 1 1 0;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 0;
+  background: rgb(var(--paper-rgb) / 0.08);
+  color: var(--mist);
+  font-size: 16px;
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.14);
+  transform: none;
+}
+.screen #depart-mode button.on {
+  background: var(--hot);
+  color: var(--ink);
+  box-shadow: none;
+}
+.screen #depart-mode button[data-mode="attack"].on {
+  background: var(--rival);
+  color: var(--ink);
+}
+/* 攻める: the board shows the holding chosen, its owner's name over it; the island's starts are not offered. */
+#depart-target {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--plate);
+  font-size: 16px;
+  font-weight: 800;
+}
+#depart-target[hidden] {
+  display: none;
+}
+#depart-target .ico {
+  width: 18px;
+  height: 18px;
+  margin-right: 4px;
+}
+#depart.attack #depart-points {
+  display: none;
+}
+#depart.attack #depart-list {
+  flex: 0 0 auto;
+}
+/* The 攻める list: other players' holdings with their defence, trophies and bonus. */
 #depart-attack {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
-  flex: 0 1 auto;
-  max-height: 38%;
+  flex: 1 1 auto;
 }
 #depart-attack[hidden] {
   display: none;
-}
-#depart-attack-title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--rival);
 }
 #depart-attack-list {
   display: flex;
@@ -5233,6 +5342,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+#hub .exp-nodes .exp-node b {
+  margin-left: 6px;
+  color: var(--rival);
 }
 #hub .exp-nodes .exp-node {
   display: inline-flex;
